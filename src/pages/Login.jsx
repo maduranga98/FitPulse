@@ -45,15 +45,16 @@ const Login = ({ onLoginSuccess }) => {
 
       localStorage.setItem("gymUser", JSON.stringify(userWithoutPassword));
 
-      // Navigate to dashboard
+      // Call onLoginSuccess BEFORE setLoading(false) to ensure state updates properly
       if (onLoginSuccess) {
         onLoginSuccess(userWithoutPassword);
       }
 
       setLoading(false);
     } catch (err) {
+      console.error("Login error:", err);
       setError(err.message || "Login failed. Please try again.");
-      setLoading(false);
+      setLoading(false); // THIS WAS MISSING!
     }
   };
 

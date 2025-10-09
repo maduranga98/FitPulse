@@ -1,0 +1,1463 @@
+import { useState, useEffect } from "react";
+
+const Members = ({ onLogout, onNavigate, currentUser }) => {
+  const [members, setMembers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showAddMember, setShowAddMember] = useState(false);
+  const [viewMember, setViewMember] = useState(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterStatus, setFilterStatus] = useState("all");
+  const [filterLevel, setFilterLevel] = useState("all");
+
+  // Check if current user is admin/manager
+  const isAdmin =
+    currentUser?.role === "admin" || currentUser?.role === "manager";
+
+  const [memberForm, setMemberForm] = useState({
+    name: "",
+    age: "",
+    mobile: "",
+    whatsapp: "",
+    email: "",
+    weight: "",
+    height: "",
+    allergies: "",
+    diseases: "",
+    level: "beginner",
+    status: "active",
+    joinDate: new Date().toISOString().split("T")[0],
+    emergencyContact: "",
+    emergencyName: "",
+    notes: "",
+  });
+
+  const [generatedCredentials, setGeneratedCredentials] = useState(null);
+  const [bmiInfo, setBmiInfo] = useState(null);
+
+  useEffect(() => {
+    fetchMembers();
+  }, []);
+
+  // Calculate BMI whenever weight or height changes
+  useEffect(() => {
+    if (memberForm.weight && memberForm.height) {
+      calculateBMI(memberForm.weight, memberForm.height);
+    } else {
+      setBmiInfo(null);
+    }
+  }, [memberForm.weight, memberForm.height]);
+
+  const fetchMembers = async () => {
+    try {
+      const { db } = await import("../config/firebase");
+      const { collection, getDocs, orderBy, query } = await import(
+        "firebase/firestore"
+      );
+
+      const membersRef = collection(db, "members");
+      const membersQuery = query(membersRef, orderBy("joinDate", "desc"));
+      const membersSnapshot = await getDocs(membersQuery);
+      const membersData = membersSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      setMembers(membersData);
+      setLoading(false);
+    } catch (error) {
+      console.error("Error fetching members:", error);
+      setLoading(false);
+    }
+  };
+
+  const calculateBMI = (weight, height) => {
+    const weightKg = parseFloat(weight);
+    const heightM = parseFloat(height) / 100; // Convert cm to meters
+
+    if (weightKg > 0 && heightM > 0) {
+      const bmi = (weightKg / (heightM * heightM)).toFixed(1);
+      let category = "";
+      let color = "";
+
+      if (bmi < 18.5) {
+        category = "Underweight";
+        color = "text-blue-600";
+      } else if (bmi >= 18.5 && bmi < 25) {
+        category = "Normal weight";
+        color = "text-green-600";
+      } else if (bmi >= 25 && bmi < 30) {
+        category = "Overweight";
+        color = "text-yellow-600";
+      } else {
+        category = "Obese";
+        color = "text-red-600";
+      }
+
+      setBmiInfo({ bmi, category, color });
+    }
+  };
+
+  const generateUsername = (name) => {
+    const cleanName = name.toLowerCase().replace(/\s+/g, "");
+    const randomNum = Math.floor(1000 + Math.random() * 9000);
+    return `${cleanName}${randomNum}`;
+  };
+
+  const generatePassword = () => {
+    const chars =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    let password = "";
+    for (let i = 0; i < 8; i++) {
+      password += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return password;
+  };
+
+  const handleAddMember = async (e) => {
+    e.preventDefault();
+
+    if (!isAdmin) {
+      alert("You don't have permission to add members");
+      return;
+    }
+
+    try {
+      const { db } = await import("../config/firebase");
+      const { collection, addDoc, Timestamp } = await import(
+        "firebase/firestore"
+      );
+
+      // Generate credentials
+      const username = generateUsername(memberForm.name);
+      const password = generatePassword();
+
+      // Prepare member data
+      const memberData = {
+        ...memberForm,
+        username,
+        password,
+        bmi: bmiInfo?.bmi || null,
+        bmiCategory: bmiInfo?.category || null,
+        role: "member",
+        createdAt: Timestamp.now(),
+        joinDate: Timestamp.fromDate(new Date(memberForm.joinDate)),
+      };
+
+      await addDoc(collection(db, "members"), memberData);
+
+      // Show credentials to admin
+      setGeneratedCredentials({ username, password, name: memberForm.name });
+
+      // Reset form
+      setMemberForm({
+        name: "",
+        age: "",
+        mobile: "",
+        whatsapp: "",
+        email: "",
+        weight: "",
+        height: "",
+        allergies: "",
+        diseases: "",
+        level: "beginner",
+        status: "active",
+        joinDate: new Date().toISOString().split("T")[0],
+        emergencyContact: "",
+        emergencyName: "",
+        notes: "",
+      });
+
+      fetchMembers();
+      // Don't close modal yet, show credentials first
+    } catch (error) {
+      console.error("Error adding member:", error);
+      alert("Failed to add member");
+    }
+  };
+
+  const handleDeleteMember = async (id) => {
+    if (!isAdmin) {
+      alert("You don't have permission to delete members");
+      return;
+    }
+
+    if (!confirm("Are you sure you want to delete this member?")) return;
+
+    try {
+      const { db } = await import("../config/firebase");
+      const { doc, deleteDoc } = await import("firebase/firestore");
+
+      await deleteDoc(doc(db, "members", id));
+      fetchMembers();
+    } catch (error) {
+      console.error("Error deleting member:", error);
+      alert("Failed to delete member");
+    }
+  };
+
+  const handleUpdateStatus = async (id, newStatus) => {
+    if (!isAdmin) {
+      alert("You don't have permission to update member status");
+      return;
+    }
+
+    try {
+      const { db } = await import("../config/firebase");
+      const { doc, updateDoc } = await import("firebase/firestore");
+
+      await updateDoc(doc(db, "members", id), {
+        status: newStatus,
+      });
+
+      fetchMembers();
+    } catch (error) {
+      console.error("Error updating status:", error);
+      alert("Failed to update status");
+    }
+  };
+
+  const filteredMembers = members.filter((member) => {
+    const matchesSearch =
+      member.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      member.mobile?.includes(searchTerm) ||
+      member.email?.toLowerCase().includes(searchTerm.toLowerCase());
+
+    const matchesStatus =
+      filterStatus === "all" || member.status === filterStatus;
+    const matchesLevel = filterLevel === "all" || member.level === filterLevel;
+
+    return matchesSearch && matchesStatus && matchesLevel;
+  });
+
+  const stats = {
+    total: members.length,
+    active: members.filter((m) => m.status === "active").length,
+    inactive: members.filter((m) => m.status === "inactive").length,
+    beginner: members.filter((m) => m.level === "beginner").length,
+    intermediate: members.filter((m) => m.level === "intermediate").length,
+    advanced: members.filter((m) => m.level === "advanced").length,
+  };
+
+  const handleLogoutClick = () => {
+    if (onLogout) {
+      onLogout();
+    } else {
+      localStorage.removeItem("gymUser");
+      window.location.reload();
+    }
+  };
+
+  const closeCredentialsModal = () => {
+    setGeneratedCredentials(null);
+    setShowAddMember(false);
+  };
+
+  if (loading) {
+    return (
+      <div className="h-screen w-screen bg-gray-900 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-400">Loading members...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-screen w-screen overflow-hidden bg-gray-900 flex">
+      {/* Sidebar */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      <aside
+        className={`fixed lg:static top-0 left-0 z-50 h-full w-64 bg-gray-800 border-r border-gray-700 transform transition-transform duration-300 lg:translate-x-0 flex-shrink-0 ${
+          sidebarOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        <div className="flex flex-col h-full">
+          <div className="flex items-center gap-3 p-6 border-b border-gray-700 flex-shrink-0">
+            <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
+              <svg
+                className="w-6 h-6 text-white"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M13 10V3L4 14h7v7l9-11h-7z"
+                />
+              </svg>
+            </div>
+            <span className="text-xl font-bold text-white">Gym Manager</span>
+          </div>
+
+          <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+            <button
+              onClick={() => onNavigate("dashboard")}
+              className="flex items-center gap-3 px-4 py-3 w-full text-left text-gray-400 hover:bg-gray-700 hover:text-white rounded-lg transition"
+            >
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
+                />
+              </svg>
+              <span className="font-medium">Dashboard</span>
+            </button>
+            <button
+              onClick={() => onNavigate("members")}
+              className="flex items-center gap-3 px-4 py-3 w-full text-left bg-blue-600 text-white rounded-lg"
+            >
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
+                />
+              </svg>
+              <span className="font-medium">Members</span>
+            </button>
+            {isAdmin && (
+              <>
+                <button
+                  onClick={() => onNavigate("payments")}
+                  className="flex items-center gap-3 px-4 py-3 w-full text-left text-gray-400 hover:bg-gray-700 hover:text-white rounded-lg transition"
+                >
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"
+                    />
+                  </svg>
+                  <span className="font-medium">Payments</span>
+                </button>
+                <button
+                  onClick={() => onNavigate("exercises")}
+                  className="flex items-center gap-3 px-4 py-3 w-full text-left text-gray-400 hover:bg-gray-700 hover:text-white rounded-lg transition"
+                >
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+                    />
+                  </svg>
+                  <span className="font-medium">Exercises</span>
+                </button>
+              </>
+            )}
+          </nav>
+
+          <div className="p-4 border-t border-gray-700 flex-shrink-0">
+            <div className="mb-3 px-4">
+              <div className="text-xs text-gray-500 mb-1">Logged in as</div>
+              <div className="text-sm text-white font-medium">
+                {currentUser?.name || currentUser?.username}
+              </div>
+              <div className="text-xs text-gray-400 capitalize">
+                {currentUser?.role || "Member"}
+              </div>
+            </div>
+            <button
+              onClick={handleLogoutClick}
+              className="flex items-center gap-3 px-4 py-3 w-full text-gray-400 hover:bg-gray-700 hover:text-white rounded-lg transition"
+            >
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+                />
+              </svg>
+              <span className="font-medium">Logout</span>
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col h-full overflow-hidden">
+        <header className="bg-gray-800 border-b border-gray-700 flex-shrink-0">
+          <div className="flex items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => setSidebarOpen(true)}
+                className="lg:hidden p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg"
+              >
+                <svg
+                  className="w-6 h-6"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4 6h16M4 12h16M4 18h16"
+                  />
+                </svg>
+              </button>
+              <h1 className="text-xl sm:text-2xl font-bold text-white">
+                Members
+              </h1>
+            </div>
+            {isAdmin && (
+              <button
+                onClick={() => setShowAddMember(true)}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition flex items-center gap-2"
+              >
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 4v16m8-8H4"
+                  />
+                </svg>
+                <span className="hidden sm:inline">Add Member</span>
+                <span className="sm:hidden">Add</span>
+              </button>
+            )}
+          </div>
+        </header>
+
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+          {/* Stats Overview */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+            <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
+              <div className="text-gray-400 text-sm mb-1">Total Members</div>
+              <div className="text-2xl font-bold text-white">{stats.total}</div>
+            </div>
+            <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
+              <div className="text-gray-400 text-sm mb-1">Active</div>
+              <div className="text-2xl font-bold text-green-600">
+                {stats.active}
+              </div>
+            </div>
+            <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
+              <div className="text-gray-400 text-sm mb-1">Inactive</div>
+              <div className="text-2xl font-bold text-red-600">
+                {stats.inactive}
+              </div>
+            </div>
+            <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
+              <div className="text-gray-400 text-sm mb-1">Beginner</div>
+              <div className="text-2xl font-bold text-blue-600">
+                {stats.beginner}
+              </div>
+            </div>
+            <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
+              <div className="text-gray-400 text-sm mb-1">Intermediate</div>
+              <div className="text-2xl font-bold text-yellow-600">
+                {stats.intermediate}
+              </div>
+            </div>
+            <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
+              <div className="text-gray-400 text-sm mb-1">Advanced</div>
+              <div className="text-2xl font-bold text-purple-600">
+                {stats.advanced}
+              </div>
+            </div>
+          </div>
+
+          {/* Search and Filters */}
+          <div className="mb-6 flex flex-col sm:flex-row gap-4">
+            <div className="flex-1">
+              <input
+                type="text"
+                placeholder="Search members..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="all">All Status</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+            <select
+              value={filterLevel}
+              onChange={(e) => setFilterLevel(e.target.value)}
+              className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="all">All Levels</option>
+              <option value="beginner">Beginner</option>
+              <option value="intermediate">Intermediate</option>
+              <option value="advanced">Advanced</option>
+            </select>
+          </div>
+
+          {/* Members Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredMembers.length === 0 ? (
+              <div className="col-span-full text-center py-12">
+                <p className="text-gray-400 text-lg">No members found</p>
+                {isAdmin && (
+                  <button
+                    onClick={() => setShowAddMember(true)}
+                    className="mt-4 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition"
+                  >
+                    Add Your First Member
+                  </button>
+                )}
+              </div>
+            ) : (
+              filteredMembers.map((member) => (
+                <div
+                  key={member.id}
+                  className="bg-gray-800 border border-gray-700 rounded-xl p-5 hover:border-gray-600 transition"
+                >
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold text-lg">
+                        {member.name?.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-bold text-white">
+                          {member.name}
+                        </h3>
+                        <p className="text-sm text-gray-400">{member.mobile}</p>
+                      </div>
+                    </div>
+                    <span
+                      className={`px-2 py-1 rounded text-xs font-medium ${
+                        member.status === "active"
+                          ? "bg-green-600/20 text-green-600"
+                          : "bg-red-600/20 text-red-600"
+                      }`}
+                    >
+                      {member.status}
+                    </span>
+                  </div>
+
+                  <div className="space-y-2 mb-4">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-400">Level:</span>
+                      <span
+                        className={`px-2 py-1 rounded text-xs font-medium ${
+                          member.level === "beginner"
+                            ? "bg-blue-600/20 text-blue-600"
+                            : member.level === "intermediate"
+                            ? "bg-yellow-600/20 text-yellow-600"
+                            : "bg-purple-600/20 text-purple-600"
+                        }`}
+                      >
+                        {member.level}
+                      </span>
+                    </div>
+                    {member.bmi && (
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-400">BMI:</span>
+                        <span className="text-white font-medium">
+                          {member.bmi}{" "}
+                          <span className="text-gray-500">
+                            ({member.bmiCategory})
+                          </span>
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-400">Age:</span>
+                      <span className="text-white">{member.age} years</span>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setViewMember(member)}
+                      className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition"
+                    >
+                      View Details
+                    </button>
+                    {isAdmin && (
+                      <button
+                        onClick={() => handleDeleteMember(member.id)}
+                        className="px-4 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-600 rounded-lg text-sm font-medium transition"
+                      >
+                        <svg
+                          className="w-4 h-4"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                          />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </main>
+      </div>
+
+      {/* Add Member Modal */}
+      {showAddMember && !generatedCredentials && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-gray-800 rounded-2xl border border-gray-700 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-gray-800 border-b border-gray-700 p-6 flex items-center justify-between">
+              <h2 className="text-2xl font-bold text-white">Add New Member</h2>
+              <button
+                onClick={() => setShowAddMember(false)}
+                className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg"
+              >
+                <svg
+                  className="w-6 h-6"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+
+            <form onSubmit={handleAddMember} className="p-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Personal Information */}
+                <div className="md:col-span-2">
+                  <h3 className="text-lg font-bold text-white mb-4">
+                    Personal Information
+                  </h3>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Full Name *
+                  </label>
+                  <input
+                    type="text"
+                    value={memberForm.name}
+                    onChange={(e) =>
+                      setMemberForm({ ...memberForm, name: e.target.value })
+                    }
+                    className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="John Doe"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Age *
+                  </label>
+                  <input
+                    type="number"
+                    value={memberForm.age}
+                    onChange={(e) =>
+                      setMemberForm({ ...memberForm, age: e.target.value })
+                    }
+                    className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="25"
+                    required
+                    min="1"
+                    max="150"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Mobile Number *
+                  </label>
+                  <input
+                    type="tel"
+                    value={memberForm.mobile}
+                    onChange={(e) =>
+                      setMemberForm({ ...memberForm, mobile: e.target.value })
+                    }
+                    className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="+1234567890"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    WhatsApp Number *
+                  </label>
+                  <input
+                    type="tel"
+                    value={memberForm.whatsapp}
+                    onChange={(e) =>
+                      setMemberForm({ ...memberForm, whatsapp: e.target.value })
+                    }
+                    className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="+1234567890"
+                    required
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Email Address
+                  </label>
+                  <input
+                    type="email"
+                    value={memberForm.email}
+                    onChange={(e) =>
+                      setMemberForm({ ...memberForm, email: e.target.value })
+                    }
+                    className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="john@example.com"
+                  />
+                </div>
+
+                {/* Physical Information */}
+                <div className="md:col-span-2 mt-4">
+                  <h3 className="text-lg font-bold text-white mb-4">
+                    Physical Information
+                  </h3>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Weight (kg) *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={memberForm.weight}
+                    onChange={(e) =>
+                      setMemberForm({ ...memberForm, weight: e.target.value })
+                    }
+                    className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="70.5"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Height (cm) *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={memberForm.height}
+                    onChange={(e) =>
+                      setMemberForm({ ...memberForm, height: e.target.value })
+                    }
+                    className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="175"
+                    required
+                  />
+                </div>
+
+                {/* BMI Display */}
+                {bmiInfo && (
+                  <div className="md:col-span-2">
+                    <div className="bg-gray-900 border border-gray-700 rounded-lg p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="text-sm text-gray-400 mb-1">
+                            BMI (Body Mass Index)
+                          </div>
+                          <div className="text-2xl font-bold text-white">
+                            {bmiInfo.bmi}
+                          </div>
+                        </div>
+                        <div className={`text-right ${bmiInfo.color}`}>
+                          <div className="text-lg font-bold">
+                            {bmiInfo.category}
+                          </div>
+                          <div className="text-xs text-gray-400 mt-1">
+                            {bmiInfo.bmi < 18.5 && "Below normal range"}
+                            {bmiInfo.bmi >= 18.5 &&
+                              bmiInfo.bmi < 25 &&
+                              "Healthy weight"}
+                            {bmiInfo.bmi >= 25 &&
+                              bmiInfo.bmi < 30 &&
+                              "Above normal range"}
+                            {bmiInfo.bmi >= 30 && "Significantly above normal"}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Medical Information */}
+                <div className="md:col-span-2 mt-4">
+                  <h3 className="text-lg font-bold text-white mb-4">
+                    Medical Information
+                  </h3>
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Allergies
+                  </label>
+                  <textarea
+                    value={memberForm.allergies}
+                    onChange={(e) =>
+                      setMemberForm({
+                        ...memberForm,
+                        allergies: e.target.value,
+                      })
+                    }
+                    className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                    placeholder="Any known allergies..."
+                    rows="2"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Medical Conditions / Diseases
+                  </label>
+                  <textarea
+                    value={memberForm.diseases}
+                    onChange={(e) =>
+                      setMemberForm({ ...memberForm, diseases: e.target.value })
+                    }
+                    className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                    placeholder="Any medical conditions, chronic diseases, etc..."
+                    rows="2"
+                  />
+                </div>
+
+                {/* Gym Information */}
+                <div className="md:col-span-2 mt-4">
+                  <h3 className="text-lg font-bold text-white mb-4">
+                    Gym Information
+                  </h3>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Fitness Level *
+                  </label>
+                  <select
+                    value={memberForm.level}
+                    onChange={(e) =>
+                      setMemberForm({ ...memberForm, level: e.target.value })
+                    }
+                    className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  >
+                    <option value="beginner">Beginner</option>
+                    <option value="intermediate">Intermediate</option>
+                    <option value="advanced">Advanced</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Membership Status *
+                  </label>
+                  <select
+                    value={memberForm.status}
+                    onChange={(e) =>
+                      setMemberForm({ ...memberForm, status: e.target.value })
+                    }
+                    className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  >
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Join Date *
+                  </label>
+                  <input
+                    type="date"
+                    value={memberForm.joinDate}
+                    onChange={(e) =>
+                      setMemberForm({ ...memberForm, joinDate: e.target.value })
+                    }
+                    className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                </div>
+
+                {/* Emergency Contact */}
+                <div className="md:col-span-2 mt-4">
+                  <h3 className="text-lg font-bold text-white mb-4">
+                    Emergency Contact
+                  </h3>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Emergency Contact Name
+                  </label>
+                  <input
+                    type="text"
+                    value={memberForm.emergencyName}
+                    onChange={(e) =>
+                      setMemberForm({
+                        ...memberForm,
+                        emergencyName: e.target.value,
+                      })
+                    }
+                    className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Contact person name"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Emergency Contact Number
+                  </label>
+                  <input
+                    type="tel"
+                    value={memberForm.emergencyContact}
+                    onChange={(e) =>
+                      setMemberForm({
+                        ...memberForm,
+                        emergencyContact: e.target.value,
+                      })
+                    }
+                    className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="+1234567890"
+                  />
+                </div>
+
+                {/* Additional Notes */}
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Additional Notes
+                  </label>
+                  <textarea
+                    value={memberForm.notes}
+                    onChange={(e) =>
+                      setMemberForm({ ...memberForm, notes: e.target.value })
+                    }
+                    className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                    placeholder="Any additional information about the member..."
+                    rows="3"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3 mt-6">
+                <button
+                  type="submit"
+                  className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition"
+                >
+                  Add Member & Generate Credentials
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowAddMember(false)}
+                  className="px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-medium transition"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Generated Credentials Modal */}
+      {generatedCredentials && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-gray-800 rounded-2xl border border-gray-700 w-full max-w-md">
+            <div className="border-b border-gray-700 p-6">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-12 h-12 bg-green-600 rounded-full flex items-center justify-center">
+                  <svg
+                    className="w-6 h-6 text-white"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M5 13l4 4L19 7"
+                    />
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-white">
+                    Member Added Successfully!
+                  </h2>
+                  <p className="text-sm text-gray-400">
+                    Login credentials generated
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6">
+              <div className="bg-gray-900 rounded-lg p-4 mb-4">
+                <p className="text-sm text-gray-400 mb-3">
+                  Member:{" "}
+                  <span className="text-white font-medium">
+                    {generatedCredentials.name}
+                  </span>
+                </p>
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">
+                      Username
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={generatedCredentials.username}
+                        readOnly
+                        className="flex-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded text-white text-sm"
+                      />
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(
+                            generatedCredentials.username
+                          );
+                          alert("Username copied!");
+                        }}
+                        className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm"
+                      >
+                        Copy
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">
+                      Password
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={generatedCredentials.password}
+                        readOnly
+                        className="flex-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded text-white text-sm font-mono"
+                      />
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(
+                            generatedCredentials.password
+                          );
+                          alert("Password copied!");
+                        }}
+                        className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm"
+                      >
+                        Copy
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-yellow-600/10 border border-yellow-600/30 rounded-lg p-4 mb-4">
+                <div className="flex gap-2">
+                  <svg
+                    className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                    />
+                  </svg>
+                  <div>
+                    <p className="text-sm text-yellow-600 font-medium mb-1">
+                      Important
+                    </p>
+                    <p className="text-xs text-yellow-600">
+                      Please save these credentials securely. Share them with
+                      the member via WhatsApp or in person.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    const text = `Welcome to our Gym!\n\nYour Login Credentials:\nUsername: ${generatedCredentials.username}\nPassword: ${generatedCredentials.password}\n\nPlease keep these credentials safe.`;
+                    navigator.clipboard.writeText(text);
+                    alert("Credentials copied to clipboard!");
+                  }}
+                  className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition"
+                >
+                  Copy All
+                </button>
+                <button
+                  onClick={closeCredentialsModal}
+                  className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-medium transition"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View Member Modal */}
+      {viewMember && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-gray-800 rounded-2xl border border-gray-700 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-gray-800 border-b border-gray-700 p-6 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold text-2xl">
+                  {viewMember.name?.charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-white">
+                    {viewMember.name}
+                  </h2>
+                  <p className="text-gray-400">Member ID: {viewMember.id}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setViewMember(null)}
+                className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg"
+              >
+                <svg
+                  className="w-6 h-6"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+
+            <div className="p-6">
+              {/* Status Controls - Admin Only */}
+              {isAdmin && (
+                <div className="mb-6 flex gap-3">
+                  <button
+                    onClick={() => handleUpdateStatus(viewMember.id, "active")}
+                    className={`flex-1 px-4 py-2 rounded-lg font-medium transition ${
+                      viewMember.status === "active"
+                        ? "bg-green-600 text-white"
+                        : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                    }`}
+                  >
+                    Active
+                  </button>
+                  <button
+                    onClick={() =>
+                      handleUpdateStatus(viewMember.id, "inactive")
+                    }
+                    className={`flex-1 px-4 py-2 rounded-lg font-medium transition ${
+                      viewMember.status === "inactive"
+                        ? "bg-red-600 text-white"
+                        : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                    }`}
+                  >
+                    Inactive
+                  </button>
+                </div>
+              )}
+
+              {/* Personal Information */}
+              <div className="mb-6">
+                <h3 className="text-lg font-bold text-white mb-4">
+                  Personal Information
+                </h3>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                  <div className="bg-gray-900 rounded-lg p-4">
+                    <div className="text-gray-400 text-sm mb-1">Age</div>
+                    <div className="text-white font-medium">
+                      {viewMember.age} years
+                    </div>
+                  </div>
+                  <div className="bg-gray-900 rounded-lg p-4">
+                    <div className="text-gray-400 text-sm mb-1">Mobile</div>
+                    <div className="text-white font-medium">
+                      {viewMember.mobile}
+                    </div>
+                  </div>
+                  <div className="bg-gray-900 rounded-lg p-4">
+                    <div className="text-gray-400 text-sm mb-1">WhatsApp</div>
+                    <div className="text-white font-medium">
+                      {viewMember.whatsapp}
+                    </div>
+                  </div>
+                  {viewMember.email && (
+                    <div className="bg-gray-900 rounded-lg p-4 sm:col-span-2">
+                      <div className="text-gray-400 text-sm mb-1">Email</div>
+                      <div className="text-white font-medium">
+                        {viewMember.email}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Physical Information */}
+              <div className="mb-6">
+                <h3 className="text-lg font-bold text-white mb-4">
+                  Physical Information
+                </h3>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <div className="bg-gray-900 rounded-lg p-4">
+                    <div className="text-gray-400 text-sm mb-1">Weight</div>
+                    <div className="text-white font-medium">
+                      {viewMember.weight} kg
+                    </div>
+                  </div>
+                  <div className="bg-gray-900 rounded-lg p-4">
+                    <div className="text-gray-400 text-sm mb-1">Height</div>
+                    <div className="text-white font-medium">
+                      {viewMember.height} cm
+                    </div>
+                  </div>
+                  {viewMember.bmi && (
+                    <>
+                      <div className="bg-gray-900 rounded-lg p-4">
+                        <div className="text-gray-400 text-sm mb-1">BMI</div>
+                        <div className="text-white font-medium">
+                          {viewMember.bmi}
+                        </div>
+                      </div>
+                      <div className="bg-gray-900 rounded-lg p-4">
+                        <div className="text-gray-400 text-sm mb-1">
+                          Category
+                        </div>
+                        <div className="text-white font-medium">
+                          {viewMember.bmiCategory}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Medical Information */}
+              {(viewMember.allergies || viewMember.diseases) && (
+                <div className="mb-6">
+                  <h3 className="text-lg font-bold text-white mb-4">
+                    Medical Information
+                  </h3>
+                  {viewMember.allergies && (
+                    <div className="mb-3">
+                      <div className="text-sm text-gray-400 mb-2">
+                        Allergies
+                      </div>
+                      <div className="bg-yellow-600/10 border border-yellow-600/30 rounded-lg p-3">
+                        <p className="text-yellow-600 text-sm">
+                          {viewMember.allergies}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  {viewMember.diseases && (
+                    <div>
+                      <div className="text-sm text-gray-400 mb-2">
+                        Medical Conditions
+                      </div>
+                      <div className="bg-red-600/10 border border-red-600/30 rounded-lg p-3">
+                        <p className="text-red-600 text-sm">
+                          {viewMember.diseases}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Gym Information */}
+              <div className="mb-6">
+                <h3 className="text-lg font-bold text-white mb-4">
+                  Gym Information
+                </h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-gray-900 rounded-lg p-4">
+                    <div className="text-gray-400 text-sm mb-1">
+                      Fitness Level
+                    </div>
+                    <span
+                      className={`inline-block px-3 py-1 rounded text-sm font-medium ${
+                        viewMember.level === "beginner"
+                          ? "bg-blue-600/20 text-blue-600"
+                          : viewMember.level === "intermediate"
+                          ? "bg-yellow-600/20 text-yellow-600"
+                          : "bg-purple-600/20 text-purple-600"
+                      }`}
+                    >
+                      {viewMember.level}
+                    </span>
+                  </div>
+                  <div className="bg-gray-900 rounded-lg p-4">
+                    <div className="text-gray-400 text-sm mb-1">Status</div>
+                    <span
+                      className={`inline-block px-3 py-1 rounded text-sm font-medium ${
+                        viewMember.status === "active"
+                          ? "bg-green-600/20 text-green-600"
+                          : "bg-red-600/20 text-red-600"
+                      }`}
+                    >
+                      {viewMember.status}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Emergency Contact */}
+              {(viewMember.emergencyName || viewMember.emergencyContact) && (
+                <div className="mb-6">
+                  <h3 className="text-lg font-bold text-white mb-4">
+                    Emergency Contact
+                  </h3>
+                  <div className="bg-gray-900 rounded-lg p-4">
+                    {viewMember.emergencyName && (
+                      <div className="mb-2">
+                        <span className="text-gray-400 text-sm">Name: </span>
+                        <span className="text-white font-medium">
+                          {viewMember.emergencyName}
+                        </span>
+                      </div>
+                    )}
+                    {viewMember.emergencyContact && (
+                      <div>
+                        <span className="text-gray-400 text-sm">Phone: </span>
+                        <span className="text-white font-medium">
+                          {viewMember.emergencyContact}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Additional Notes */}
+              {viewMember.notes && (
+                <div className="mb-6">
+                  <h3 className="text-lg font-bold text-white mb-4">
+                    Additional Notes
+                  </h3>
+                  <div className="bg-gray-900 rounded-lg p-4">
+                    <p className="text-gray-300 text-sm">{viewMember.notes}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Login Credentials - Admin Only */}
+              {isAdmin && viewMember.username && (
+                <div className="mb-6">
+                  <h3 className="text-lg font-bold text-white mb-4">
+                    Login Credentials
+                  </h3>
+                  <div className="bg-gray-900 rounded-lg p-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <div className="text-gray-400 text-sm mb-1">
+                          Username
+                        </div>
+                        <div className="text-white font-mono">
+                          {viewMember.username}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-gray-400 text-sm mb-1">
+                          Password
+                        </div>
+                        <div className="text-white font-mono">
+                          {viewMember.password}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <button
+                onClick={() => setViewMember(null)}
+                className="w-full px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-medium transition"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default Members;
+
+//madurangaparameegunasekara7598
+//FN2yVKxi
+// Welcome to our Gym!
+
+// Your Login Credentials:
+// Username: madurangaparameegunasekara7598
+// Password: FN2yVKxi
+
+// Please keep these credentials safe.
