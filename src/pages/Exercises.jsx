@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 
-const Exercises = ({ onLogout }) => {
+const Exercises = ({ onLogout, onNavigate }) => {
   const [exercises, setExercises] = useState([]);
   const [categories, setCategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState("all");
@@ -10,6 +10,8 @@ const Exercises = ({ onLogout }) => {
   const [showAddCategory, setShowAddCategory] = useState(false);
   const [viewExercise, setViewExercise] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [uploadingFiles, setUploadingFiles] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState({});
 
   // Form states
   const [exerciseForm, setExerciseForm] = useState({
@@ -173,6 +175,144 @@ const Exercises = ({ onLogout }) => {
     }));
   };
 
+  // Handle photo file upload
+  const handlePhotoUpload = async (e, index) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith("image/")) {
+      alert("Please select an image file (jpg, png, gif, etc.)");
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      alert("File size must be less than 5MB");
+      return;
+    }
+
+    try {
+      setUploadingFiles(true);
+      const { storage } = await import("../config/firebase");
+      const { ref, uploadBytesResumable, getDownloadURL } = await import(
+        "firebase/storage"
+      );
+
+      // Create a unique filename
+      const timestamp = Date.now();
+      const fileName = `exercises/photos/${timestamp}_${file.name}`;
+      const storageRef = ref(storage, fileName);
+
+      // Upload file with progress tracking
+      const uploadTask = uploadBytesResumable(storageRef, file);
+
+      uploadTask.on(
+        "state_changed",
+        (snapshot) => {
+          const progress =
+            (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+          setUploadProgress((prev) => ({
+            ...prev,
+            [`photo_${index}`]: progress,
+          }));
+        },
+        (error) => {
+          console.error("Upload error:", error);
+          alert("Failed to upload photo");
+          setUploadingFiles(false);
+        },
+        async () => {
+          // Get download URL
+          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+
+          // Update form with the URL
+          updateArrayField("photoURLs", index, downloadURL);
+
+          setUploadingFiles(false);
+          setUploadProgress((prev) => {
+            const newProgress = { ...prev };
+            delete newProgress[`photo_${index}`];
+            return newProgress;
+          });
+        }
+      );
+    } catch (error) {
+      console.error("Error uploading photo:", error);
+      alert("Failed to upload photo");
+      setUploadingFiles(false);
+    }
+  };
+
+  // Handle video file upload
+  const handleVideoUpload = async (e, index) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith("video/")) {
+      alert("Please select a video file (mp4, mov, avi, etc.)");
+      return;
+    }
+
+    // Validate file size (max 100MB)
+    if (file.size > 100 * 1024 * 1024) {
+      alert("File size must be less than 100MB");
+      return;
+    }
+
+    try {
+      setUploadingFiles(true);
+      const { storage } = await import("../config/firebase");
+      const { ref, uploadBytesResumable, getDownloadURL } = await import(
+        "firebase/storage"
+      );
+
+      // Create a unique filename
+      const timestamp = Date.now();
+      const fileName = `exercises/videos/${timestamp}_${file.name}`;
+      const storageRef = ref(storage, fileName);
+
+      // Upload file with progress tracking
+      const uploadTask = uploadBytesResumable(storageRef, file);
+
+      uploadTask.on(
+        "state_changed",
+        (snapshot) => {
+          const progress =
+            (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+          setUploadProgress((prev) => ({
+            ...prev,
+            [`video_${index}`]: progress,
+          }));
+        },
+        (error) => {
+          console.error("Upload error:", error);
+          alert("Failed to upload video");
+          setUploadingFiles(false);
+        },
+        async () => {
+          // Get download URL
+          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+
+          // Update form with the URL
+          updateArrayField("videoURLs", index, downloadURL);
+
+          setUploadingFiles(false);
+          setUploadProgress((prev) => {
+            const newProgress = { ...prev };
+            delete newProgress[`video_${index}`];
+            return newProgress;
+          });
+        }
+      );
+    } catch (error) {
+      console.error("Error uploading video:", error);
+      alert("Failed to upload video");
+      setUploadingFiles(false);
+    }
+  };
+
   const filteredExercises = exercises.filter((exercise) => {
     const matchesCategory =
       selectedCategory === "all" || exercise.category === selectedCategory;
@@ -240,25 +380,13 @@ const Exercises = ({ onLogout }) => {
           </div>
 
           <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-            <a
-              href="#"
-              className="flex items-center gap-3 px-4 py-3 text-gray-400 hover:bg-gray-700 hover:text-white rounded-lg transition"
+            <button
+              onClick={() => onNavigate("dashboard")}
+              className="flex items-center gap-3 px-4 py-3 w-full text-left text-gray-400 hover:bg-gray-700 hover:text-white rounded-lg transition"
             >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
-                />
-              </svg>
+              {/* ... keep the icon ... */}
               <span className="font-medium">Dashboard</span>
-            </a>
+            </button>
             <a
               href="#"
               className="flex items-center gap-3 px-4 py-3 text-gray-400 hover:bg-gray-700 hover:text-white rounded-lg transition"
@@ -887,44 +1015,108 @@ const Exercises = ({ onLogout }) => {
                 {/* Photo URLs */}
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Photo URLs
+                    Photos
                   </label>
                   {exerciseForm.photoURLs.map((url, idx) => (
-                    <div key={idx} className="flex gap-2 mb-2">
-                      <input
-                        type="url"
-                        value={url}
-                        onChange={(e) =>
-                          updateArrayField("photoURLs", idx, e.target.value)
-                        }
-                        className="flex-1 px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="https://example.com/image.jpg"
-                      />
-                      {exerciseForm.photoURLs.length > 1 && (
-                        <button
-                          onClick={() => removeArrayField("photoURLs", idx)}
-                          className="px-3 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-600 rounded-lg"
-                        >
-                          <svg
-                            className="w-5 h-5"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
+                    <div key={idx} className="mb-3">
+                      <div className="flex gap-2 mb-2">
+                        <input
+                          type="url"
+                          value={url}
+                          onChange={(e) =>
+                            updateArrayField("photoURLs", idx, e.target.value)
+                          }
+                          className="flex-1 px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="https://example.com/image.jpg"
+                        />
+                        {exerciseForm.photoURLs.length > 1 && (
+                          <button
+                            onClick={() => removeArrayField("photoURLs", idx)}
+                            className="px-3 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-600 rounded-lg"
+                            type="button"
                           >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                            />
-                          </svg>
-                        </button>
+                            <svg
+                              className="w-5 h-5"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                              />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+
+                      {/* File Upload Button */}
+                      <div className="flex items-center gap-2">
+                        <label className="cursor-pointer">
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => handlePhotoUpload(e, idx)}
+                            className="hidden"
+                            disabled={uploadingFiles}
+                          />
+                          <div className="px-4 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-600 rounded-lg text-sm font-medium transition inline-flex items-center gap-2">
+                            <svg
+                              className="w-4 h-4"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                              />
+                            </svg>
+                            Upload from Device
+                          </div>
+                        </label>
+
+                        {/* Progress Bar */}
+                        {uploadProgress[`photo_${idx}`] !== undefined && (
+                          <div className="flex-1">
+                            <div className="bg-gray-700 rounded-full h-2 overflow-hidden">
+                              <div
+                                className="bg-blue-600 h-full transition-all duration-300"
+                                style={{
+                                  width: `${uploadProgress[`photo_${idx}`]}%`,
+                                }}
+                              />
+                            </div>
+                            <span className="text-xs text-gray-400 mt-1">
+                              {Math.round(uploadProgress[`photo_${idx}`])}%
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Preview */}
+                      {url && (
+                        <div className="mt-2">
+                          <img
+                            src={url}
+                            alt="Preview"
+                            className="w-full h-32 object-cover rounded-lg"
+                            onError={(e) => {
+                              e.target.style.display = "none";
+                            }}
+                          />
+                        </div>
                       )}
                     </div>
                   ))}
                   <button
                     onClick={() => addArrayField("photoURLs")}
                     className="mt-2 text-sm text-blue-600 hover:text-blue-500 flex items-center gap-1"
+                    type="button"
                   >
                     <svg
                       className="w-4 h-4"
@@ -946,44 +1138,108 @@ const Exercises = ({ onLogout }) => {
                 {/* Video URLs */}
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Video URLs
+                    Videos
                   </label>
                   {exerciseForm.videoURLs.map((url, idx) => (
-                    <div key={idx} className="flex gap-2 mb-2">
-                      <input
-                        type="url"
-                        value={url}
-                        onChange={(e) =>
-                          updateArrayField("videoURLs", idx, e.target.value)
-                        }
-                        className="flex-1 px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="https://youtube.com/watch?v=..."
-                      />
-                      {exerciseForm.videoURLs.length > 1 && (
-                        <button
-                          onClick={() => removeArrayField("videoURLs", idx)}
-                          className="px-3 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-600 rounded-lg"
-                        >
-                          <svg
-                            className="w-5 h-5"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
+                    <div key={idx} className="mb-3">
+                      <div className="flex gap-2 mb-2">
+                        <input
+                          type="url"
+                          value={url}
+                          onChange={(e) =>
+                            updateArrayField("videoURLs", idx, e.target.value)
+                          }
+                          className="flex-1 px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="https://youtube.com/watch?v=... or upload file"
+                        />
+                        {exerciseForm.videoURLs.length > 1 && (
+                          <button
+                            onClick={() => removeArrayField("videoURLs", idx)}
+                            className="px-3 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-600 rounded-lg"
+                            type="button"
                           >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                            />
-                          </svg>
-                        </button>
+                            <svg
+                              className="w-5 h-5"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                              />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+
+                      {/* File Upload Button */}
+                      <div className="flex items-center gap-2">
+                        <label className="cursor-pointer">
+                          <input
+                            type="file"
+                            accept="video/*"
+                            onChange={(e) => handleVideoUpload(e, idx)}
+                            className="hidden"
+                            disabled={uploadingFiles}
+                          />
+                          <div className="px-4 py-2 bg-purple-600/20 hover:bg-purple-600/30 text-purple-600 rounded-lg text-sm font-medium transition inline-flex items-center gap-2">
+                            <svg
+                              className="w-4 h-4"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+                              />
+                            </svg>
+                            Upload from Device
+                          </div>
+                        </label>
+
+                        {/* Progress Bar */}
+                        {uploadProgress[`video_${idx}`] !== undefined && (
+                          <div className="flex-1">
+                            <div className="bg-gray-700 rounded-full h-2 overflow-hidden">
+                              <div
+                                className="bg-purple-600 h-full transition-all duration-300"
+                                style={{
+                                  width: `${uploadProgress[`video_${idx}`]}%`,
+                                }}
+                              />
+                            </div>
+                            <span className="text-xs text-gray-400 mt-1">
+                              {Math.round(uploadProgress[`video_${idx}`])}%
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Video Preview */}
+                      {url && url.startsWith("https://") && (
+                        <div className="mt-2">
+                          <video
+                            src={url}
+                            className="w-full h-48 rounded-lg bg-gray-900"
+                            controls
+                            onError={(e) => {
+                              e.target.style.display = "none";
+                            }}
+                          />
+                        </div>
                       )}
                     </div>
                   ))}
                   <button
                     onClick={() => addArrayField("videoURLs")}
                     className="mt-2 text-sm text-blue-600 hover:text-blue-500 flex items-center gap-1"
+                    type="button"
                   >
                     <svg
                       className="w-4 h-4"
@@ -1186,46 +1442,58 @@ const Exercises = ({ onLogout }) => {
               )}
 
               {/* Videos */}
+
               {viewExercise.videoURLs?.filter((url) => url).length > 0 && (
                 <div className="mb-6">
                   <h3 className="text-lg font-bold text-white mb-3">Videos</h3>
-                  <div className="space-y-2">
+                  <div className="grid grid-cols-1 gap-4">
                     {viewExercise.videoURLs
                       .filter((url) => url)
                       .map((url, idx) => (
-                        <a
-                          key={idx}
-                          href={url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-2 px-4 py-3 bg-gray-900 rounded-lg text-blue-600 hover:text-blue-500 transition"
-                        >
-                          <svg
-                            className="w-5 h-5"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
+                        <div key={idx}>
+                          {url.includes("firebase") ||
+                          url.includes("storage.googleapis.com") ? (
+                            // Uploaded video
+                            <video
+                              src={url}
+                              className="w-full rounded-lg bg-gray-900"
+                              controls
                             />
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                            />
-                          </svg>
-                          Video {idx + 1}
-                        </a>
+                          ) : (
+                            // External video link
+                            <a
+                              href={url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-2 px-4 py-3 bg-gray-900 rounded-lg text-blue-600 hover:text-blue-500 transition"
+                            >
+                              <svg
+                                className="w-5 h-5"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
+                                />
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                                />
+                              </svg>
+                              Video {idx + 1}
+                            </a>
+                          )}
+                        </div>
                       ))}
                   </div>
                 </div>
               )}
-
               {/* Details Grid */}
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
                 <div className="bg-gray-900 rounded-lg p-4">
