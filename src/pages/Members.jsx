@@ -1,6 +1,10 @@
 import { useState, useEffect } from "react";
+import { useAuth } from "../hooks/useAuth";
+import Sidebar from "../components/Sidebar";
 
-const Members = ({ onLogout, onNavigate, currentUser }) => {
+const Members = () => {
+  const { user } = useAuth();
+
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -10,9 +14,7 @@ const Members = ({ onLogout, onNavigate, currentUser }) => {
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterLevel, setFilterLevel] = useState("all");
 
-  // Check if current user is admin/manager
-  const isAdmin =
-    currentUser?.role === "admin" || currentUser?.role === "manager";
+  const isAdmin = user?.role === "admin" || user?.role === "manager";
 
   const [memberForm, setMemberForm] = useState({
     name: "",
@@ -39,7 +41,6 @@ const Members = ({ onLogout, onNavigate, currentUser }) => {
     fetchMembers();
   }, []);
 
-  // Calculate BMI whenever weight or height changes
   useEffect(() => {
     if (memberForm.weight && memberForm.height) {
       calculateBMI(memberForm.weight, memberForm.height);
@@ -73,7 +74,7 @@ const Members = ({ onLogout, onNavigate, currentUser }) => {
 
   const calculateBMI = (weight, height) => {
     const weightKg = parseFloat(weight);
-    const heightM = parseFloat(height) / 100; // Convert cm to meters
+    const heightM = parseFloat(height) / 100;
 
     if (weightKg > 0 && heightM > 0) {
       const bmi = (weightKg / (heightM * heightM)).toFixed(1);
@@ -128,11 +129,9 @@ const Members = ({ onLogout, onNavigate, currentUser }) => {
         "firebase/firestore"
       );
 
-      // Generate credentials
       const username = generateUsername(memberForm.name);
       const password = generatePassword();
 
-      // Prepare member data
       const memberData = {
         ...memberForm,
         username,
@@ -146,10 +145,8 @@ const Members = ({ onLogout, onNavigate, currentUser }) => {
 
       await addDoc(collection(db, "members"), memberData);
 
-      // Show credentials to admin
       setGeneratedCredentials({ username, password, name: memberForm.name });
 
-      // Reset form
       setMemberForm({
         name: "",
         age: "",
@@ -169,7 +166,6 @@ const Members = ({ onLogout, onNavigate, currentUser }) => {
       });
 
       fetchMembers();
-      // Don't close modal yet, show credentials first
     } catch (error) {
       console.error("Error adding member:", error);
       alert("Failed to add member");
@@ -211,6 +207,10 @@ const Members = ({ onLogout, onNavigate, currentUser }) => {
       });
 
       fetchMembers();
+
+      if (viewMember && viewMember.id === id) {
+        setViewMember({ ...viewMember, status: newStatus });
+      }
     } catch (error) {
       console.error("Error updating status:", error);
       alert("Failed to update status");
@@ -239,15 +239,6 @@ const Members = ({ onLogout, onNavigate, currentUser }) => {
     advanced: members.filter((m) => m.level === "advanced").length,
   };
 
-  const handleLogoutClick = () => {
-    if (onLogout) {
-      onLogout();
-    } else {
-      localStorage.removeItem("gymUser");
-      window.location.reload();
-    }
-  };
-
   const closeCredentialsModal = () => {
     setGeneratedCredentials(null);
     setShowAddMember(false);
@@ -266,156 +257,8 @@ const Members = ({ onLogout, onNavigate, currentUser }) => {
 
   return (
     <div className="h-screen w-screen overflow-hidden bg-gray-900 flex">
-      {/* Sidebar */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
+      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
-      <aside
-        className={`fixed lg:static top-0 left-0 z-50 h-full w-64 bg-gray-800 border-r border-gray-700 transform transition-transform duration-300 lg:translate-x-0 flex-shrink-0 ${
-          sidebarOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
-      >
-        <div className="flex flex-col h-full">
-          <div className="flex items-center gap-3 p-6 border-b border-gray-700 flex-shrink-0">
-            <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
-              <svg
-                className="w-6 h-6 text-white"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M13 10V3L4 14h7v7l9-11h-7z"
-                />
-              </svg>
-            </div>
-            <span className="text-xl font-bold text-white">Gym Manager</span>
-          </div>
-
-          <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-            <button
-              onClick={() => onNavigate("dashboard")}
-              className="flex items-center gap-3 px-4 py-3 w-full text-left text-gray-400 hover:bg-gray-700 hover:text-white rounded-lg transition"
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
-                />
-              </svg>
-              <span className="font-medium">Dashboard</span>
-            </button>
-            <button
-              onClick={() => onNavigate("members")}
-              className="flex items-center gap-3 px-4 py-3 w-full text-left bg-blue-600 text-white rounded-lg"
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
-                />
-              </svg>
-              <span className="font-medium">Members</span>
-            </button>
-            {isAdmin && (
-              <>
-                <button
-                  onClick={() => onNavigate("payments")}
-                  className="flex items-center gap-3 px-4 py-3 w-full text-left text-gray-400 hover:bg-gray-700 hover:text-white rounded-lg transition"
-                >
-                  <svg
-                    className="w-5 h-5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"
-                    />
-                  </svg>
-                  <span className="font-medium">Payments</span>
-                </button>
-                <button
-                  onClick={() => onNavigate("exercises")}
-                  className="flex items-center gap-3 px-4 py-3 w-full text-left text-gray-400 hover:bg-gray-700 hover:text-white rounded-lg transition"
-                >
-                  <svg
-                    className="w-5 h-5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
-                    />
-                  </svg>
-                  <span className="font-medium">Exercises</span>
-                </button>
-              </>
-            )}
-          </nav>
-
-          <div className="p-4 border-t border-gray-700 flex-shrink-0">
-            <div className="mb-3 px-4">
-              <div className="text-xs text-gray-500 mb-1">Logged in as</div>
-              <div className="text-sm text-white font-medium">
-                {currentUser?.name || currentUser?.username}
-              </div>
-              <div className="text-xs text-gray-400 capitalize">
-                {currentUser?.role || "Member"}
-              </div>
-            </div>
-            <button
-              onClick={handleLogoutClick}
-              className="flex items-center gap-3 px-4 py-3 w-full text-gray-400 hover:bg-gray-700 hover:text-white rounded-lg transition"
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
-                />
-              </svg>
-              <span className="font-medium">Logout</span>
-            </button>
-          </div>
-        </div>
-      </aside>
-
-      {/* Main Content */}
       <div className="flex-1 flex flex-col h-full overflow-hidden">
         <header className="bg-gray-800 border-b border-gray-700 flex-shrink-0">
           <div className="flex items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
@@ -468,7 +311,6 @@ const Members = ({ onLogout, onNavigate, currentUser }) => {
         </header>
 
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-          {/* Stats Overview */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
             <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
               <div className="text-gray-400 text-sm mb-1">Total Members</div>
@@ -506,7 +348,6 @@ const Members = ({ onLogout, onNavigate, currentUser }) => {
             </div>
           </div>
 
-          {/* Search and Filters */}
           <div className="mb-6 flex flex-col sm:flex-row gap-4">
             <div className="flex-1">
               <input
@@ -538,7 +379,6 @@ const Members = ({ onLogout, onNavigate, currentUser }) => {
             </select>
           </div>
 
-          {/* Members Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredMembers.length === 0 ? (
               <div className="col-span-full text-center py-12">
@@ -652,7 +492,7 @@ const Members = ({ onLogout, onNavigate, currentUser }) => {
       {showAddMember && !generatedCredentials && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-gray-800 rounded-2xl border border-gray-700 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-gray-800 border-b border-gray-700 p-6 flex items-center justify-between">
+            <div className="sticky top-0 bg-gray-800 border-b border-gray-700 p-6 flex items-center justify-between z-10">
               <h2 className="text-2xl font-bold text-white">Add New Member</h2>
               <button
                 onClick={() => setShowAddMember(false)}
@@ -805,7 +645,6 @@ const Members = ({ onLogout, onNavigate, currentUser }) => {
                   />
                 </div>
 
-                {/* BMI Display */}
                 {bmiInfo && (
                   <div className="md:col-span-2">
                     <div className="bg-gray-900 border border-gray-700 rounded-lg p-4">
@@ -978,7 +817,6 @@ const Members = ({ onLogout, onNavigate, currentUser }) => {
                   />
                 </div>
 
-                {/* Additional Notes */}
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-300 mb-2">
                     Additional Notes
@@ -1163,7 +1001,7 @@ const Members = ({ onLogout, onNavigate, currentUser }) => {
       {viewMember && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-gray-800 rounded-2xl border border-gray-700 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-gray-800 border-b border-gray-700 p-6 flex items-center justify-between">
+            <div className="sticky top-0 bg-gray-800 border-b border-gray-700 p-6 flex items-center justify-between z-10">
               <div className="flex items-center gap-4">
                 <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold text-2xl">
                   {viewMember.name?.charAt(0).toUpperCase()}
@@ -1196,7 +1034,6 @@ const Members = ({ onLogout, onNavigate, currentUser }) => {
             </div>
 
             <div className="p-6">
-              {/* Status Controls - Admin Only */}
               {isAdmin && (
                 <div className="mb-6 flex gap-3">
                   <button
@@ -1224,7 +1061,6 @@ const Members = ({ onLogout, onNavigate, currentUser }) => {
                 </div>
               )}
 
-              {/* Personal Information */}
               <div className="mb-6">
                 <h3 className="text-lg font-bold text-white mb-4">
                   Personal Information
@@ -1259,7 +1095,6 @@ const Members = ({ onLogout, onNavigate, currentUser }) => {
                 </div>
               </div>
 
-              {/* Physical Information */}
               <div className="mb-6">
                 <h3 className="text-lg font-bold text-white mb-4">
                   Physical Information
@@ -1298,7 +1133,6 @@ const Members = ({ onLogout, onNavigate, currentUser }) => {
                 </div>
               </div>
 
-              {/* Medical Information */}
               {(viewMember.allergies || viewMember.diseases) && (
                 <div className="mb-6">
                   <h3 className="text-lg font-bold text-white mb-4">
@@ -1331,7 +1165,6 @@ const Members = ({ onLogout, onNavigate, currentUser }) => {
                 </div>
               )}
 
-              {/* Gym Information */}
               <div className="mb-6">
                 <h3 className="text-lg font-bold text-white mb-4">
                   Gym Information
@@ -1368,7 +1201,6 @@ const Members = ({ onLogout, onNavigate, currentUser }) => {
                 </div>
               </div>
 
-              {/* Emergency Contact */}
               {(viewMember.emergencyName || viewMember.emergencyContact) && (
                 <div className="mb-6">
                   <h3 className="text-lg font-bold text-white mb-4">
@@ -1395,7 +1227,6 @@ const Members = ({ onLogout, onNavigate, currentUser }) => {
                 </div>
               )}
 
-              {/* Additional Notes */}
               {viewMember.notes && (
                 <div className="mb-6">
                   <h3 className="text-lg font-bold text-white mb-4">
@@ -1407,7 +1238,6 @@ const Members = ({ onLogout, onNavigate, currentUser }) => {
                 </div>
               )}
 
-              {/* Login Credentials - Admin Only */}
               {isAdmin && viewMember.username && (
                 <div className="mb-6">
                   <h3 className="text-lg font-bold text-white mb-4">
@@ -1451,13 +1281,3 @@ const Members = ({ onLogout, onNavigate, currentUser }) => {
 };
 
 export default Members;
-
-//madurangaparameegunasekara7598
-//FN2yVKxi
-// Welcome to our Gym!
-
-// Your Login Credentials:
-// Username: madurangaparameegunasekara7598
-// Password: FN2yVKxi
-
-// Please keep these credentials safe.

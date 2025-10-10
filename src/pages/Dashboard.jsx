@@ -1,6 +1,12 @@
 import { useState, useEffect } from "react";
+import { Link, useNavigate, useLocation } from "react-router-dom";
+import { useAuth } from "../hooks/useAuth";
 
-const Dashboard = ({ onLogout, onNavigate, currentUser }) => {
+const Dashboard = () => {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+
   const [stats, setStats] = useState({
     totalMembers: 0,
     activeMembers: 0,
@@ -12,8 +18,7 @@ const Dashboard = ({ onLogout, onNavigate, currentUser }) => {
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  const isAdmin =
-    currentUser?.role === "admin" || currentUser?.role === "manager";
+  const isAdmin = user?.role === "admin" || user?.role === "manager";
 
   useEffect(() => {
     if (isAdmin) {
@@ -21,7 +26,7 @@ const Dashboard = ({ onLogout, onNavigate, currentUser }) => {
     } else {
       setLoading(false);
     }
-  }, []);
+  }, [isAdmin]);
 
   const fetchDashboardData = async () => {
     try {
@@ -97,12 +102,8 @@ const Dashboard = ({ onLogout, onNavigate, currentUser }) => {
   };
 
   const handleLogout = () => {
-    if (onLogout) {
-      onLogout();
-    } else {
-      localStorage.removeItem("gymUser");
-      window.location.reload();
-    }
+    logout();
+    navigate("/login");
   };
 
   const formatDate = (timestamp) => {
@@ -114,6 +115,8 @@ const Dashboard = ({ onLogout, onNavigate, currentUser }) => {
       year: "numeric",
     });
   };
+
+  const isActiveRoute = (path) => location.pathname === path;
 
   if (loading) {
     return (
@@ -165,9 +168,13 @@ const Dashboard = ({ onLogout, onNavigate, currentUser }) => {
 
           {/* Navigation */}
           <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-            <button
-              onClick={() => onNavigate("dashboard")}
-              className="flex items-center gap-3 px-4 py-3 w-full text-left bg-blue-600 text-white rounded-lg"
+            <Link
+              to="/dashboard"
+              className={`flex items-center gap-3 px-4 py-3 w-full text-left rounded-lg transition ${
+                isActiveRoute("/dashboard")
+                  ? "bg-blue-600 text-white"
+                  : "text-gray-400 hover:bg-gray-700 hover:text-white"
+              }`}
             >
               <svg
                 className="w-5 h-5"
@@ -183,10 +190,15 @@ const Dashboard = ({ onLogout, onNavigate, currentUser }) => {
                 />
               </svg>
               <span className="font-medium">Dashboard</span>
-            </button>
-            <button
-              onClick={() => onNavigate("members")}
-              className="flex items-center gap-3 px-4 py-3 w-full text-left text-gray-400 hover:bg-gray-700 hover:text-white rounded-lg transition"
+            </Link>
+
+            <Link
+              to="/members"
+              className={`flex items-center gap-3 px-4 py-3 w-full text-left rounded-lg transition ${
+                isActiveRoute("/members")
+                  ? "bg-blue-600 text-white"
+                  : "text-gray-400 hover:bg-gray-700 hover:text-white"
+              }`}
             >
               <svg
                 className="w-5 h-5"
@@ -202,29 +214,15 @@ const Dashboard = ({ onLogout, onNavigate, currentUser }) => {
                 />
               </svg>
               <span className="font-medium">Members</span>
-            </button>
-            <button
-              onClick={() => onNavigate("schedules")}
-              className="flex items-center gap-3 px-4 py-3 w-full text-left text-gray-400 hover:bg-gray-700 hover:text-white rounded-lg transition"
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                />
-              </svg>
-              <span className="font-medium">Schedules</span>
-            </button>
-            <button
-              onClick={() => onNavigate("exercises")}
-              className="flex items-center gap-3 px-4 py-3 w-full text-left text-gray-400 hover:bg-gray-700 hover:text-white rounded-lg transition"
+            </Link>
+
+            <Link
+              to="/exercises"
+              className={`flex items-center gap-3 px-4 py-3 w-full text-left rounded-lg transition ${
+                isActiveRoute("/exercises")
+                  ? "bg-blue-600 text-white"
+                  : "text-gray-400 hover:bg-gray-700 hover:text-white"
+              }`}
             >
               <svg
                 className="w-5 h-5"
@@ -240,10 +238,35 @@ const Dashboard = ({ onLogout, onNavigate, currentUser }) => {
                 />
               </svg>
               <span className="font-medium">Exercises</span>
-            </button>
+            </Link>
+
+            <Link
+              to="/schedules"
+              className={`flex items-center gap-3 px-4 py-3 w-full text-left rounded-lg transition ${
+                isActiveRoute("/schedules")
+                  ? "bg-blue-600 text-white"
+                  : "text-gray-400 hover:bg-gray-700 hover:text-white"
+              }`}
+            >
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                />
+              </svg>
+              <span className="font-medium">Schedules</span>
+            </Link>
+
             <button
-              onClick={() => onNavigate("payments")}
               className="flex items-center gap-3 px-4 py-3 w-full text-left text-gray-400 hover:bg-gray-700 hover:text-white rounded-lg transition"
+              disabled
             >
               <svg
                 className="w-5 h-5"
@@ -267,10 +290,10 @@ const Dashboard = ({ onLogout, onNavigate, currentUser }) => {
             <div className="mb-3 px-4">
               <div className="text-xs text-gray-500 mb-1">Logged in as</div>
               <div className="text-sm text-white font-medium">
-                {currentUser?.name || currentUser?.username}
+                {user?.name || user?.username}
               </div>
               <div className="text-xs text-gray-400 capitalize">
-                {currentUser?.role || "Admin"}
+                {user?.role || "Admin"}
               </div>
             </div>
             <button
@@ -326,13 +349,11 @@ const Dashboard = ({ onLogout, onNavigate, currentUser }) => {
             </div>
             <div className="flex items-center gap-4">
               <span className="text-sm text-gray-400 hidden sm:inline">
-                Welcome back, {currentUser?.name || currentUser?.username}
+                Welcome back, {user?.name || user?.username}
               </span>
               <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center">
                 <span className="text-white font-semibold">
-                  {(currentUser?.name || currentUser?.username)
-                    ?.charAt(0)
-                    .toUpperCase()}
+                  {(user?.name || user?.username)?.charAt(0).toUpperCase()}
                 </span>
               </div>
             </div>
@@ -362,9 +383,7 @@ const Dashboard = ({ onLogout, onNavigate, currentUser }) => {
                   </svg>
                 </div>
               </div>
-              <h3 className="text-gray-400 text-sm font-medium mb-1">
-                Total Members
-              </h3>
+              <p className="text-gray-400 text-sm mb-1">Total Members</p>
               <p className="text-3xl font-bold text-white">
                 {stats.totalMembers}
               </p>
@@ -389,9 +408,7 @@ const Dashboard = ({ onLogout, onNavigate, currentUser }) => {
                   </svg>
                 </div>
               </div>
-              <h3 className="text-gray-400 text-sm font-medium mb-1">
-                Active Members
-              </h3>
+              <p className="text-gray-400 text-sm mb-1">Active Members</p>
               <p className="text-3xl font-bold text-white">
                 {stats.activeMembers}
               </p>
@@ -416,9 +433,7 @@ const Dashboard = ({ onLogout, onNavigate, currentUser }) => {
                   </svg>
                 </div>
               </div>
-              <h3 className="text-gray-400 text-sm font-medium mb-1">
-                Total Revenue
-              </h3>
+              <p className="text-gray-400 text-sm mb-1">Total Revenue</p>
               <p className="text-3xl font-bold text-white">
                 ${stats.totalRevenue.toLocaleString()}
               </p>
@@ -443,9 +458,7 @@ const Dashboard = ({ onLogout, onNavigate, currentUser }) => {
                   </svg>
                 </div>
               </div>
-              <h3 className="text-gray-400 text-sm font-medium mb-1">
-                Pending Payments
-              </h3>
+              <p className="text-gray-400 text-sm mb-1">Pending Payments</p>
               <p className="text-3xl font-bold text-white">
                 {stats.pendingPayments}
               </p>
@@ -456,36 +469,23 @@ const Dashboard = ({ onLogout, onNavigate, currentUser }) => {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Recent Members */}
             <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-lg font-bold text-white">Recent Members</h2>
-                <button
-                  onClick={() => onNavigate("members")}
-                  className="text-sm text-blue-600 hover:text-blue-500"
-                >
-                  View All
-                </button>
-              </div>
-              <div className="space-y-4">
+              <h2 className="text-xl font-bold text-white mb-4">
+                Recent Members
+              </h2>
+              <div className="space-y-3">
                 {recentMembers.length === 0 ? (
-                  <p className="text-gray-400 text-center py-8">
+                  <p className="text-gray-400 text-center py-4">
                     No members yet
                   </p>
                 ) : (
                   recentMembers.map((member) => (
                     <div
                       key={member.id}
-                      className="flex items-center gap-4 p-3 bg-gray-900 rounded-lg"
+                      className="flex items-center justify-between p-3 bg-gray-900 rounded-lg"
                     >
-                      <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
-                        <span className="text-white font-semibold text-sm">
-                          {member.name?.charAt(0).toUpperCase()}
-                        </span>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-white font-medium truncate">
-                          {member.name}
-                        </p>
-                        <p className="text-gray-400 text-sm">
+                      <div>
+                        <p className="text-white font-medium">{member.name}</p>
+                        <p className="text-sm text-gray-400">
                           Joined {formatDate(member.joinDate)}
                         </p>
                       </div>
@@ -506,20 +506,12 @@ const Dashboard = ({ onLogout, onNavigate, currentUser }) => {
 
             {/* Recent Payments */}
             <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-lg font-bold text-white">
-                  Recent Payments
-                </h2>
-                <button
-                  onClick={() => onNavigate("payments")}
-                  className="text-sm text-blue-600 hover:text-blue-500"
-                >
-                  View All
-                </button>
-              </div>
-              <div className="space-y-4">
+              <h2 className="text-xl font-bold text-white mb-4">
+                Recent Payments
+              </h2>
+              <div className="space-y-3">
                 {recentPayments.length === 0 ? (
-                  <p className="text-gray-400 text-center py-8">
+                  <p className="text-gray-400 text-center py-4">
                     No payments yet
                   </p>
                 ) : (
@@ -528,30 +520,13 @@ const Dashboard = ({ onLogout, onNavigate, currentUser }) => {
                       key={payment.id}
                       className="flex items-center justify-between p-3 bg-gray-900 rounded-lg"
                     >
-                      <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 bg-purple-600/20 rounded-lg flex items-center justify-center">
-                          <svg
-                            className="w-5 h-5 text-purple-600"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"
-                            />
-                          </svg>
-                        </div>
-                        <div>
-                          <p className="text-white font-medium">
-                            ${payment.amount}
-                          </p>
-                          <p className="text-gray-400 text-sm">
-                            {formatDate(payment.date)}
-                          </p>
-                        </div>
+                      <div>
+                        <p className="text-white font-medium">
+                          ${payment.amount}
+                        </p>
+                        <p className="text-sm text-gray-400">
+                          {formatDate(payment.date)}
+                        </p>
                       </div>
                       <span
                         className={`px-3 py-1 rounded-full text-xs font-medium ${

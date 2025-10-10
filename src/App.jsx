@@ -1,165 +1,101 @@
-import { useState, useEffect } from "react";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { AuthProvider } from "./hooks/useAuth";
+import ProtectedRoute from "./components/ProtectedRoute";
+import RoleRoute from "./components/RoleRoute";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
-import Exercises from "./pages/Exercises";
 import Members from "./pages/Members";
+import Exercises from "./pages/Exercises";
 import Schedules from "./pages/Schedules";
 import MemberDashboard from "./pages/members/MemberDashboard";
+import NotFound from "./pages/NotFound";
 
 function App() {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [currentPage, setCurrentPage] = useState("dashboard");
+  return (
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          {/* Public Routes */}
+          <Route path="/login" element={<Login />} />
 
-  useEffect(() => {
-    // Check if user is already logged in
-    const storedUser = localStorage.getItem("gymUser");
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
-    }
-    setLoading(false);
-  }, []);
+          {/* Protected Routes - Admin/Manager Only */}
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute>
+                <RoleRoute allowedRoles={["admin", "manager"]}>
+                  <Dashboard />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/members"
+            element={
+              <ProtectedRoute>
+                <RoleRoute allowedRoles={["admin", "manager"]}>
+                  <Members />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
 
-  const handleLoginSuccess = (userData) => {
-    setUser(userData);
-    // Navigate based on user role
-    if (userData.role === "member") {
-      setCurrentPage("member-dashboard");
-    } else {
-      setCurrentPage("dashboard");
-    }
-  };
+          {/* Protected Routes - All Authenticated Users */}
+          <Route
+            path="/exercises"
+            element={
+              <ProtectedRoute>
+                <Exercises />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/schedules"
+            element={
+              <ProtectedRoute>
+                <Schedules />
+              </ProtectedRoute>
+            }
+          />
 
-  const handleLogout = () => {
-    setUser(null);
-    localStorage.removeItem("gymUser");
-    setCurrentPage("dashboard");
-  };
+          {/* Protected Routes - Members Only */}
+          <Route
+            path="/member-dashboard"
+            element={
+              <ProtectedRoute>
+                <RoleRoute allowedRoles={["member"]}>
+                  <MemberDashboard />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
 
-  const handleNavigate = (page) => {
-    // Check permissions before navigation
-    const isAdmin = user?.role === "admin" || user?.role === "manager";
+          {/* Root redirect based on user role */}
+          <Route path="/" element={<RootRedirect />} />
 
-    if (user?.role === "member") {
-      // Members can only access certain pages
-      const allowedPages = ["member-dashboard", "exercises", "schedules"];
-      if (allowedPages.includes(page)) {
-        setCurrentPage(page);
-      } else {
-        alert("You don't have permission to access this page");
-      }
-    } else if (isAdmin) {
-      // Admin/Manager can access all pages
-      setCurrentPage(page);
-    }
-  };
+          {/* 404 Not Found */}
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
+  );
+}
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-400">Loading...</p>
-        </div>
-      </div>
-    );
+// Component to handle root redirect based on user role
+function RootRedirect() {
+  const storedUser = localStorage.getItem("gymUser");
+
+  if (!storedUser) {
+    return <Navigate to="/login" replace />;
   }
 
-  if (!user) {
-    return <Login onLoginSuccess={handleLoginSuccess} />;
+  const user = JSON.parse(storedUser);
+
+  if (user.role === "member") {
+    return <Navigate to="/member-dashboard" replace />;
   }
 
-  // Render current page based on route and user role
-  const isAdmin = user.role === "admin" || user.role === "manager";
-  const isMember = user.role === "member";
-
-  // Member routes
-  if (isMember) {
-    switch (currentPage) {
-      case "member-dashboard":
-        return (
-          <MemberDashboard
-            onLogout={handleLogout}
-            onNavigate={handleNavigate}
-            currentUser={user}
-          />
-        );
-      case "exercises":
-        return (
-          <Exercises
-            onLogout={handleLogout}
-            onNavigate={handleNavigate}
-            currentUser={user}
-          />
-        );
-      case "schedules":
-        return (
-          <Schedules
-            onLogout={handleLogout}
-            onNavigate={handleNavigate}
-            currentUser={user}
-          />
-        );
-      default:
-        return (
-          <MemberDashboard
-            onLogout={handleLogout}
-            onNavigate={handleNavigate}
-            currentUser={user}
-          />
-        );
-    }
-  }
-
-  // Admin/Manager routes
-  if (isAdmin) {
-    switch (currentPage) {
-      case "dashboard":
-        return (
-          <Dashboard
-            onLogout={handleLogout}
-            onNavigate={handleNavigate}
-            currentUser={user}
-          />
-        );
-      case "exercises":
-        return (
-          <Exercises
-            onLogout={handleLogout}
-            onNavigate={handleNavigate}
-            currentUser={user}
-          />
-        );
-      case "members":
-        return (
-          <Members
-            onLogout={handleLogout}
-            onNavigate={handleNavigate}
-            currentUser={user}
-          />
-        );
-      case "schedules":
-        return (
-          <Schedules
-            onLogout={handleLogout}
-            onNavigate={handleNavigate}
-            currentUser={user}
-          />
-        );
-      // Add more cases for other pages (Payments, etc.)
-      default:
-        return (
-          <Dashboard
-            onLogout={handleLogout}
-            onNavigate={handleNavigate}
-            currentUser={user}
-          />
-        );
-    }
-  }
-
-  // Fallback
-  return <Login onLoginSuccess={handleLoginSuccess} />;
+  return <Navigate to="/dashboard" replace />;
 }
 
 export default App;
