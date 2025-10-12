@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
+import Sidebar from "../components/Sidebar";
 
 const Dashboard = () => {
   const { user, logout } = useAuth();
@@ -77,7 +78,7 @@ const Dashboard = () => {
       // Fetch recent payments
       const recentPaymentsQuery = query(
         paymentsRef,
-        orderBy("date", "desc"),
+        orderBy("paidAt", "desc"),
         limit(5)
       );
       const recentPaymentsSnapshot = await getDocs(recentPaymentsQuery);
@@ -101,11 +102,6 @@ const Dashboard = () => {
     }
   };
 
-  const handleLogout = () => {
-    logout();
-    navigate("/login");
-  };
-
   const formatDate = (timestamp) => {
     if (!timestamp) return "N/A";
     const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
@@ -115,8 +111,6 @@ const Dashboard = () => {
       year: "numeric",
     });
   };
-
-  const isActiveRoute = (path) => location.pathname === path;
 
   if (loading) {
     return (
@@ -131,203 +125,17 @@ const Dashboard = () => {
 
   return (
     <div className="h-screen w-screen overflow-hidden bg-gray-900 flex">
-      {/* Mobile Sidebar Overlay */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
+      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
-      {/* Sidebar */}
-      <aside
-        className={`fixed lg:static top-0 left-0 z-50 h-full w-64 bg-gray-800 border-r border-gray-700 transform transition-transform duration-300 lg:translate-x-0 flex-shrink-0 ${
-          sidebarOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
-      >
-        <div className="flex flex-col h-full">
-          {/* Logo */}
-          <div className="flex items-center gap-3 p-6 border-b border-gray-700 flex-shrink-0">
-            <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
-              <svg
-                className="w-6 h-6 text-white"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M13 10V3L4 14h7v7l9-11h-7z"
-                />
-              </svg>
-            </div>
-            <span className="text-xl font-bold text-white">Gym Manager</span>
-          </div>
-
-          {/* Navigation */}
-          <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-            <Link
-              to="/dashboard"
-              className={`flex items-center gap-3 px-4 py-3 w-full text-left rounded-lg transition ${
-                isActiveRoute("/dashboard")
-                  ? "bg-blue-600 text-white"
-                  : "text-gray-400 hover:bg-gray-700 hover:text-white"
-              }`}
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
-                />
-              </svg>
-              <span className="font-medium">Dashboard</span>
-            </Link>
-
-            <Link
-              to="/members"
-              className={`flex items-center gap-3 px-4 py-3 w-full text-left rounded-lg transition ${
-                isActiveRoute("/members")
-                  ? "bg-blue-600 text-white"
-                  : "text-gray-400 hover:bg-gray-700 hover:text-white"
-              }`}
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
-                />
-              </svg>
-              <span className="font-medium">Members</span>
-            </Link>
-
-            <Link
-              to="/exercises"
-              className={`flex items-center gap-3 px-4 py-3 w-full text-left rounded-lg transition ${
-                isActiveRoute("/exercises")
-                  ? "bg-blue-600 text-white"
-                  : "text-gray-400 hover:bg-gray-700 hover:text-white"
-              }`}
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
-                />
-              </svg>
-              <span className="font-medium">Exercises</span>
-            </Link>
-
-            <Link
-              to="/schedules"
-              className={`flex items-center gap-3 px-4 py-3 w-full text-left rounded-lg transition ${
-                isActiveRoute("/schedules")
-                  ? "bg-blue-600 text-white"
-                  : "text-gray-400 hover:bg-gray-700 hover:text-white"
-              }`}
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                />
-              </svg>
-              <span className="font-medium">Schedules</span>
-            </Link>
-
-            <button
-              className="flex items-center gap-3 px-4 py-3 w-full text-left text-gray-400 hover:bg-gray-700 hover:text-white rounded-lg transition"
-              disabled
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"
-                />
-              </svg>
-              <span className="font-medium">Payments</span>
-            </button>
-          </nav>
-
-          {/* Logout */}
-          <div className="p-4 border-t border-gray-700 flex-shrink-0">
-            <div className="mb-3 px-4">
-              <div className="text-xs text-gray-500 mb-1">Logged in as</div>
-              <div className="text-sm text-white font-medium">
-                {user?.name || user?.username}
-              </div>
-              <div className="text-xs text-gray-400 capitalize">
-                {user?.role || "Admin"}
-              </div>
-            </div>
-            <button
-              onClick={handleLogout}
-              className="flex items-center gap-3 px-4 py-3 w-full text-gray-400 hover:bg-gray-700 hover:text-white rounded-lg transition"
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
-                />
-              </svg>
-              <span className="font-medium">Logout</span>
-            </button>
-          </div>
-        </div>
-      </aside>
-
-      {/* Main Content Area */}
+      {/* Main Content */}
       <div className="flex-1 flex flex-col h-full overflow-hidden">
-        {/* Top Bar */}
+        {/* Header */}
         <header className="bg-gray-800 border-b border-gray-700 flex-shrink-0">
           <div className="flex items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
             <div className="flex items-center gap-4">
               <button
                 onClick={() => setSidebarOpen(true)}
-                className="lg:hidden p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg"
+                className="lg:hidden p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition"
               >
                 <svg
                   className="w-6 h-6"
@@ -435,16 +243,16 @@ const Dashboard = () => {
               </div>
               <p className="text-gray-400 text-sm mb-1">Total Revenue</p>
               <p className="text-3xl font-bold text-white">
-                ${stats.totalRevenue.toLocaleString()}
+                Rs. {stats.totalRevenue.toLocaleString()}
               </p>
             </div>
 
             {/* Pending Payments */}
             <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
               <div className="flex items-center justify-between mb-4">
-                <div className="w-12 h-12 bg-orange-600/20 rounded-lg flex items-center justify-center">
+                <div className="w-12 h-12 bg-yellow-600/20 rounded-lg flex items-center justify-center">
                   <svg
-                    className="w-6 h-6 text-orange-600"
+                    className="w-6 h-6 text-yellow-600"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -465,83 +273,238 @@ const Dashboard = () => {
             </div>
           </div>
 
-          {/* Recent Activity */}
+          {/* Recent Activity Section */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Recent Members */}
             <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
-              <h2 className="text-xl font-bold text-white mb-4">
-                Recent Members
-              </h2>
-              <div className="space-y-3">
-                {recentMembers.length === 0 ? (
-                  <p className="text-gray-400 text-center py-4">
-                    No members yet
-                  </p>
-                ) : (
-                  recentMembers.map((member) => (
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-bold text-white">Recent Members</h2>
+                <Link
+                  to="/members"
+                  className="text-sm text-blue-600 hover:text-blue-500 transition"
+                >
+                  View All
+                </Link>
+              </div>
+
+              {recentMembers.length === 0 ? (
+                <div className="text-center py-8">
+                  <p className="text-gray-400">No recent members</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {recentMembers.map((member) => (
                     <div
                       key={member.id}
-                      className="flex items-center justify-between p-3 bg-gray-900 rounded-lg"
+                      className="flex items-center gap-4 p-4 bg-gray-900 rounded-lg hover:bg-gray-900/50 transition"
                     >
-                      <div>
-                        <p className="text-white font-medium">{member.name}</p>
-                        <p className="text-sm text-gray-400">
-                          Joined {formatDate(member.joinDate)}
+                      <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-purple-600 rounded-full flex items-center justify-center flex-shrink-0">
+                        <span className="text-white font-bold">
+                          {member.name.charAt(0).toUpperCase()}
+                        </span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white font-medium truncate">
+                          {member.name}
+                        </p>
+                        <p className="text-gray-400 text-sm truncate">
+                          {member.email}
                         </p>
                       </div>
-                      <span
-                        className={`px-3 py-1 rounded-full text-xs font-medium ${
-                          member.status === "active"
-                            ? "bg-green-600/20 text-green-600"
-                            : "bg-gray-600/20 text-gray-400"
-                        }`}
-                      >
-                        {member.status}
-                      </span>
+                      <div className="text-right">
+                        <p className="text-xs text-gray-500">
+                          {formatDate(member.joinDate)}
+                        </p>
+                        <span
+                          className={`inline-block px-2 py-1 text-xs font-medium rounded mt-1 ${
+                            member.status === "active"
+                              ? "bg-green-600/20 text-green-600"
+                              : "bg-gray-600/20 text-gray-400"
+                          }`}
+                        >
+                          {member.status}
+                        </span>
+                      </div>
                     </div>
-                  ))
-                )}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Recent Payments */}
             <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
-              <h2 className="text-xl font-bold text-white mb-4">
-                Recent Payments
-              </h2>
-              <div className="space-y-3">
-                {recentPayments.length === 0 ? (
-                  <p className="text-gray-400 text-center py-4">
-                    No payments yet
-                  </p>
-                ) : (
-                  recentPayments.map((payment) => (
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-bold text-white">
+                  Recent Payments
+                </h2>
+                <Link
+                  to="/payments"
+                  className="text-sm text-blue-600 hover:text-blue-500 transition"
+                >
+                  View All
+                </Link>
+              </div>
+
+              {recentPayments.length === 0 ? (
+                <div className="text-center py-8">
+                  <p className="text-gray-400">No recent payments</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {recentPayments.map((payment) => (
                     <div
                       key={payment.id}
-                      className="flex items-center justify-between p-3 bg-gray-900 rounded-lg"
+                      className="flex items-center justify-between p-4 bg-gray-900 rounded-lg hover:bg-gray-900/50 transition"
                     >
-                      <div>
-                        <p className="text-white font-medium">
-                          ${payment.amount}
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 bg-green-600/20 rounded-full flex items-center justify-center flex-shrink-0">
+                          <svg
+                            className="w-6 h-6 text-green-600"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M5 13l4 4L19 7"
+                            />
+                          </svg>
+                        </div>
+                        <div>
+                          <p className="text-white font-medium">
+                            {payment.memberName}
+                          </p>
+                          <p className="text-gray-400 text-sm">
+                            {payment.paymentMethod}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-white font-bold">
+                          Rs. {payment.amount?.toLocaleString()}
                         </p>
-                        <p className="text-sm text-gray-400">
-                          {formatDate(payment.date)}
+                        <p className="text-xs text-gray-500">
+                          {formatDate(payment.paidAt)}
                         </p>
                       </div>
-                      <span
-                        className={`px-3 py-1 rounded-full text-xs font-medium ${
-                          payment.status === "completed"
-                            ? "bg-green-600/20 text-green-600"
-                            : "bg-orange-600/20 text-orange-600"
-                        }`}
-                      >
-                        {payment.status}
-                      </span>
                     </div>
-                  ))
-                )}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
+          </div>
+
+          {/* Quick Actions */}
+          <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Link
+              to="/members"
+              className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-xl p-6 hover:from-blue-700 hover:to-blue-800 transition group"
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center">
+                  <svg
+                    className="w-6 h-6 text-white"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"
+                    />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-white font-bold">Add Member</p>
+                  <p className="text-white/80 text-sm">Register new member</p>
+                </div>
+              </div>
+            </Link>
+
+            <Link
+              to="/payments"
+              className="bg-gradient-to-br from-green-600 to-green-700 rounded-xl p-6 hover:from-green-700 hover:to-green-800 transition group"
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center">
+                  <svg
+                    className="w-6 h-6 text-white"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"
+                    />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-white font-bold">Record Payment</p>
+                  <p className="text-white/80 text-sm">Log member payment</p>
+                </div>
+              </div>
+            </Link>
+
+            <Link
+              to="/schedules"
+              className="bg-gradient-to-br from-purple-600 to-purple-700 rounded-xl p-6 hover:from-purple-700 hover:to-purple-800 transition group"
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center">
+                  <svg
+                    className="w-6 h-6 text-white"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                    />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-white font-bold">Create Schedule</p>
+                  <p className="text-white/80 text-sm">Plan workout routine</p>
+                </div>
+              </div>
+            </Link>
+
+            <Link
+              to="/exercises"
+              className="bg-gradient-to-br from-orange-600 to-orange-700 rounded-xl p-6 hover:from-orange-700 hover:to-orange-800 transition group"
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center">
+                  <svg
+                    className="w-6 h-6 text-white"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+                    />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-white font-bold">Add Exercise</p>
+                  <p className="text-white/80 text-sm">Create new exercise</p>
+                </div>
+              </div>
+            </Link>
           </div>
         </main>
       </div>
