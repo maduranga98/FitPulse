@@ -8,9 +8,7 @@ const MemberDashboard = () => {
   const navigate = useNavigate();
 
   const [memberData, setMemberData] = useState(null);
-  const [schedules, setSchedules] = useState([]);
-  const [recentWorkouts, setRecentWorkouts] = useState([]);
-  const [weightLogs, setWeightLogs] = useState([]);
+  const [paymentStatus, setPaymentStatus] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -22,10 +20,11 @@ const MemberDashboard = () => {
   const fetchMemberData = async () => {
     try {
       const { db } = await import("../../config/firebase");
-      const { doc, getDoc, collection, query, where, getDocs, orderBy, limit } =
-        await import("firebase/firestore");
+      const { doc, getDoc, collection, query, where, getDocs } = await import(
+        "firebase/firestore"
+      );
 
-      // Fetch member's full data
+      // Fetch member data
       const memberRef = doc(db, "members", currentUser.id);
       const memberSnap = await getDoc(memberRef);
 
@@ -33,56 +32,21 @@ const MemberDashboard = () => {
         setMemberData({ id: memberSnap.id, ...memberSnap.data() });
       }
 
-      // Fetch active schedules
-      const schedulesQuery = query(
-        collection(db, "schedules"),
+      // Check payment status for current month
+      const currentMonth = new Date().toISOString().slice(0, 7);
+      const paymentsQuery = query(
+        collection(db, "payments"),
         where("memberId", "==", currentUser.id),
-        where("status", "==", "active")
+        where("month", "==", currentMonth)
       );
-      const schedulesSnapshot = await getDocs(schedulesQuery);
-      setSchedules(
-        schedulesSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
-      );
-
-      // Fetch recent workouts
-      const workoutsQuery = query(
-        collection(db, "workoutLogs"),
-        where("memberId", "==", currentUser.id),
-        orderBy("completedAt", "desc"),
-        limit(5)
-      );
-      const workoutsSnapshot = await getDocs(workoutsQuery);
-      setRecentWorkouts(
-        workoutsSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
-      );
-
-      // Fetch recent weight logs
-      const weightQuery = query(
-        collection(db, "weightLogs"),
-        where("memberId", "==", currentUser.id),
-        orderBy("date", "desc"),
-        limit(5)
-      );
-      const weightSnapshot = await getDocs(weightQuery);
-      setWeightLogs(
-        weightSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
-      );
+      const paymentsSnapshot = await getDocs(paymentsQuery);
+      setPaymentStatus(paymentsSnapshot.empty ? "unpaid" : "paid");
 
       setLoading(false);
     } catch (error) {
       console.error("Error fetching member data:", error);
       setLoading(false);
     }
-  };
-
-  const formatDate = (timestamp) => {
-    if (!timestamp) return "N/A";
-    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-    return date.toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
   };
 
   const getMotivationalMessage = () => {
@@ -120,30 +84,37 @@ const MemberDashboard = () => {
           </p>
         </div>
 
-        {/* Quick Action Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-6 sm:mb-8">
+        {/* Payment Alert */}
+        {paymentStatus === "unpaid" && (
+          <div className="mb-6 bg-red-600/10 border border-red-600/30 rounded-xl p-4 flex items-center gap-3">
+            <svg
+              className="w-6 h-6 text-red-600 flex-shrink-0"
+              fill="currentColor"
+              viewBox="0 0 20 20"
+            >
+              <path
+                fillRule="evenodd"
+                d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                clipRule="evenodd"
+              />
+            </svg>
+            <div className="flex-1">
+              <p className="text-red-600 font-medium text-sm sm:text-base">
+                Payment Pending - Please contact admin
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Quick Actions */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           <button
             onClick={() => navigate("/member/workouts")}
-            className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-xl p-5 sm:p-6 text-left hover:from-blue-700 hover:to-blue-800 transition group active:scale-95"
+            className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-xl p-6 text-left hover:from-blue-700 hover:to-blue-800 transition active:scale-95"
           >
-            <div className="flex items-center justify-between mb-3 sm:mb-4">
-              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-white/20 rounded-lg flex items-center justify-center group-hover:scale-110 transition">
-                <svg
-                  className="w-5 h-5 sm:w-6 sm:h-6 text-white"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
-                  />
-                </svg>
-              </div>
+            <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center mb-4">
               <svg
-                className="w-4 h-4 sm:w-5 sm:h-5 text-white/60"
+                className="w-6 h-6 text-white"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -152,40 +123,21 @@ const MemberDashboard = () => {
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeWidth={2}
-                  d="M9 5l7 7-7 7"
+                  d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
                 />
               </svg>
             </div>
-            <h3 className="text-white font-bold text-base sm:text-lg mb-1">
-              Start Workout
-            </h3>
-            <p className="text-white/80 text-xs sm:text-sm">
-              Log your today's exercises
-            </p>
+            <h3 className="text-white font-bold text-lg mb-1">Workouts</h3>
+            <p className="text-white/80 text-sm">Log exercises</p>
           </button>
 
           <button
             onClick={() => navigate("/member/progress")}
-            className="bg-gradient-to-br from-purple-600 to-purple-700 rounded-xl p-5 sm:p-6 text-left hover:from-purple-700 hover:to-purple-800 transition group active:scale-95"
+            className="bg-gradient-to-br from-purple-600 to-purple-700 rounded-xl p-6 text-left hover:from-purple-700 hover:to-purple-800 transition active:scale-95"
           >
-            <div className="flex items-center justify-between mb-3 sm:mb-4">
-              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-white/20 rounded-lg flex items-center justify-center group-hover:scale-110 transition">
-                <svg
-                  className="w-5 h-5 sm:w-6 sm:h-6 text-white"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
-                  />
-                </svg>
-              </div>
+            <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center mb-4">
               <svg
-                className="w-4 h-4 sm:w-5 sm:h-5 text-white/60"
+                className="w-6 h-6 text-white"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -194,40 +146,21 @@ const MemberDashboard = () => {
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeWidth={2}
-                  d="M9 5l7 7-7 7"
+                  d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
                 />
               </svg>
             </div>
-            <h3 className="text-white font-bold text-base sm:text-lg mb-1">
-              View Progress
-            </h3>
-            <p className="text-white/80 text-xs sm:text-sm">
-              Track your improvements
-            </p>
+            <h3 className="text-white font-bold text-lg mb-1">Progress</h3>
+            <p className="text-white/80 text-sm">Track stats</p>
           </button>
 
           <button
-            onClick={() => navigate("/schedules")}
-            className="bg-gradient-to-br from-green-600 to-green-700 rounded-xl p-5 sm:p-6 text-left hover:from-green-700 hover:to-green-800 transition group active:scale-95"
+            onClick={() => navigate("/member-schedules")}
+            className="bg-gradient-to-br from-green-600 to-green-700 rounded-xl p-6 text-left hover:from-green-700 hover:to-green-800 transition active:scale-95"
           >
-            <div className="flex items-center justify-between mb-3 sm:mb-4">
-              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-white/20 rounded-lg flex items-center justify-center group-hover:scale-110 transition">
-                <svg
-                  className="w-5 h-5 sm:w-6 sm:h-6 text-white"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                  />
-                </svg>
-              </div>
+            <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center mb-4">
               <svg
-                className="w-4 h-4 sm:w-5 sm:h-5 text-white/60"
+                className="w-6 h-6 text-white"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -236,40 +169,21 @@ const MemberDashboard = () => {
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeWidth={2}
-                  d="M9 5l7 7-7 7"
+                  d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
                 />
               </svg>
             </div>
-            <h3 className="text-white font-bold text-base sm:text-lg mb-1">
-              My Schedule
-            </h3>
-            <p className="text-white/80 text-xs sm:text-sm">
-              View workout plan
-            </p>
+            <h3 className="text-white font-bold text-lg mb-1">Schedule</h3>
+            <p className="text-white/80 text-sm">View plan</p>
           </button>
 
           <button
-            onClick={() => navigate("/exercises")}
-            className="bg-gradient-to-br from-orange-600 to-orange-700 rounded-xl p-5 sm:p-6 text-left hover:from-orange-700 hover:to-orange-800 transition group active:scale-95"
+            onClick={() => navigate("/member-settings")}
+            className="bg-gradient-to-br from-orange-600 to-orange-700 rounded-xl p-6 text-left hover:from-orange-700 hover:to-orange-800 transition active:scale-95"
           >
-            <div className="flex items-center justify-between mb-3 sm:mb-4">
-              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-white/20 rounded-lg flex items-center justify-center group-hover:scale-110 transition">
-                <svg
-                  className="w-5 h-5 sm:w-6 sm:h-6 text-white"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
-                  />
-                </svg>
-              </div>
+            <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center mb-4">
               <svg
-                className="w-4 h-4 sm:w-5 sm:h-5 text-white/60"
+                className="w-6 h-6 text-white"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -278,26 +192,28 @@ const MemberDashboard = () => {
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeWidth={2}
-                  d="M9 5l7 7-7 7"
+                  d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
                 />
               </svg>
             </div>
-            <h3 className="text-white font-bold text-base sm:text-lg mb-1">
-              Exercises
-            </h3>
-            <p className="text-white/80 text-xs sm:text-sm">
-              Browse exercise library
-            </p>
+            <h3 className="text-white font-bold text-lg mb-1">Settings</h3>
+            <p className="text-white/80 text-sm">Profile & more</p>
           </button>
         </div>
 
-        {/* Stats Overview */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
-          <div className="bg-gray-800 rounded-xl p-4 sm:p-6 border border-gray-700">
-            <div className="flex items-center gap-3 mb-3 sm:mb-4">
-              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
+        {/* Member Info Cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
                 <svg
-                  className="w-5 h-5 sm:w-6 sm:h-6 text-white"
+                  className="w-5 h-5 text-white"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -310,26 +226,80 @@ const MemberDashboard = () => {
                   />
                 </svg>
               </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-gray-400 text-xs sm:text-sm">Status</p>
-                <p className="text-white text-lg sm:text-xl font-semibold capitalize truncate">
+              <div>
+                <p className="text-gray-400 text-sm">Status</p>
+                <p className="text-white font-semibold capitalize">
                   {member?.status || "N/A"}
                 </p>
               </div>
             </div>
-            <div className="text-gray-300 text-xs sm:text-sm">
-              Level:{" "}
-              <span className="capitalize font-medium">
-                {member?.level || "N/A"}
-              </span>
+          </div>
+
+          <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
+            <div className="flex items-center gap-3 mb-2">
+              <div
+                className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                  paymentStatus === "paid" ? "bg-green-600" : "bg-red-600"
+                }`}
+              >
+                <svg
+                  className="w-5 h-5 text-white"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"
+                  />
+                </svg>
+              </div>
+              <div>
+                <p className="text-gray-400 text-sm">Payment</p>
+                <p
+                  className={`font-semibold capitalize ${
+                    paymentStatus === "paid" ? "text-green-600" : "text-red-600"
+                  }`}
+                >
+                  {paymentStatus || "N/A"}
+                </p>
+              </div>
             </div>
           </div>
 
-          <div className="bg-gray-800 rounded-xl p-4 sm:p-6 border border-gray-700">
-            <div className="flex items-center gap-3 mb-3 sm:mb-4">
-              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-green-600 rounded-lg flex items-center justify-center flex-shrink-0">
+          <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-10 h-10 bg-purple-600 rounded-lg flex items-center justify-center">
                 <svg
-                  className="w-5 h-5 sm:w-6 sm:h-6 text-white"
+                  className="w-5 h-5 text-white"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M13 10V3L4 14h7v7l9-11h-7z"
+                  />
+                </svg>
+              </div>
+              <div>
+                <p className="text-gray-400 text-sm">Level</p>
+                <p className="text-white font-semibold capitalize">
+                  {member?.level || "N/A"}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-10 h-10 bg-green-600 rounded-lg flex items-center justify-center">
+                <svg
+                  className="w-5 h-5 text-white"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -342,175 +312,12 @@ const MemberDashboard = () => {
                   />
                 </svg>
               </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-gray-400 text-xs sm:text-sm">BMI</p>
-                <p className="text-white text-lg sm:text-xl font-semibold truncate">
+              <div>
+                <p className="text-gray-400 text-sm">BMI</p>
+                <p className="text-white font-semibold">
                   {member?.bmi || "N/A"}
                 </p>
               </div>
-            </div>
-            <div className="text-gray-300 text-xs sm:text-sm truncate">
-              Category:{" "}
-              <span className="font-medium">
-                {member?.bmiCategory || "N/A"}
-              </span>
-            </div>
-          </div>
-
-          <div className="bg-gray-800 rounded-xl p-4 sm:p-6 border border-gray-700 sm:col-span-2 lg:col-span-1">
-            <div className="flex items-center gap-3 mb-3 sm:mb-4">
-              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-purple-600 rounded-lg flex items-center justify-center flex-shrink-0">
-                <svg
-                  className="w-5 h-5 sm:w-6 sm:h-6 text-white"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-gray-400 text-xs sm:text-sm">Workouts</p>
-                <p className="text-white text-lg sm:text-xl font-semibold">
-                  {recentWorkouts.length}
-                </p>
-              </div>
-            </div>
-            <div className="text-gray-300 text-xs sm:text-sm">
-              Last 5 sessions
-            </div>
-          </div>
-        </div>
-
-        {/* Recent Activity */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-          {/* Recent Workouts */}
-          <div className="bg-gray-800 rounded-xl border border-gray-700">
-            <div className="p-4 sm:p-6 border-b border-gray-700 flex items-center justify-between">
-              <h2 className="text-lg sm:text-xl font-semibold text-white">
-                Recent Workouts
-              </h2>
-              <button
-                onClick={() => navigate("/member/workouts")}
-                className="text-blue-500 hover:text-blue-400 text-xs sm:text-sm font-medium whitespace-nowrap"
-              >
-                View All →
-              </button>
-            </div>
-            <div className="p-4 sm:p-6">
-              {recentWorkouts.length > 0 ? (
-                <div className="space-y-3">
-                  {recentWorkouts.map((workout) => (
-                    <div
-                      key={workout.id}
-                      className="bg-gray-900 rounded-lg p-3 sm:p-4"
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                          <p className="text-white font-medium capitalize text-sm sm:text-base truncate">
-                            {workout.day}'s Workout
-                          </p>
-                          <p className="text-xs sm:text-sm text-gray-400">
-                            {workout.exercises?.length || 0} exercises
-                          </p>
-                        </div>
-                        <div className="text-right flex-shrink-0">
-                          <p className="text-gray-400 text-xs sm:text-sm">
-                            {formatDate(workout.completedAt)}
-                          </p>
-                          <span className="text-green-500 text-xs flex items-center gap-1 justify-end mt-1">
-                            <svg
-                              className="w-3 h-3 sm:w-4 sm:h-4"
-                              fill="currentColor"
-                              viewBox="0 0 20 20"
-                            >
-                              <path
-                                fillRule="evenodd"
-                                d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                                clipRule="evenodd"
-                              />
-                            </svg>
-                            <span className="hidden sm:inline">Completed</span>
-                            <span className="sm:hidden">Done</span>
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-6 sm:py-8">
-                  <div className="text-4xl sm:text-5xl mb-3">🏋️</div>
-                  <p className="text-gray-400 text-sm sm:text-base">
-                    No workouts yet
-                  </p>
-                  <button
-                    onClick={() => navigate("/member/workouts")}
-                    className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition active:scale-95"
-                  >
-                    Start Your First Workout
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Weight Progress */}
-          <div className="bg-gray-800 rounded-xl border border-gray-700">
-            <div className="p-4 sm:p-6 border-b border-gray-700 flex items-center justify-between">
-              <h2 className="text-lg sm:text-xl font-semibold text-white">
-                Weight Progress
-              </h2>
-              <button
-                onClick={() => navigate("/member/progress")}
-                className="text-blue-500 hover:text-blue-400 text-xs sm:text-sm font-medium whitespace-nowrap"
-              >
-                View All →
-              </button>
-            </div>
-            <div className="p-4 sm:p-6">
-              {weightLogs.length > 0 ? (
-                <div className="space-y-3">
-                  {weightLogs.map((log) => (
-                    <div
-                      key={log.id}
-                      className="bg-gray-900 rounded-lg p-3 sm:p-4 flex items-center justify-between gap-3"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="text-white font-medium text-sm sm:text-base">
-                          {log.weight} kg
-                        </p>
-                        {log.notes && (
-                          <p className="text-xs sm:text-sm text-gray-400 mt-1 truncate">
-                            {log.notes}
-                          </p>
-                        )}
-                      </div>
-                      <p className="text-gray-400 text-xs sm:text-sm flex-shrink-0">
-                        {formatDate(log.date)}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-6 sm:py-8">
-                  <div className="text-4xl sm:text-5xl mb-3">⚖️</div>
-                  <p className="text-gray-400 text-sm sm:text-base">
-                    No weight logs yet
-                  </p>
-                  <button
-                    onClick={() => navigate("/member/progress")}
-                    className="mt-4 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm transition active:scale-95"
-                  >
-                    Log Your Weight
-                  </button>
-                </div>
-              )}
             </div>
           </div>
         </div>
