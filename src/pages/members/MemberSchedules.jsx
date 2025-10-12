@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import MemberLayout from "../../components/MemberLayout";
 import { useAuth } from "../../hooks/useAuth";
+import ExerciseDetailModal from "../../components/ExerciseDetailModal";
 
 const MemberSchedules = () => {
   const { user: currentUser } = useAuth();
@@ -11,6 +12,8 @@ const MemberSchedules = () => {
   const [viewSchedule, setViewSchedule] = useState(null);
   const [activeSchedule, setActiveSchedule] = useState(null);
   const [selectedDay, setSelectedDay] = useState(null);
+  const [selectedExercise, setSelectedExercise] = useState(null);
+  const [showExerciseDetail, setShowExerciseDetail] = useState(false);
 
   const daysOfWeek = [
     "monday",
@@ -67,9 +70,21 @@ const MemberSchedules = () => {
     }
   };
 
+  const getExerciseData = (exerciseId) => {
+    return exercises.find((e) => e.id === exerciseId);
+  };
+
   const getExerciseName = (exerciseId) => {
     const exercise = exercises.find((e) => e.id === exerciseId);
     return exercise ? exercise.name : "Unknown Exercise";
+  };
+
+  const handleExerciseClick = (exerciseId) => {
+    const exercise = getExerciseData(exerciseId);
+    if (exercise) {
+      setSelectedExercise(exercise);
+      setShowExerciseDetail(true);
+    }
   };
 
   const formatDate = (timestamp) => {
@@ -415,9 +430,14 @@ const MemberSchedules = () => {
                               key={index}
                               className="flex items-center justify-between py-2 border-b border-gray-700 last:border-0"
                             >
-                              <span className="text-white font-medium text-sm sm:text-base">
+                              <button
+                                onClick={() =>
+                                  handleExerciseClick(cardio.exerciseId)
+                                }
+                                className="text-white font-medium text-sm sm:text-base hover:text-blue-600 transition text-left"
+                              >
                                 {getExerciseName(cardio.exerciseId)}
-                              </span>
+                              </button>
                               <span className="px-2 sm:px-3 py-1 bg-purple-600/20 text-purple-600 rounded text-xs sm:text-sm font-medium">
                                 {cardio.time} min
                               </span>
@@ -457,9 +477,14 @@ const MemberSchedules = () => {
                               className="bg-gray-800 rounded-lg p-3 sm:p-4"
                             >
                               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                                <span className="text-white font-medium text-sm sm:text-base">
+                                <button
+                                  onClick={() =>
+                                    handleExerciseClick(warmup.exerciseId)
+                                  }
+                                  className="text-white font-medium text-sm sm:text-base hover:text-blue-600 transition text-left"
+                                >
                                   {getExerciseName(warmup.exerciseId)}
-                                </span>
+                                </button>
                                 <div className="flex gap-2">
                                   <span className="px-2 sm:px-3 py-1 bg-blue-600/20 text-blue-600 rounded text-xs sm:text-sm font-medium">
                                     {warmup.reps}
@@ -517,9 +542,37 @@ const MemberSchedules = () => {
                                 key={exIndex}
                                 className="bg-gray-800 rounded-lg p-4 sm:p-5"
                               >
-                                <h5 className="text-white font-bold text-base sm:text-lg mb-4">
-                                  {getExerciseName(exercise.exerciseId)}
-                                </h5>
+                                <div className="flex items-start justify-between gap-3 mb-4">
+                                  <button
+                                    onClick={() =>
+                                      handleExerciseClick(exercise.exerciseId)
+                                    }
+                                    className="text-white font-bold text-base sm:text-lg hover:text-blue-600 transition text-left flex-1"
+                                  >
+                                    {getExerciseName(exercise.exerciseId)}
+                                  </button>
+                                  <button
+                                    onClick={() =>
+                                      handleExerciseClick(exercise.exerciseId)
+                                    }
+                                    className="p-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-600 rounded-lg transition flex-shrink-0"
+                                    title="View exercise details"
+                                  >
+                                    <svg
+                                      className="w-5 h-5"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      viewBox="0 0 24 24"
+                                    >
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                                      />
+                                    </svg>
+                                  </button>
+                                </div>
 
                                 <div className="space-y-2">
                                   {exercise.sets?.map((set, setIndex) => (
@@ -579,9 +632,14 @@ const MemberSchedules = () => {
                               key={index}
                               className="flex items-center justify-between py-2 border-b border-gray-700 last:border-0"
                             >
-                              <span className="text-white font-medium text-sm sm:text-base">
+                              <button
+                                onClick={() =>
+                                  handleExerciseClick(warmdown.exerciseId)
+                                }
+                                className="text-white font-medium text-sm sm:text-base hover:text-blue-600 transition text-left"
+                              >
                                 {getExerciseName(warmdown.exerciseId)}
-                              </span>
+                              </button>
                               <span className="px-2 sm:px-3 py-1 bg-cyan-600/20 text-cyan-600 rounded text-xs sm:text-sm font-medium">
                                 {warmdown.time} min
                               </span>
@@ -605,6 +663,16 @@ const MemberSchedules = () => {
             </div>
           </div>
         )}
+
+        {/* Exercise Detail Modal */}
+        <ExerciseDetailModal
+          exercise={selectedExercise}
+          isOpen={showExerciseDetail}
+          onClose={() => {
+            setShowExerciseDetail(false);
+            setSelectedExercise(null);
+          }}
+        />
       </div>
     </MemberLayout>
   );

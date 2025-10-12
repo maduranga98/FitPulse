@@ -66,6 +66,31 @@ const Sidebar = ({ isOpen, onClose }) => {
       ),
       label: "Schedules",
     },
+    {
+      path: "/complaints",
+      icon: (
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"
+        />
+      ),
+      label: "Complaints",
+    },
+    {
+      path: "/payments",
+      icon: (
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"
+        />
+      ),
+      label: "Payments",
+      disabled: true,
+    },
   ];
 
   // Member Navigation Items
@@ -83,19 +108,7 @@ const Sidebar = ({ isOpen, onClose }) => {
       label: "Dashboard",
     },
     {
-      path: "/exercises",
-      icon: (
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth={2}
-          d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
-        />
-      ),
-      label: "Exercises",
-    },
-    {
-      path: "/schedules",
+      path: "/member-schedules",
       icon: (
         <path
           strokeLinecap="round"
@@ -104,7 +117,31 @@ const Sidebar = ({ isOpen, onClose }) => {
           d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
         />
       ),
-      label: "Schedules",
+      label: "My Schedules",
+    },
+    {
+      path: "/member-workouts",
+      icon: (
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"
+        />
+      ),
+      label: "Workout Tracker",
+    },
+    {
+      path: "/member-progress",
+      icon: (
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 00-2-2m0 0h2a2 2 0 012 2v10a2 2 0 01-2 2h-2a2 2 0 01-2-2V9z"
+        />
+      ),
+      label: "My Progress",
     },
   ];
 
@@ -150,50 +187,48 @@ const Sidebar = ({ isOpen, onClose }) => {
 
           {/* Navigation */}
           <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-            {navItems.map((item) => (
-              <Link
-                key={item.path}
-                to={item.path}
-                onClick={() => onClose && onClose()}
-                className={`flex items-center gap-3 px-4 py-3 w-full text-left rounded-lg transition ${
-                  isActiveRoute(item.path)
-                    ? "bg-blue-600 text-white"
-                    : "text-gray-400 hover:bg-gray-700 hover:text-white"
-                }`}
-              >
-                <svg
-                  className="w-5 h-5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
+            {navItems.map((item) =>
+              item.disabled ? (
+                <button
+                  key={item.path}
+                  className="flex items-center gap-3 px-4 py-3 w-full text-left text-gray-400 hover:bg-gray-700 hover:text-white rounded-lg transition opacity-50 cursor-not-allowed"
+                  disabled
                 >
-                  {item.icon}
-                </svg>
-                <span className="font-medium">{item.label}</span>
-              </Link>
-            ))}
-
-            {/* Payments (Coming Soon) - Admin Only */}
-            {isAdmin && (
-              <button
-                className="flex items-center gap-3 px-4 py-3 w-full text-left text-gray-400 hover:bg-gray-700 hover:text-white rounded-lg transition opacity-50 cursor-not-allowed"
-                disabled
-              >
-                <svg
-                  className="w-5 h-5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    {item.icon}
+                  </svg>
+                  <span className="font-medium">{item.label}</span>
+                  <span className="ml-auto text-xs bg-gray-700 px-2 py-1 rounded">
+                    Soon
+                  </span>
+                </button>
+              ) : (
+                <Link
+                  key={item.path}
+                  to={item.path}
+                  onClick={() => onClose && onClose()}
+                  className={`flex items-center gap-3 px-4 py-3 w-full text-left rounded-lg transition ${
+                    isActiveRoute(item.path)
+                      ? "bg-blue-600 text-white"
+                      : "text-gray-400 hover:bg-gray-700 hover:text-white"
+                  }`}
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"
-                  />
-                </svg>
-                <span className="font-medium">Payments</span>
-              </button>
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    {item.icon}
+                  </svg>
+                  <span className="font-medium">{item.label}</span>
+                </Link>
+              )
             )}
           </nav>
 

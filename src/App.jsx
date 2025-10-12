@@ -14,6 +14,8 @@ import MemberProgressTracker from "./pages/members/MemberProgressTracker";
 import MemberSchedules from "./pages/members/MemberSchedules";
 import MemberProfile from "./pages/members/settings/MemberProfile";
 import MemberSettings from "./pages/members/MemberSettings";
+import AdminComplaints from "./pages/AdminComplaints";
+import AdminPayments from "./pages/AdminPayments";
 
 function App() {
   return (
@@ -44,7 +46,26 @@ function App() {
               </ProtectedRoute>
             }
           />
-
+          <Route
+            path="/complaints"
+            element={
+              <ProtectedRoute>
+                <RoleRoute allowedRoles={["admin", "manager"]}>
+                  <AdminComplaints />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/payments"
+            element={
+              <ProtectedRoute>
+                <RoleRoute allowedRoles={["admin", "manager"]}>
+                  <AdminPayments />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
           {/* Protected Routes - All Authenticated Users */}
           <Route
             path="/exercises"
