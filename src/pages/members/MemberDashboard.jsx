@@ -1,16 +1,23 @@
 import { useState, useEffect } from "react";
+import { useAuth } from "../../hooks/useAuth";
+import { useNavigate } from "react-router-dom";
+import MemberLayout from "../../components/MemberLayout";
 
-const MemberDashboard = ({ onLogout, onNavigate, currentUser }) => {
+const MemberDashboard = () => {
+  const { user: currentUser } = useAuth();
+  const navigate = useNavigate();
+
   const [memberData, setMemberData] = useState(null);
-  const [workouts, setWorkouts] = useState([]);
-  const [payments, setPayments] = useState([]);
+  const [schedules, setSchedules] = useState([]);
+  const [recentWorkouts, setRecentWorkouts] = useState([]);
+  const [weightLogs, setWeightLogs] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState("overview");
 
   useEffect(() => {
-    fetchMemberData();
-  }, []);
+    if (currentUser?.id) {
+      fetchMemberData();
+    }
+  }, [currentUser]);
 
   const fetchMemberData = async () => {
     try {
@@ -26,38 +33,45 @@ const MemberDashboard = ({ onLogout, onNavigate, currentUser }) => {
         setMemberData({ id: memberSnap.id, ...memberSnap.data() });
       }
 
-      // Fetch member's workouts/attendance (if you have this collection)
-      // const workoutsRef = collection(db, "workouts");
-      // const workoutsQuery = query(workoutsRef, where("memberId", "==", currentUser.id), orderBy("date", "desc"), limit(10));
-      // const workoutsSnapshot = await getDocs(workoutsQuery);
-      // setWorkouts(workoutsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      // Fetch active schedules
+      const schedulesQuery = query(
+        collection(db, "schedules"),
+        where("memberId", "==", currentUser.id),
+        where("status", "==", "active")
+      );
+      const schedulesSnapshot = await getDocs(schedulesQuery);
+      setSchedules(
+        schedulesSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+      );
 
-      // Fetch member's payment history
-      const paymentsRef = collection(db, "payments");
-      const paymentsQuery = query(
-        paymentsRef,
+      // Fetch recent workouts
+      const workoutsQuery = query(
+        collection(db, "workoutLogs"),
+        where("memberId", "==", currentUser.id),
+        orderBy("completedAt", "desc"),
+        limit(5)
+      );
+      const workoutsSnapshot = await getDocs(workoutsQuery);
+      setRecentWorkouts(
+        workoutsSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+      );
+
+      // Fetch recent weight logs
+      const weightQuery = query(
+        collection(db, "weightLogs"),
         where("memberId", "==", currentUser.id),
         orderBy("date", "desc"),
         limit(5)
       );
-      const paymentsSnapshot = await getDocs(paymentsQuery);
-      setPayments(
-        paymentsSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+      const weightSnapshot = await getDocs(weightQuery);
+      setWeightLogs(
+        weightSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
       );
 
       setLoading(false);
     } catch (error) {
       console.error("Error fetching member data:", error);
       setLoading(false);
-    }
-  };
-
-  const handleLogoutClick = () => {
-    if (onLogout) {
-      onLogout();
-    } else {
-      localStorage.removeItem("gymUser");
-      window.location.reload();
     }
   };
 
@@ -71,248 +85,51 @@ const MemberDashboard = ({ onLogout, onNavigate, currentUser }) => {
     });
   };
 
+  const getMotivationalMessage = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return "Good morning! Ready to crush your goals? 🌅";
+    if (hour < 18) return "Keep pushing! You're doing amazing! 💪";
+    return "Evening warrior! Time to reflect on your progress! 🌙";
+  };
+
   if (loading) {
     return (
-      <div className="h-screen w-screen bg-gray-900 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-400">Loading your dashboard...</p>
+      <MemberLayout>
+        <div className="h-full flex items-center justify-center p-4">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-gray-400">Loading your dashboard...</p>
+          </div>
         </div>
-      </div>
+      </MemberLayout>
     );
   }
 
   const member = memberData || currentUser;
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-gray-900 flex">
-      {/* Sidebar */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-
-      <aside
-        className={`fixed lg:static top-0 left-0 z-50 h-full w-64 bg-gray-800 border-r border-gray-700 transform transition-transform duration-300 lg:translate-x-0 flex-shrink-0 ${
-          sidebarOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
-      >
-        <div className="flex flex-col h-full">
-          {/* Logo */}
-          <div className="flex items-center gap-3 p-6 border-b border-gray-700 flex-shrink-0">
-            <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
-              <svg
-                className="w-6 h-6 text-white"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M13 10V3L4 14h7v7l9-11h-7z"
-                />
-              </svg>
-            </div>
-            <span className="text-xl font-bold text-white">Gym Manager</span>
-          </div>
-
-          {/* Navigation */}
-          <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-            <button
-              onClick={() => setActiveTab("overview")}
-              className={`flex items-center gap-3 px-4 py-3 w-full text-left rounded-lg transition ${
-                activeTab === "overview"
-                  ? "bg-blue-600 text-white"
-                  : "text-gray-400 hover:bg-gray-700 hover:text-white"
-              }`}
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
-                />
-              </svg>
-              <span className="font-medium">My Dashboard</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab("profile")}
-              className={`flex items-center gap-3 px-4 py-3 w-full text-left rounded-lg transition ${
-                activeTab === "profile"
-                  ? "bg-blue-600 text-white"
-                  : "text-gray-400 hover:bg-gray-700 hover:text-white"
-              }`}
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-                />
-              </svg>
-              <span className="font-medium">My Profile</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab("progress")}
-              className={`flex items-center gap-3 px-4 py-3 w-full text-left rounded-lg transition ${
-                activeTab === "progress"
-                  ? "bg-blue-600 text-white"
-                  : "text-gray-400 hover:bg-gray-700 hover:text-white"
-              }`}
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
-                />
-              </svg>
-              <span className="font-medium">My Progress</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab("workouts")}
-              className={`flex items-center gap-3 px-4 py-3 w-full text-left rounded-lg transition ${
-                activeTab === "workouts"
-                  ? "bg-blue-600 text-white"
-                  : "text-gray-400 hover:bg-gray-700 hover:text-white"
-              }`}
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
-              <span className="font-medium">My Workouts</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab("payments")}
-              className={`flex items-center gap-3 px-4 py-3 w-full text-left rounded-lg transition ${
-                activeTab === "payments"
-                  ? "bg-blue-600 text-white"
-                  : "text-gray-400 hover:bg-gray-700 hover:text-white"
-              }`}
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"
-                />
-              </svg>
-              <span className="font-medium">Payment History</span>
-            </button>
-
-            <button
-              onClick={() => onNavigate("exercises")}
-              className="flex items-center gap-3 px-4 py-3 w-full text-left text-gray-400 hover:bg-gray-700 hover:text-white rounded-lg transition"
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
-                />
-              </svg>
-              <span className="font-medium">Exercise Library</span>
-            </button>
-          </nav>
-
-          {/* User Info & Logout */}
-          <div className="p-4 border-t border-gray-700 flex-shrink-0">
-            <div className="mb-3 px-4">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold">
-                  {member.name?.charAt(0).toUpperCase()}
-                </div>
-                <div>
-                  <div className="text-sm text-white font-medium">
-                    {member.name}
-                  </div>
-                  <div className="text-xs text-gray-400">Member</div>
-                </div>
-              </div>
-            </div>
-            <button
-              onClick={handleLogoutClick}
-              className="flex items-center gap-3 px-4 py-3 w-full text-gray-400 hover:bg-gray-700 hover:text-white rounded-lg transition"
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
-                />
-              </svg>
-              <span className="font-medium">Logout</span>
-            </button>
-          </div>
+    <MemberLayout>
+      <div className="p-4 sm:p-6 lg:p-8">
+        {/* Welcome Header */}
+        <div className="mb-6 sm:mb-8">
+          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-white mb-2">
+            Welcome back, {member?.name?.split(" ")[0] || "Member"}! 💪
+          </h1>
+          <p className="text-sm sm:text-base text-gray-400">
+            {getMotivationalMessage()}
+          </p>
         </div>
-      </aside>
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col h-full overflow-hidden">
-        {/* Header */}
-        <header className="bg-gray-800 border-b border-gray-700 flex-shrink-0">
-          <div className="flex items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
-            <div className="flex items-center gap-4">
-              <button
-                onClick={() => setSidebarOpen(true)}
-                className="lg:hidden p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg"
-              >
+        {/* Quick Action Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-6 sm:mb-8">
+          <button
+            onClick={() => navigate("/member/workouts")}
+            className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-xl p-5 sm:p-6 text-left hover:from-blue-700 hover:to-blue-800 transition group active:scale-95"
+          >
+            <div className="flex items-center justify-between mb-3 sm:mb-4">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-white/20 rounded-lg flex items-center justify-center group-hover:scale-110 transition">
                 <svg
-                  className="w-6 h-6"
+                  className="w-5 h-5 sm:w-6 sm:h-6 text-white"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -321,272 +138,40 @@ const MemberDashboard = ({ onLogout, onNavigate, currentUser }) => {
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     strokeWidth={2}
-                    d="M4 6h16M4 12h16M4 18h16"
+                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
                   />
                 </svg>
-              </button>
-              <h1 className="text-xl sm:text-2xl font-bold text-white">
-                {activeTab === "overview" && "My Dashboard"}
-                {activeTab === "profile" && "My Profile"}
-                {activeTab === "progress" && "My Progress"}
-                {activeTab === "workouts" && "My Workouts"}
-                {activeTab === "payments" && "Payment History"}
-              </h1>
-            </div>
-            <div className="flex items-center gap-3">
-              <span
-                className={`px-3 py-1 rounded-full text-xs font-medium ${
-                  member.status === "active"
-                    ? "bg-green-600/20 text-green-600"
-                    : "bg-red-600/20 text-red-600"
-                }`}
+              </div>
+              <svg
+                className="w-4 h-4 sm:w-5 sm:h-5 text-white/60"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
               >
-                {member.status}
-              </span>
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M9 5l7 7-7 7"
+                />
+              </svg>
             </div>
-          </div>
-        </header>
+            <h3 className="text-white font-bold text-base sm:text-lg mb-1">
+              Start Workout
+            </h3>
+            <p className="text-white/80 text-xs sm:text-sm">
+              Log your today's exercises
+            </p>
+          </button>
 
-        {/* Main Content Area */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-          {/* Overview Tab */}
-          {activeTab === "overview" && (
-            <div className="space-y-6">
-              {/* Welcome Banner */}
-              <div className="bg-gradient-to-r from-blue-600 to-blue-800 rounded-xl p-6">
-                <h2 className="text-2xl font-bold text-white mb-2">
-                  Welcome back, {member.name}! 💪
-                </h2>
-                <p className="text-blue-100">
-                  Keep up the great work! Your fitness journey continues here.
-                </p>
-              </div>
-
-              {/* Quick Stats */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
-                  <div className="text-gray-400 text-sm mb-1">
-                    Fitness Level
-                  </div>
-                  <div className="text-2xl font-bold text-white capitalize">
-                    {member.level}
-                  </div>
-                </div>
-                <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
-                  <div className="text-gray-400 text-sm mb-1">BMI</div>
-                  <div className="text-2xl font-bold text-white">
-                    {member.bmi || "N/A"}
-                  </div>
-                </div>
-                <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
-                  <div className="text-gray-400 text-sm mb-1">Weight</div>
-                  <div className="text-2xl font-bold text-white">
-                    {member.weight} kg
-                  </div>
-                </div>
-                <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
-                  <div className="text-gray-400 text-sm mb-1">Member Since</div>
-                  <div className="text-lg font-bold text-white">
-                    {formatDate(member.joinDate)}
-                  </div>
-                </div>
-              </div>
-
-              {/* Health Alerts */}
-              {(member.allergies || member.diseases) && (
-                <div className="bg-yellow-600/10 border border-yellow-600/30 rounded-xl p-6">
-                  <h3 className="text-lg font-bold text-yellow-600 mb-3 flex items-center gap-2">
-                    <svg
-                      className="w-5 h-5"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-                      />
-                    </svg>
-                    Health Information
-                  </h3>
-                  <div className="space-y-2">
-                    {member.allergies && (
-                      <div>
-                        <span className="text-yellow-600 font-medium text-sm">
-                          Allergies:{" "}
-                        </span>
-                        <span className="text-yellow-600 text-sm">
-                          {member.allergies}
-                        </span>
-                      </div>
-                    )}
-                    {member.diseases && (
-                      <div>
-                        <span className="text-yellow-600 font-medium text-sm">
-                          Medical Conditions:{" "}
-                        </span>
-                        <span className="text-yellow-600 text-sm">
-                          {member.diseases}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Recent Payments */}
-              {payments.length > 0 && (
-                <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
-                  <h3 className="text-lg font-bold text-white mb-4">
-                    Recent Payments
-                  </h3>
-                  <div className="space-y-3">
-                    {payments.slice(0, 3).map((payment) => (
-                      <div
-                        key={payment.id}
-                        className="flex items-center justify-between py-3 border-b border-gray-700 last:border-0"
-                      >
-                        <div>
-                          <div className="text-white font-medium">
-                            ${payment.amount}
-                          </div>
-                          <div className="text-sm text-gray-400">
-                            {formatDate(payment.date)}
-                          </div>
-                        </div>
-                        <span
-                          className={`px-3 py-1 rounded-full text-xs font-medium ${
-                            payment.status === "completed"
-                              ? "bg-green-600/20 text-green-600"
-                              : "bg-yellow-600/20 text-yellow-600"
-                          }`}
-                        >
-                          {payment.status}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Profile Tab */}
-          {activeTab === "profile" && (
-            <div className="max-w-4xl space-y-6">
-              {/* Personal Information */}
-              <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
-                <h3 className="text-lg font-bold text-white mb-4">
-                  Personal Information
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <div className="text-sm text-gray-400 mb-1">Full Name</div>
-                    <div className="text-white font-medium">{member.name}</div>
-                  </div>
-                  <div>
-                    <div className="text-sm text-gray-400 mb-1">Age</div>
-                    <div className="text-white font-medium">
-                      {member.age} years
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-sm text-gray-400 mb-1">Mobile</div>
-                    <div className="text-white font-medium">
-                      {member.mobile}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-sm text-gray-400 mb-1">WhatsApp</div>
-                    <div className="text-white font-medium">
-                      {member.whatsapp}
-                    </div>
-                  </div>
-                  {member.email && (
-                    <div className="md:col-span-2">
-                      <div className="text-sm text-gray-400 mb-1">Email</div>
-                      <div className="text-white font-medium">
-                        {member.email}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Physical Stats */}
-              <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
-                <h3 className="text-lg font-bold text-white mb-4">
-                  Physical Stats
-                </h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div className="bg-gray-900 rounded-lg p-4">
-                    <div className="text-sm text-gray-400 mb-1">Weight</div>
-                    <div className="text-xl font-bold text-white">
-                      {member.weight} kg
-                    </div>
-                  </div>
-                  <div className="bg-gray-900 rounded-lg p-4">
-                    <div className="text-sm text-gray-400 mb-1">Height</div>
-                    <div className="text-xl font-bold text-white">
-                      {member.height} cm
-                    </div>
-                  </div>
-                  <div className="bg-gray-900 rounded-lg p-4">
-                    <div className="text-sm text-gray-400 mb-1">BMI</div>
-                    <div className="text-xl font-bold text-white">
-                      {member.bmi || "N/A"}
-                    </div>
-                  </div>
-                  <div className="bg-gray-900 rounded-lg p-4">
-                    <div className="text-sm text-gray-400 mb-1">Category</div>
-                    <div className="text-sm font-bold text-white">
-                      {member.bmiCategory || "N/A"}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Emergency Contact */}
-              {(member.emergencyName || member.emergencyContact) && (
-                <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
-                  <h3 className="text-lg font-bold text-white mb-4">
-                    Emergency Contact
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {member.emergencyName && (
-                      <div>
-                        <div className="text-sm text-gray-400 mb-1">
-                          Contact Name
-                        </div>
-                        <div className="text-white font-medium">
-                          {member.emergencyName}
-                        </div>
-                      </div>
-                    )}
-                    {member.emergencyContact && (
-                      <div>
-                        <div className="text-sm text-gray-400 mb-1">
-                          Contact Number
-                        </div>
-                        <div className="text-white font-medium">
-                          {member.emergencyContact}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Progress Tab */}
-          {activeTab === "progress" && (
-            <div className="max-w-4xl">
-              <div className="bg-gray-800 border border-gray-700 rounded-xl p-6 text-center">
+          <button
+            onClick={() => navigate("/member/progress")}
+            className="bg-gradient-to-br from-purple-600 to-purple-700 rounded-xl p-5 sm:p-6 text-left hover:from-purple-700 hover:to-purple-800 transition group active:scale-95"
+          >
+            <div className="flex items-center justify-between mb-3 sm:mb-4">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-white/20 rounded-lg flex items-center justify-center group-hover:scale-110 transition">
                 <svg
-                  className="w-16 h-16 text-gray-600 mx-auto mb-4"
+                  className="w-5 h-5 sm:w-6 sm:h-6 text-white"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -598,22 +183,37 @@ const MemberDashboard = ({ onLogout, onNavigate, currentUser }) => {
                     d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
                   />
                 </svg>
-                <h3 className="text-xl font-bold text-white mb-2">
-                  Progress Tracking Coming Soon!
-                </h3>
-                <p className="text-gray-400">
-                  We're working on adding detailed progress tracking features.
-                </p>
               </div>
+              <svg
+                className="w-4 h-4 sm:w-5 sm:h-5 text-white/60"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M9 5l7 7-7 7"
+                />
+              </svg>
             </div>
-          )}
+            <h3 className="text-white font-bold text-base sm:text-lg mb-1">
+              View Progress
+            </h3>
+            <p className="text-white/80 text-xs sm:text-sm">
+              Track your improvements
+            </p>
+          </button>
 
-          {/* Workouts Tab */}
-          {activeTab === "workouts" && (
-            <div className="max-w-4xl">
-              <div className="bg-gray-800 border border-gray-700 rounded-xl p-6 text-center">
+          <button
+            onClick={() => navigate("/schedules")}
+            className="bg-gradient-to-br from-green-600 to-green-700 rounded-xl p-5 sm:p-6 text-left hover:from-green-700 hover:to-green-800 transition group active:scale-95"
+          >
+            <div className="flex items-center justify-between mb-3 sm:mb-4">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-white/20 rounded-lg flex items-center justify-center group-hover:scale-110 transition">
                 <svg
-                  className="w-16 h-16 text-gray-600 mx-auto mb-4"
+                  className="w-5 h-5 sm:w-6 sm:h-6 text-white"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -622,112 +222,303 @@ const MemberDashboard = ({ onLogout, onNavigate, currentUser }) => {
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     strokeWidth={2}
-                    d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                    d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
                   />
                 </svg>
-                <h3 className="text-xl font-bold text-white mb-2">
-                  Workout Schedule Coming Soon!
-                </h3>
-                <p className="text-gray-400 mb-4">
-                  Your personalized workout schedule will appear here.
-                </p>
-                <button
-                  onClick={() => onNavigate("exercises")}
-                  className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition"
-                >
-                  Browse Exercise Library
-                </button>
               </div>
+              <svg
+                className="w-4 h-4 sm:w-5 sm:h-5 text-white/60"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M9 5l7 7-7 7"
+                />
+              </svg>
             </div>
-          )}
+            <h3 className="text-white font-bold text-base sm:text-lg mb-1">
+              My Schedule
+            </h3>
+            <p className="text-white/80 text-xs sm:text-sm">
+              View workout plan
+            </p>
+          </button>
 
-          {/* Payments Tab */}
-          {activeTab === "payments" && (
-            <div className="max-w-4xl">
-              <div className="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
-                {payments.length === 0 ? (
-                  <div className="p-6 text-center">
-                    <svg
-                      className="w-16 h-16 text-gray-600 mx-auto mb-4"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"
-                      />
-                    </svg>
-                    <h3 className="text-xl font-bold text-white mb-2">
-                      No Payment History
-                    </h3>
-                    <p className="text-gray-400">
-                      Your payment history will appear here once you make your
-                      first payment.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead className="bg-gray-900">
-                        <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase">
-                            Date
-                          </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase">
-                            Amount
-                          </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase">
-                            Status
-                          </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase">
-                            Notes
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-700">
-                        {payments.map((payment) => (
-                          <tr key={payment.id}>
-                            <td className="px-6 py-4 text-sm text-white">
-                              {formatDate(payment.date)}
-                            </td>
-                            <td className="px-6 py-4 text-sm font-medium text-white">
-                              ${payment.amount}
-                            </td>
-                            <td className="px-6 py-4">
-                              <span
-                                className={`px-3 py-1 rounded-full text-xs font-medium ${
-                                  payment.status === "completed"
-                                    ? "bg-green-600/20 text-green-600"
-                                    : payment.status === "pending"
-                                    ? "bg-yellow-600/20 text-yellow-600"
-                                    : "bg-red-600/20 text-red-600"
-                                }`}
-                              >
-                                {payment.status}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 text-sm text-gray-400">
-                              {payment.notes || "-"}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+          <button
+            onClick={() => navigate("/exercises")}
+            className="bg-gradient-to-br from-orange-600 to-orange-700 rounded-xl p-5 sm:p-6 text-left hover:from-orange-700 hover:to-orange-800 transition group active:scale-95"
+          >
+            <div className="flex items-center justify-between mb-3 sm:mb-4">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-white/20 rounded-lg flex items-center justify-center group-hover:scale-110 transition">
+                <svg
+                  className="w-5 h-5 sm:w-6 sm:h-6 text-white"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+                  />
+                </svg>
+              </div>
+              <svg
+                className="w-4 h-4 sm:w-5 sm:h-5 text-white/60"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M9 5l7 7-7 7"
+                />
+              </svg>
+            </div>
+            <h3 className="text-white font-bold text-base sm:text-lg mb-1">
+              Exercises
+            </h3>
+            <p className="text-white/80 text-xs sm:text-sm">
+              Browse exercise library
+            </p>
+          </button>
+        </div>
+
+        {/* Stats Overview */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
+          <div className="bg-gray-800 rounded-xl p-4 sm:p-6 border border-gray-700">
+            <div className="flex items-center gap-3 mb-3 sm:mb-4">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
+                <svg
+                  className="w-5 h-5 sm:w-6 sm:h-6 text-white"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                  />
+                </svg>
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-gray-400 text-xs sm:text-sm">Status</p>
+                <p className="text-white text-lg sm:text-xl font-semibold capitalize truncate">
+                  {member?.status || "N/A"}
+                </p>
               </div>
             </div>
-          )}
-        </main>
+            <div className="text-gray-300 text-xs sm:text-sm">
+              Level:{" "}
+              <span className="capitalize font-medium">
+                {member?.level || "N/A"}
+              </span>
+            </div>
+          </div>
+
+          <div className="bg-gray-800 rounded-xl p-4 sm:p-6 border border-gray-700">
+            <div className="flex items-center gap-3 mb-3 sm:mb-4">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-green-600 rounded-lg flex items-center justify-center flex-shrink-0">
+                <svg
+                  className="w-5 h-5 sm:w-6 sm:h-6 text-white"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+                  />
+                </svg>
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-gray-400 text-xs sm:text-sm">BMI</p>
+                <p className="text-white text-lg sm:text-xl font-semibold truncate">
+                  {member?.bmi || "N/A"}
+                </p>
+              </div>
+            </div>
+            <div className="text-gray-300 text-xs sm:text-sm truncate">
+              Category:{" "}
+              <span className="font-medium">
+                {member?.bmiCategory || "N/A"}
+              </span>
+            </div>
+          </div>
+
+          <div className="bg-gray-800 rounded-xl p-4 sm:p-6 border border-gray-700 sm:col-span-2 lg:col-span-1">
+            <div className="flex items-center gap-3 mb-3 sm:mb-4">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-purple-600 rounded-lg flex items-center justify-center flex-shrink-0">
+                <svg
+                  className="w-5 h-5 sm:w-6 sm:h-6 text-white"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-gray-400 text-xs sm:text-sm">Workouts</p>
+                <p className="text-white text-lg sm:text-xl font-semibold">
+                  {recentWorkouts.length}
+                </p>
+              </div>
+            </div>
+            <div className="text-gray-300 text-xs sm:text-sm">
+              Last 5 sessions
+            </div>
+          </div>
+        </div>
+
+        {/* Recent Activity */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+          {/* Recent Workouts */}
+          <div className="bg-gray-800 rounded-xl border border-gray-700">
+            <div className="p-4 sm:p-6 border-b border-gray-700 flex items-center justify-between">
+              <h2 className="text-lg sm:text-xl font-semibold text-white">
+                Recent Workouts
+              </h2>
+              <button
+                onClick={() => navigate("/member/workouts")}
+                className="text-blue-500 hover:text-blue-400 text-xs sm:text-sm font-medium whitespace-nowrap"
+              >
+                View All →
+              </button>
+            </div>
+            <div className="p-4 sm:p-6">
+              {recentWorkouts.length > 0 ? (
+                <div className="space-y-3">
+                  {recentWorkouts.map((workout) => (
+                    <div
+                      key={workout.id}
+                      className="bg-gray-900 rounded-lg p-3 sm:p-4"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-white font-medium capitalize text-sm sm:text-base truncate">
+                            {workout.day}'s Workout
+                          </p>
+                          <p className="text-xs sm:text-sm text-gray-400">
+                            {workout.exercises?.length || 0} exercises
+                          </p>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <p className="text-gray-400 text-xs sm:text-sm">
+                            {formatDate(workout.completedAt)}
+                          </p>
+                          <span className="text-green-500 text-xs flex items-center gap-1 justify-end mt-1">
+                            <svg
+                              className="w-3 h-3 sm:w-4 sm:h-4"
+                              fill="currentColor"
+                              viewBox="0 0 20 20"
+                            >
+                              <path
+                                fillRule="evenodd"
+                                d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                                clipRule="evenodd"
+                              />
+                            </svg>
+                            <span className="hidden sm:inline">Completed</span>
+                            <span className="sm:hidden">Done</span>
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-6 sm:py-8">
+                  <div className="text-4xl sm:text-5xl mb-3">🏋️</div>
+                  <p className="text-gray-400 text-sm sm:text-base">
+                    No workouts yet
+                  </p>
+                  <button
+                    onClick={() => navigate("/member/workouts")}
+                    className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition active:scale-95"
+                  >
+                    Start Your First Workout
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Weight Progress */}
+          <div className="bg-gray-800 rounded-xl border border-gray-700">
+            <div className="p-4 sm:p-6 border-b border-gray-700 flex items-center justify-between">
+              <h2 className="text-lg sm:text-xl font-semibold text-white">
+                Weight Progress
+              </h2>
+              <button
+                onClick={() => navigate("/member/progress")}
+                className="text-blue-500 hover:text-blue-400 text-xs sm:text-sm font-medium whitespace-nowrap"
+              >
+                View All →
+              </button>
+            </div>
+            <div className="p-4 sm:p-6">
+              {weightLogs.length > 0 ? (
+                <div className="space-y-3">
+                  {weightLogs.map((log) => (
+                    <div
+                      key={log.id}
+                      className="bg-gray-900 rounded-lg p-3 sm:p-4 flex items-center justify-between gap-3"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="text-white font-medium text-sm sm:text-base">
+                          {log.weight} kg
+                        </p>
+                        {log.notes && (
+                          <p className="text-xs sm:text-sm text-gray-400 mt-1 truncate">
+                            {log.notes}
+                          </p>
+                        )}
+                      </div>
+                      <p className="text-gray-400 text-xs sm:text-sm flex-shrink-0">
+                        {formatDate(log.date)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-6 sm:py-8">
+                  <div className="text-4xl sm:text-5xl mb-3">⚖️</div>
+                  <p className="text-gray-400 text-sm sm:text-base">
+                    No weight logs yet
+                  </p>
+                  <button
+                    onClick={() => navigate("/member/progress")}
+                    className="mt-4 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm transition active:scale-95"
+                  >
+                    Log Your Weight
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
+    </MemberLayout>
   );
 };
 
 export default MemberDashboard;
-
 //madurangaparameegunasekara7598
 //FN2yVKxi

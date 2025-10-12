@@ -19,17 +19,39 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (username, password) => {
     try {
+      // First, try to find user in admins collection
       const adminsRef = collection(db, "admins");
-      const q = query(
+      const adminQuery = query(
         adminsRef,
         where("username", "==", username),
         where("password", "==", password)
       );
 
-      const querySnapshot = await getDocs(q);
+      let querySnapshot = await getDocs(adminQuery);
 
+      // If not found in admins, try members collection
       if (querySnapshot.empty) {
-        throw new Error("Invalid username or password");
+        const membersRef = collection(db, "members");
+        const memberQuery = query(
+          membersRef,
+          where("username", "==", username),
+          where("password", "==", password)
+        );
+
+        querySnapshot = await getDocs(memberQuery);
+
+        // If still not found, invalid credentials
+        if (querySnapshot.empty) {
+          throw new Error("Invalid username or password");
+        }
+
+        // Check if member status is active
+        const memberData = querySnapshot.docs[0].data();
+        if (memberData.status !== "active") {
+          throw new Error(
+            "Your account is inactive. Please contact the gym administrator."
+          );
+        }
       }
 
       const userData = {

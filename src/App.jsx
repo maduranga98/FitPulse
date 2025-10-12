@@ -9,6 +9,11 @@ import Exercises from "./pages/Exercises";
 import Schedules from "./pages/Schedules";
 import MemberDashboard from "./pages/members/MemberDashboard";
 import NotFound from "./pages/NotFound";
+import MemberWorkoutTracker from "./pages/members/MemberWorkoutTracker";
+import MemberProgressTracker from "./pages/members/MemberProgressTracker";
+import MemberSchedules from "./pages/members/MemberSchedules";
+import MemberProfile from "./pages/members/settings/MemberProfile";
+import MemberSettings from "./pages/members/MemberSettings";
 
 function App() {
   return (
@@ -65,6 +70,60 @@ function App() {
               <ProtectedRoute>
                 <RoleRoute allowedRoles={["member"]}>
                   <MemberDashboard />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+          {/* Member Workout Tracker */}
+          <Route
+            path="/member/workouts"
+            element={
+              <ProtectedRoute>
+                <RoleRoute allowedRoles={["member"]}>
+                  <MemberWorkoutTracker />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Member Progress Tracker */}
+          <Route
+            path="/member/progress"
+            element={
+              <ProtectedRoute>
+                <RoleRoute allowedRoles={["member"]}>
+                  <MemberProgressTracker />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/member-schedules"
+            element={
+              <ProtectedRoute>
+                <RoleRoute allowedRoles={["member"]}>
+                  <MemberSchedules />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/member-profile"
+            element={
+              <ProtectedRoute>
+                <RoleRoute allowedRoles={["member"]}>
+                  <MemberProfile />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/member-settings"
+            element={
+              <ProtectedRoute>
+                <RoleRoute allowedRoles={["member"]}>
+                  <MemberSettings />
                 </RoleRoute>
               </ProtectedRoute>
             }
