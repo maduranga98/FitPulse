@@ -9,22 +9,21 @@ const AdminPayments = () => {
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [selectedMember, setSelectedMember] = useState(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [filterStatus, setFilterStatus] = useState("all");
-
   const [paymentForm, setPaymentForm] = useState({
     amount: "",
-    month: new Date().toISOString().slice(0, 7), // YYYY-MM format
+    month: "",
     paymentMethod: "Cash",
     notes: "",
   });
+  const [submitting, setSubmitting] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterStatus, setFilterStatus] = useState("all");
 
   const isAdmin = user?.role === "admin" || user?.role === "manager";
 
-  const paymentMethods = ["Cash", "Card", "Bank Transfer", "UPI", "Other"];
+  const paymentMethods = ["Cash", "Card", "Bank Transfer", "Online", "Other"];
 
   useEffect(() => {
     if (isAdmin) {
@@ -72,6 +71,14 @@ const AdminPayments = () => {
 
   const getCurrentMonth = () => {
     return new Date().toISOString().slice(0, 7);
+  };
+
+  const formatMonth = (monthString) => {
+    const date = new Date(monthString + "-01");
+    return date.toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+    });
   };
 
   const checkPaymentStatus = (memberId, month = getCurrentMonth()) => {
@@ -124,8 +131,8 @@ const AdminPayments = () => {
         paymentMethod: paymentForm.paymentMethod,
         notes: paymentForm.notes,
         paidAt: Timestamp.now(),
-        recordedBy: user.name,
-        recordedById: user.id,
+        recordedBy: user?.name || user?.username || user?.email || "Admin",
+        recordedById: user?.id || user?.uid || "",
       };
 
       await addDoc(collection(db, "payments"), paymentData);
@@ -150,20 +157,25 @@ const AdminPayments = () => {
     }
   };
 
-  const handleDeletePayment = async (paymentId) => {
-    if (!confirm("Are you sure you want to delete this payment record?"))
-      return;
+  const handleToggleMemberStatus = async (memberId, currentStatus) => {
+    const newStatus = currentStatus === "active" ? "inactive" : "active";
+    const confirmMessage = `Are you sure you want to mark this member as ${newStatus}?`;
+
+    if (!confirm(confirmMessage)) return;
 
     try {
       const { db } = await import("../config/firebase");
-      const { doc, deleteDoc } = await import("firebase/firestore");
+      const { doc, updateDoc } = await import("firebase/firestore");
 
-      await deleteDoc(doc(db, "payments", paymentId));
+      await updateDoc(doc(db, "members", memberId), {
+        status: newStatus,
+      });
+
       fetchData();
-      alert("Payment record deleted successfully!");
+      alert(`Member marked as ${newStatus} successfully! ✅`);
     } catch (error) {
-      console.error("Error deleting payment:", error);
-      alert("Failed to delete payment record.");
+      console.error("Error updating member status:", error);
+      alert("Failed to update member status. Please try again.");
     }
   };
 
@@ -174,112 +186,107 @@ const AdminPayments = () => {
       year: "numeric",
       month: "short",
       day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
-
-  const formatMonth = (monthString) => {
-    const date = new Date(monthString + "-01");
-    return date.toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "long",
     });
   };
 
   const filteredMembers = members.filter((member) => {
     const matchesSearch =
-      member.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      member.mobile?.includes(searchTerm) ||
+      searchTerm === "" ||
+      member.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       member.email?.toLowerCase().includes(searchTerm.toLowerCase());
 
-    if (!matchesSearch) return false;
+    const isPaid = checkPaymentStatus(member.id);
+    const matchesStatus =
+      filterStatus === "all" ||
+      (filterStatus === "paid" && isPaid) ||
+      (filterStatus === "unpaid" && !isPaid);
 
-    if (filterStatus === "all") return true;
-    if (filterStatus === "paid") return checkPaymentStatus(member.id);
-    if (filterStatus === "unpaid") return !checkPaymentStatus(member.id);
-    if (filterStatus === "overdue") {
-      // Member is overdue if they haven't paid for current month and their status is active
-      return !checkPaymentStatus(member.id) && member.status === "active";
-    }
-
-    return true;
+    return matchesSearch && matchesStatus;
   });
 
-  const stats = {
-    totalMembers: members.length,
-    paidThisMonth: members.filter((m) => checkPaymentStatus(m.id)).length,
-    unpaidThisMonth: members.filter(
-      (m) => !checkPaymentStatus(m.id) && m.status === "active"
-    ).length,
-    totalRevenue: payments
-      .filter((p) => p.month === getCurrentMonth())
-      .reduce((sum, p) => sum + (p.amount || 0), 0),
-  };
+  const totalCollected = payments
+    .filter((p) => p.month === getCurrentMonth())
+    .reduce((sum, p) => sum + (p.amount || 0), 0);
+
+  const paidMembersCount = members.filter((m) =>
+    checkPaymentStatus(m.id)
+  ).length;
 
   if (!isAdmin) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
-        <div className="text-center">
+      <div className="h-screen w-screen bg-gray-900 flex items-center justify-center p-4">
+        <div className="bg-gray-800 border border-gray-700 rounded-xl p-8 text-center max-w-md">
           <h2 className="text-2xl font-bold text-white mb-2">Access Denied</h2>
           <p className="text-gray-400">
-            You don't have permission to access this page.
+            You don't have permission to view this page.
           </p>
         </div>
       </div>
     );
   }
 
-  return (
-    <div className="min-h-screen bg-gray-900">
-      <Sidebar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
-
-      <div className="lg:pl-64">
-        {/* Mobile Header */}
-        <div className="lg:hidden sticky top-0 z-40 bg-gray-800 border-b border-gray-700 px-4 py-3">
-          <div className="flex items-center justify-between">
-            <h1 className="text-xl font-bold text-white">Payments</h1>
-            <button
-              onClick={() => setSidebarOpen(true)}
-              className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg"
-            >
-              <svg
-                className="w-6 h-6"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M4 6h16M4 12h16M4 18h16"
-                />
-              </svg>
-            </button>
-          </div>
+  if (loading) {
+    return (
+      <div className="h-screen w-screen bg-gray-900 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
+          <p className="text-gray-400">Loading payments...</p>
         </div>
+      </div>
+    );
+  }
 
-        <main className="p-4 sm:p-6 lg:p-8">
-          {/* Header */}
-          <div className="mb-6">
-            <h1 className="text-3xl font-bold text-white mb-2">
-              Payment Management
-            </h1>
-            <p className="text-gray-400">
-              Track and manage member payments for{" "}
-              {formatMonth(getCurrentMonth())}
-            </p>
+  return (
+    <div className="h-screen w-screen overflow-hidden bg-gray-900 flex">
+      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col h-full overflow-hidden">
+        {/* Header */}
+        <header className="bg-gray-800 border-b border-gray-700 flex-shrink-0">
+          <div className="flex items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => setSidebarOpen(true)}
+                className="lg:hidden p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition"
+              >
+                <svg
+                  className="w-6 h-6"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4 6h16M4 12h16M4 18h16"
+                  />
+                </svg>
+              </button>
+              <div>
+                <h1 className="text-xl sm:text-2xl font-bold text-white">
+                  Payment Management
+                </h1>
+                <p className="text-gray-400 text-sm hidden sm:block">
+                  Track and manage member payments for{" "}
+                  {formatMonth(getCurrentMonth())}
+                </p>
+              </div>
+            </div>
           </div>
+        </header>
 
+        {/* Main Content - Scrollable */}
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
           {/* Stats Cards */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-gray-400 text-sm">Total Members</span>
-                <div className="w-8 h-8 bg-blue-600/20 rounded-lg flex items-center justify-center">
+                <div className="w-10 h-10 bg-purple-600/20 rounded-lg flex items-center justify-center">
                   <svg
-                    className="w-5 h-5 text-blue-600"
+                    className="w-5 h-5 text-purple-600"
                     fill="currentColor"
                     viewBox="0 0 20 20"
                   >
@@ -287,15 +294,13 @@ const AdminPayments = () => {
                   </svg>
                 </div>
               </div>
-              <p className="text-2xl font-bold text-white">
-                {stats.totalMembers}
-              </p>
+              <p className="text-2xl font-bold text-white">{members.length}</p>
             </div>
 
-            <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
+            <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-gray-400 text-sm">Paid</span>
-                <div className="w-8 h-8 bg-green-600/20 rounded-lg flex items-center justify-center">
+                <span className="text-gray-400 text-sm">Paid This Month</span>
+                <div className="w-10 h-10 bg-green-600/20 rounded-lg flex items-center justify-center">
                   <svg
                     className="w-5 h-5 text-green-600"
                     fill="currentColor"
@@ -310,14 +315,14 @@ const AdminPayments = () => {
                 </div>
               </div>
               <p className="text-2xl font-bold text-white">
-                {stats.paidThisMonth}
+                {paidMembersCount}
               </p>
             </div>
 
-            <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
+            <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-gray-400 text-sm">Unpaid</span>
-                <div className="w-8 h-8 bg-red-600/20 rounded-lg flex items-center justify-center">
+                <div className="w-10 h-10 bg-red-600/20 rounded-lg flex items-center justify-center">
                   <svg
                     className="w-5 h-5 text-red-600"
                     fill="currentColor"
@@ -332,16 +337,16 @@ const AdminPayments = () => {
                 </div>
               </div>
               <p className="text-2xl font-bold text-white">
-                {stats.unpaidThisMonth}
+                {members.length - paidMembersCount}
               </p>
             </div>
 
-            <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
+            <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-gray-400 text-sm">Revenue</span>
-                <div className="w-8 h-8 bg-purple-600/20 rounded-lg flex items-center justify-center">
+                <span className="text-gray-400 text-sm">Total Collected</span>
+                <div className="w-10 h-10 bg-blue-600/20 rounded-lg flex items-center justify-center">
                   <svg
-                    className="w-5 h-5 text-purple-600"
+                    className="w-5 h-5 text-blue-600"
                     fill="currentColor"
                     viewBox="0 0 20 20"
                   >
@@ -355,63 +360,46 @@ const AdminPayments = () => {
                 </div>
               </div>
               <p className="text-2xl font-bold text-white">
-                Rs. {stats.totalRevenue.toLocaleString()}
+                Rs. {totalCollected.toLocaleString()}
               </p>
             </div>
           </div>
 
-          {/* Search and Filters */}
+          {/* Filters */}
           <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 mb-6">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {/* Search */}
-              <div className="relative">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Search Members
+                </label>
                 <input
                   type="text"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Search members..."
-                  className="w-full pl-10 pr-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  placeholder="Search by name or email..."
+                  className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-600"
                 />
-                <svg
-                  className="w-5 h-5 text-gray-500 absolute left-3 top-1/2 transform -translate-y-1/2"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                  />
-                </svg>
               </div>
 
-              {/* Filter */}
-              <div className="flex gap-2 flex-wrap">
-                {["all", "paid", "unpaid", "overdue"].map((status) => (
-                  <button
-                    key={status}
-                    onClick={() => setFilterStatus(status)}
-                    className={`px-4 py-2 rounded-lg font-medium transition text-sm capitalize ${
-                      filterStatus === status
-                        ? "bg-purple-600 text-white"
-                        : "bg-gray-700 text-gray-400 hover:text-white hover:bg-gray-600"
-                    }`}
-                  >
-                    {status}
-                  </button>
-                ))}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Payment Status
+                </label>
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                  className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-600"
+                >
+                  <option value="all">All Members</option>
+                  <option value="paid">Paid</option>
+                  <option value="unpaid">Unpaid</option>
+                </select>
               </div>
             </div>
           </div>
 
           {/* Members List */}
-          {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="w-12 h-12 border-4 border-purple-600 border-t-transparent rounded-full animate-spin"></div>
-            </div>
-          ) : filteredMembers.length === 0 ? (
+          {filteredMembers.length === 0 ? (
             <div className="bg-gray-800 border border-gray-700 rounded-xl p-12 text-center">
               <div className="w-20 h-20 bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
                 <svg
@@ -432,7 +420,7 @@ const AdminPayments = () => {
                 No Members Found
               </h3>
               <p className="text-gray-400">
-                No members match your current search or filter.
+                No members match your current filters.
               </p>
             </div>
           ) : (
@@ -444,74 +432,51 @@ const AdminPayments = () => {
                 return (
                   <div
                     key={member.id}
-                    className={`bg-gray-800 rounded-xl p-6 transition border-2 ${
-                      isPaid
-                        ? "border-green-600/50 bg-green-600/5"
-                        : "border-gray-700 hover:border-gray-600"
-                    }`}
+                    className="bg-gray-800 border border-gray-700 rounded-xl p-6 hover:border-gray-600 transition"
                   >
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex items-center gap-3">
-                        <div
-                          className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                            isPaid ? "bg-green-600/20" : "bg-gray-700"
-                          }`}
-                        >
-                          <svg
-                            className={`w-6 h-6 ${
-                              isPaid ? "text-green-600" : "text-gray-400"
-                            }`}
-                            fill="currentColor"
-                            viewBox="0 0 20 20"
-                          >
-                            <path
-                              fillRule="evenodd"
-                              d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"
-                              clipRule="evenodd"
-                            />
-                          </svg>
-                        </div>
-                        <div>
-                          <h3 className="text-white font-bold">
-                            {member.name}
-                          </h3>
-                          <p className="text-gray-400 text-sm">
-                            {member.mobile}
-                          </p>
-                        </div>
+                    <div className="flex items-start gap-4 mb-4">
+                      <div className="w-14 h-14 bg-gradient-to-br from-purple-600 to-pink-600 rounded-full flex items-center justify-center flex-shrink-0">
+                        <span className="text-white font-bold text-lg">
+                          {member.name.charAt(0).toUpperCase()}
+                        </span>
                       </div>
-                      {isPaid && (
-                        <div className="bg-green-600/20 px-2 py-1 rounded-full">
-                          <svg
-                            className="w-5 h-5 text-green-600"
-                            fill="currentColor"
-                            viewBox="0 0 20 20"
-                          >
-                            <path
-                              fillRule="evenodd"
-                              d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                              clipRule="evenodd"
-                            />
-                          </svg>
-                        </div>
-                      )}
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-lg font-bold text-white mb-1 truncate">
+                          {member.name}
+                        </h3>
+                        <p className="text-sm text-gray-400 truncate">
+                          {member.email}
+                        </p>
+                      </div>
                     </div>
 
                     <div className="space-y-2 mb-4">
                       <div className="flex justify-between text-sm">
-                        <span className="text-gray-400">Monthly Fee:</span>
+                        <span className="text-gray-400">Membership Fee:</span>
                         <span className="text-white font-medium">
                           Rs. {member.membershipFee || "N/A"}
                         </span>
                       </div>
                       <div className="flex justify-between text-sm">
-                        <span className="text-gray-400">Status:</span>
+                        <span className="text-gray-400">Payment Status:</span>
                         <span
                           className={`font-medium ${
                             isPaid ? "text-green-600" : "text-red-600"
                           }`}
                         >
                           {isPaid ? "Paid" : "Unpaid"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-400">Member Status:</span>
+                        <span
+                          className={`font-medium ${
+                            member.status === "active"
+                              ? "text-green-600"
+                              : "text-orange-600"
+                          }`}
+                        >
+                          {member.status === "active" ? "Active" : "Inactive"}
                         </span>
                       </div>
                       <div className="flex justify-between text-sm">
@@ -522,17 +487,66 @@ const AdminPayments = () => {
                       </div>
                     </div>
 
-                    <button
-                      onClick={() => handleOpenPaymentModal(member)}
-                      disabled={isPaid}
-                      className={`w-full py-2 rounded-lg font-medium transition ${
-                        isPaid
-                          ? "bg-gray-700 text-gray-500 cursor-not-allowed"
-                          : "bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white active:scale-95"
-                      }`}
-                    >
-                      {isPaid ? "Already Paid" : "Record Payment"}
-                    </button>
+                    <div className="space-y-2">
+                      <button
+                        onClick={() => handleOpenPaymentModal(member)}
+                        disabled={isPaid}
+                        className={`w-full py-2 rounded-lg font-medium transition ${
+                          isPaid
+                            ? "bg-gray-700 text-gray-500 cursor-not-allowed"
+                            : "bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white active:scale-95"
+                        }`}
+                      >
+                        {isPaid ? "Already Paid" : "Record Payment"}
+                      </button>
+
+                      <button
+                        onClick={() =>
+                          handleToggleMemberStatus(member.id, member.status)
+                        }
+                        className={`w-full py-2 rounded-lg font-medium transition active:scale-95 flex items-center justify-center gap-2 ${
+                          member.status === "active"
+                            ? "bg-orange-600/20 text-orange-600 hover:bg-orange-600/30 border border-orange-600/50"
+                            : "bg-green-600/20 text-green-600 hover:bg-green-600/30 border border-green-600/50"
+                        }`}
+                      >
+                        {member.status === "active" ? (
+                          <>
+                            <svg
+                              className="w-4 h-4"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"
+                              />
+                            </svg>
+                            Mark as Inactive
+                          </>
+                        ) : (
+                          <>
+                            <svg
+                              className="w-4 h-4"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                              />
+                            </svg>
+                            Mark as Active
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
                 );
               })}

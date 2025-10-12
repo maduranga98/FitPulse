@@ -89,7 +89,6 @@ const Sidebar = ({ isOpen, onClose }) => {
         />
       ),
       label: "Payments",
-      disabled: true,
     },
   ];
 

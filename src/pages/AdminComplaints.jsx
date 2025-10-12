@@ -113,43 +113,18 @@ const AdminComplaints = () => {
       setShowResponseModal(false);
       fetchComplaints();
 
-      const updatedComplaint = {
+      setViewComplaint({
         ...viewComplaint,
         responses: [...(viewComplaint.responses || []), response],
         status: responseForm.newStatus || viewComplaint.status,
-      };
-      setViewComplaint(updatedComplaint);
+      });
+
+      alert("Response submitted successfully! ✅");
     } catch (error) {
       console.error("Error submitting response:", error);
-      alert("Failed to submit response");
+      alert("Failed to submit response. Please try again.");
     } finally {
       setSubmitting(false);
-    }
-  };
-
-  const getStatusColor = (status) => {
-    switch (status) {
-      case "Pending":
-        return "bg-yellow-600/20 text-yellow-600 border-yellow-600/30";
-      case "In Progress":
-        return "bg-blue-600/20 text-blue-600 border-blue-600/30";
-      case "Resolved":
-        return "bg-green-600/20 text-green-600 border-green-600/30";
-      default:
-        return "bg-gray-600/20 text-gray-600 border-gray-600/30";
-    }
-  };
-
-  const getPriorityColor = (priority) => {
-    switch (priority) {
-      case "High":
-        return "text-red-600 bg-red-600/20";
-      case "Medium":
-        return "text-yellow-600 bg-yellow-600/20";
-      case "Low":
-        return "text-green-600 bg-green-600/20";
-      default:
-        return "text-gray-600 bg-gray-600/20";
     }
   };
 
@@ -165,108 +140,137 @@ const AdminComplaints = () => {
     });
   };
 
-  const filteredComplaints = complaints.filter((complaint) => {
-    const matchesSearch =
-      complaint.subject?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      complaint.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      complaint.memberName?.toLowerCase().includes(searchTerm.toLowerCase());
+  const getStatusColor = (status) => {
+    switch (status) {
+      case "Pending":
+        return "bg-yellow-600/20 text-yellow-600 border-yellow-600/50";
+      case "In Progress":
+        return "bg-blue-600/20 text-blue-600 border-blue-600/50";
+      case "Resolved":
+        return "bg-green-600/20 text-green-600 border-green-600/50";
+      default:
+        return "bg-gray-600/20 text-gray-400 border-gray-600/50";
+    }
+  };
 
+  const getPriorityColor = (priority) => {
+    switch (priority) {
+      case "High":
+        return "bg-red-600/20 text-red-600";
+      case "Medium":
+        return "bg-orange-600/20 text-orange-600";
+      case "Low":
+        return "bg-green-600/20 text-green-600";
+      default:
+        return "bg-gray-600/20 text-gray-400";
+    }
+  };
+
+  const filteredComplaints = complaints.filter((complaint) => {
     const matchesStatus =
       filterStatus === "all" || complaint.status === filterStatus;
     const matchesCategory =
       filterCategory === "all" || complaint.category === filterCategory;
+    const matchesSearch =
+      searchTerm === "" ||
+      complaint.subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      complaint.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      complaint.memberName?.toLowerCase().includes(searchTerm.toLowerCase());
 
-    return matchesSearch && matchesStatus && matchesCategory;
+    return matchesStatus && matchesCategory && matchesSearch;
   });
-
-  const stats = {
-    total: complaints.length,
-    pending: complaints.filter((c) => c.status === "Pending").length,
-    inProgress: complaints.filter((c) => c.status === "In Progress").length,
-    resolved: complaints.filter((c) => c.status === "Resolved").length,
-  };
 
   if (!isAdmin) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
-        <div className="text-center">
+      <div className="h-screen w-screen bg-gray-900 flex items-center justify-center p-4">
+        <div className="bg-gray-800 border border-gray-700 rounded-xl p-8 text-center max-w-md">
           <h2 className="text-2xl font-bold text-white mb-2">Access Denied</h2>
           <p className="text-gray-400">
-            You don't have permission to access this page.
+            You don't have permission to view this page.
           </p>
         </div>
       </div>
     );
   }
 
-  return (
-    <div className="min-h-screen bg-gray-900">
-      <Sidebar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
-
-      <div className="lg:pl-64">
-        {/* Mobile Header */}
-        <div className="lg:hidden sticky top-0 z-40 bg-gray-800 border-b border-gray-700 px-4 py-3">
-          <div className="flex items-center justify-between">
-            <h1 className="text-xl font-bold text-white">Complaints</h1>
-            <button
-              onClick={() => setSidebarOpen(true)}
-              className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg"
-            >
-              <svg
-                className="w-6 h-6"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M4 6h16M4 12h16M4 18h16"
-                />
-              </svg>
-            </button>
-          </div>
+  if (loading) {
+    return (
+      <div className="h-screen w-screen bg-gray-900 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-400">Loading complaints...</p>
         </div>
+      </div>
+    );
+  }
 
-        <main className="p-4 sm:p-6 lg:p-8">
-          {/* Header */}
-          <div className="mb-6">
-            <h1 className="text-3xl font-bold text-white mb-2">
-              Complaints Management
-            </h1>
-            <p className="text-gray-400">
-              View and respond to member complaints
-            </p>
+  return (
+    <div className="h-screen w-screen overflow-hidden bg-gray-900 flex">
+      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col h-full overflow-hidden">
+        {/* Header */}
+        <header className="bg-gray-800 border-b border-gray-700 flex-shrink-0">
+          <div className="flex items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => setSidebarOpen(true)}
+                className="lg:hidden p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition"
+              >
+                <svg
+                  className="w-6 h-6"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4 6h16M4 12h16M4 18h16"
+                  />
+                </svg>
+              </button>
+              <div>
+                <h1 className="text-xl sm:text-2xl font-bold text-white">
+                  Complaints Management
+                </h1>
+                <p className="text-gray-400 text-sm hidden sm:block">
+                  View and respond to member complaints
+                </p>
+              </div>
+            </div>
           </div>
+        </header>
 
+        {/* Main Content - Scrollable */}
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
           {/* Stats Cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
+            <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-gray-400 text-sm">Total</span>
-                <div className="w-8 h-8 bg-blue-600/20 rounded-lg flex items-center justify-center">
+                <div className="w-10 h-10 bg-blue-600/20 rounded-lg flex items-center justify-center">
                   <svg
                     className="w-5 h-5 text-blue-600"
                     fill="currentColor"
                     viewBox="0 0 20 20"
                   >
-                    <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" />
-                    <path
-                      fillRule="evenodd"
-                      d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z"
-                      clipRule="evenodd"
-                    />
+                    <path d="M2 5a2 2 0 012-2h7a2 2 0 012 2v4a2 2 0 01-2 2H9l-3 3v-3H4a2 2 0 01-2-2V5z" />
+                    <path d="M15 7v2a4 4 0 01-4 4H9.828l-1.766 1.767c.28.149.599.233.938.233h2l3 3v-3h2a2 2 0 002-2V9a2 2 0 00-2-2h-1z" />
                   </svg>
                 </div>
               </div>
-              <p className="text-2xl font-bold text-white">{stats.total}</p>
+              <p className="text-2xl font-bold text-white">
+                {complaints.length}
+              </p>
             </div>
 
-            <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
+            <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-gray-400 text-sm">Pending</span>
-                <div className="w-8 h-8 bg-yellow-600/20 rounded-lg flex items-center justify-center">
+                <div className="w-10 h-10 bg-yellow-600/20 rounded-lg flex items-center justify-center">
                   <svg
                     className="w-5 h-5 text-yellow-600"
                     fill="currentColor"
@@ -280,13 +284,15 @@ const AdminComplaints = () => {
                   </svg>
                 </div>
               </div>
-              <p className="text-2xl font-bold text-white">{stats.pending}</p>
+              <p className="text-2xl font-bold text-white">
+                {complaints.filter((c) => c.status === "Pending").length}
+              </p>
             </div>
 
-            <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
+            <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-gray-400 text-sm">In Progress</span>
-                <div className="w-8 h-8 bg-blue-600/20 rounded-lg flex items-center justify-center">
+                <div className="w-10 h-10 bg-blue-600/20 rounded-lg flex items-center justify-center">
                   <svg
                     className="w-5 h-5 text-blue-600"
                     fill="currentColor"
@@ -301,14 +307,14 @@ const AdminComplaints = () => {
                 </div>
               </div>
               <p className="text-2xl font-bold text-white">
-                {stats.inProgress}
+                {complaints.filter((c) => c.status === "In Progress").length}
               </p>
             </div>
 
-            <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
+            <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-gray-400 text-sm">Resolved</span>
-                <div className="w-8 h-8 bg-green-600/20 rounded-lg flex items-center justify-center">
+                <div className="w-10 h-10 bg-green-600/20 rounded-lg flex items-center justify-center">
                   <svg
                     className="w-5 h-5 text-green-600"
                     fill="currentColor"
@@ -322,45 +328,36 @@ const AdminComplaints = () => {
                   </svg>
                 </div>
               </div>
-              <p className="text-2xl font-bold text-white">{stats.resolved}</p>
+              <p className="text-2xl font-bold text-white">
+                {complaints.filter((c) => c.status === "Resolved").length}
+              </p>
             </div>
           </div>
 
-          {/* Search and Filters */}
+          {/* Filters */}
           <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 mb-6">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              {/* Search */}
-              <div className="lg:col-span-1">
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder="Search complaints..."
-                    className="w-full pl-10 pr-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  <svg
-                    className="w-5 h-5 text-gray-500 absolute left-3 top-1/2 transform -translate-y-1/2"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                    />
-                  </svg>
-                </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Search
+                </label>
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Search complaints..."
+                  className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                />
               </div>
 
-              {/* Status Filter */}
               <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Status
+                </label>
                 <select
                   value={filterStatus}
                   onChange={(e) => setFilterStatus(e.target.value)}
-                  className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-600"
                 >
                   <option value="all">All Status</option>
                   <option value="Pending">Pending</option>
@@ -369,12 +366,14 @@ const AdminComplaints = () => {
                 </select>
               </div>
 
-              {/* Category Filter */}
               <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Category
+                </label>
                 <select
                   value={filterCategory}
                   onChange={(e) => setFilterCategory(e.target.value)}
-                  className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-600"
                 >
                   {categories.map((category) => (
                     <option key={category} value={category}>
@@ -387,11 +386,7 @@ const AdminComplaints = () => {
           </div>
 
           {/* Complaints List */}
-          {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-            </div>
-          ) : filteredComplaints.length === 0 ? (
+          {filteredComplaints.length === 0 ? (
             <div className="bg-gray-800 border border-gray-700 rounded-xl p-12 text-center">
               <div className="w-20 h-20 bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
                 <svg
@@ -557,7 +552,7 @@ const AdminComplaints = () => {
                     onChange={(e) =>
                       handleUpdateStatus(viewComplaint.id, e.target.value)
                     }
-                    className="px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
                   >
                     <option value="Pending">Pending</option>
                     <option value="In Progress">In Progress</option>
@@ -648,9 +643,9 @@ const AdminComplaints = () => {
                           className="bg-gray-900 border border-gray-700 rounded-lg p-4"
                         >
                           <div className="flex items-start gap-3">
-                            <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
+                            <div className="w-10 h-10 bg-blue-600/20 rounded-full flex items-center justify-center flex-shrink-0">
                               <svg
-                                className="w-5 h-5 text-white"
+                                className="w-5 h-5 text-blue-600"
                                 fill="currentColor"
                                 viewBox="0 0 20 20"
                               >
@@ -670,7 +665,7 @@ const AdminComplaints = () => {
                                   {formatDate(response.respondedAt)}
                                 </span>
                               </div>
-                              <p className="text-gray-300 text-sm">
+                              <p className="text-gray-300 whitespace-pre-wrap">
                                 {response.message}
                               </p>
                             </div>
@@ -711,10 +706,10 @@ const AdminComplaints = () => {
               </button>
             </div>
 
-            <form onSubmit={handleSubmitResponse} className="p-6 space-y-6">
+            <form onSubmit={handleSubmitResponse} className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Response Message *
+                  Your Response *
                 </label>
                 <textarea
                   value={responseForm.message}
@@ -725,7 +720,7 @@ const AdminComplaints = () => {
                     })
                   }
                   className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600 resize-none"
-                  placeholder="Enter your response to the member..."
+                  placeholder="Write your response to the member..."
                   rows="6"
                   required
                 />
