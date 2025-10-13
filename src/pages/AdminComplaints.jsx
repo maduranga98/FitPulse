@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../hooks/useAuth";
 import Sidebar from "../components/Sidebar";
+import { where } from "firebase/firestore";
 
 const AdminComplaints = () => {
   const { user } = useAuth();
+  const currentGymId = user?.gymId;
 
   const [complaints, setComplaints] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -19,7 +21,7 @@ const AdminComplaints = () => {
   });
   const [submitting, setSubmitting] = useState(false);
 
-  const isAdmin = user?.role === "admin" || user?.role === "manager";
+  const isAdmin = user?.role === "gym_admin" || user?.role === "manager";
 
   const categories = [
     "all",
@@ -46,6 +48,7 @@ const AdminComplaints = () => {
 
       const complaintsQuery = query(
         collection(db, "complaints"),
+        where("gymId", "==", currentGymId),
         orderBy("createdAt", "desc")
       );
 

@@ -1,7 +1,10 @@
 import { useState, useEffect } from "react";
 import Sidebar from "../components/Sidebar";
+import { useAuth } from "../hooks/useAuth";
 
 const Exercises = ({ onLogout, onNavigate }) => {
+  const { user } = useAuth();
+  const currentGymId = user?.gymId;
   const [exercises, setExercises] = useState([]);
   const [categories, setCategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState("all");
@@ -43,22 +46,34 @@ const Exercises = ({ onLogout, onNavigate }) => {
   const fetchData = async () => {
     try {
       const { db } = await import("../config/firebase");
-      const { collection, getDocs, orderBy, query } = await import(
+      const { collection, getDocs, orderBy, query, where } = await import(
         "firebase/firestore"
       );
 
-      // Fetch categories
+      // Fetch categories - ADD WHERE CLAUSE
       const categoriesRef = collection(db, "exerciseCategories");
-      const categoriesQuery = query(categoriesRef, orderBy("name", "asc"));
+      const categoriesQuery = currentGymId
+        ? query(
+            categoriesRef,
+            where("gymId", "==", currentGymId),
+            orderBy("name", "asc")
+          )
+        : query(categoriesRef, orderBy("name", "asc"));
       const categoriesSnapshot = await getDocs(categoriesQuery);
       const categoriesData = categoriesSnapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
       }));
 
-      // Fetch exercises
+      // Fetch exercises - ADD WHERE CLAUSE
       const exercisesRef = collection(db, "exercises");
-      const exercisesQuery = query(exercisesRef, orderBy("name", "asc"));
+      const exercisesQuery = currentGymId
+        ? query(
+            exercisesRef,
+            where("gymId", "==", currentGymId),
+            orderBy("name", "asc")
+          )
+        : query(exercisesRef, orderBy("name", "asc"));
       const exercisesSnapshot = await getDocs(exercisesQuery);
       const exercisesData = exercisesSnapshot.docs.map((doc) => ({
         id: doc.id,
@@ -82,9 +97,16 @@ const Exercises = ({ onLogout, onNavigate }) => {
         "firebase/firestore"
       );
 
+      // Find the selected category to get its name
+      const selectedCategory = categories.find(
+        (cat) => cat.id === exerciseForm.category
+      );
+
       // Clean up arrays
       const cleanedForm = {
         ...exerciseForm,
+        gymId: currentGymId, // ADD THIS LINE
+        categoryName: selectedCategory ? selectedCategory.name : "",
         steps: exerciseForm.steps.filter((s) => s.trim() !== ""),
         targetedSections: exerciseForm.targetedSections.filter(
           (t) => t.trim() !== ""
@@ -128,6 +150,7 @@ const Exercises = ({ onLogout, onNavigate }) => {
 
       await addDoc(collection(db, "exerciseCategories"), {
         ...categoryForm,
+        gymId: currentGymId,
         createdAt: Timestamp.now(),
       });
 

@@ -4,6 +4,7 @@ import { useAuth } from "../hooks/useAuth";
 
 const Schedules = () => {
   const { user: currentUser, logout } = useAuth();
+  const currentGymId = currentUser?.gymId;
 
   const [schedules, setSchedules] = useState([]);
   const [members, setMembers] = useState([]);
@@ -18,9 +19,15 @@ const Schedules = () => {
   const [notificationMessage, setNotificationMessage] = useState("");
 
   const isAdmin =
-    currentUser?.role === "admin" || currentUser?.role === "manager";
+    currentUser?.role === "gym_admin" || currentUser?.role === "manager";
   const isMember = currentUser?.role === "member";
   console.log(currentUser?.role);
+
+  useEffect(() => {
+    if (currentGymId) {
+      fetchData();
+    }
+  }, [currentGymId]);
   const [scheduleForm, setScheduleForm] = useState({
     memberId: "",
     title: "",
@@ -51,10 +58,6 @@ const Schedules = () => {
     { id: "sunday", label: "Sunday" },
   ];
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
   const fetchData = async () => {
     try {
       const { db } = await import("../config/firebase");
@@ -67,11 +70,13 @@ const Schedules = () => {
         schedulesQuery = query(
           collection(db, "schedules"),
           where("memberId", "==", currentUser.id),
+          where("gymId", "==", currentGymId),
           orderBy("startDate", "desc")
         );
       } else {
         schedulesQuery = query(
           collection(db, "schedules"),
+          where("gymId", "==", currentGymId),
           orderBy("startDate", "desc")
         );
       }
@@ -83,7 +88,9 @@ const Schedules = () => {
       }));
 
       if (isAdmin) {
-        const membersSnapshot = await getDocs(collection(db, "members"));
+        const membersSnapshot = await getDocs(
+          query(collection(db, "members"), where("gymId", "==", currentGymId))
+        );
         const membersData = membersSnapshot.docs.map((doc) => ({
           id: doc.id,
           ...doc.data(),
@@ -91,7 +98,9 @@ const Schedules = () => {
         setMembers(membersData);
       }
 
-      const exercisesSnapshot = await getDocs(collection(db, "exercises"));
+      const exercisesSnapshot = await getDocs(
+        query(collection(db, "exercises"), where("gymId", "==", currentGymId))
+      );
       const exercisesData = exercisesSnapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
@@ -140,6 +149,7 @@ const Schedules = () => {
 
       const scheduleData = {
         ...scheduleForm,
+        gymId: currentGymId,
         cardio: cleanedCardio,
         warmUp: cleanedWarmUp,
         warmDown: cleanedWarmDown,
@@ -896,7 +906,7 @@ const Schedules = () => {
                           >
                             <option value="">Select cardio exercise</option>
                             {exercises
-                              .filter((ex) => ex.category === "cardio")
+                              .filter((ex) => ex.categoryName === "cardio")
                               .map((ex) => (
                                 <option key={ex.id} value={ex.id}>
                                   {ex.name}
