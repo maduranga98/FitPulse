@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../hooks/useAuth";
 import Sidebar from "../components/Sidebar";
+import { where } from "firebase/firestore";
 
 const AdminPayments = () => {
   const { user } = useAuth();
-
+  const currentGymId = user?.gymId;
   const [members, setMembers] = useState([]);
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -21,7 +22,7 @@ const AdminPayments = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
 
-  const isAdmin = user?.role === "admin" || user?.role === "manager";
+  const isAdmin = user?.role === "gym_admin" || user?.role === "manager";
 
   const paymentMethods = ["Cash", "Card", "Bank Transfer", "Online", "Other"];
 
@@ -41,6 +42,7 @@ const AdminPayments = () => {
       // Fetch members
       const membersQuery = query(
         collection(db, "members"),
+        where("gymId", "==", currentGymId),
         orderBy("name", "asc")
       );
       const membersSnapshot = await getDocs(membersQuery);
@@ -52,6 +54,7 @@ const AdminPayments = () => {
       // Fetch payments
       const paymentsQuery = query(
         collection(db, "payments"),
+        where("gymId", "==", currentGymId),
         orderBy("paidAt", "desc")
       );
       const paymentsSnapshot = await getDocs(paymentsQuery);
@@ -125,6 +128,7 @@ const AdminPayments = () => {
 
       const paymentData = {
         memberId: selectedMember.id,
+        gymId: currentGymId,
         memberName: selectedMember.name,
         amount: parseFloat(paymentForm.amount),
         month: paymentForm.month,

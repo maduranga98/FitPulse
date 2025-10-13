@@ -4,6 +4,7 @@ import Sidebar from "../components/Sidebar";
 
 const Members = () => {
   const { user } = useAuth();
+  const currentGymId = user?.gymId;
 
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -14,7 +15,7 @@ const Members = () => {
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterLevel, setFilterLevel] = useState("all");
 
-  const isAdmin = user?.role === "admin" || user?.role === "manager";
+  const isAdmin = user?.role === "gym_admin" || user?.role === "manager";
 
   const [memberForm, setMemberForm] = useState({
     name: "",
@@ -52,14 +53,18 @@ const Members = () => {
   const fetchMembers = async () => {
     try {
       const { db } = await import("../config/firebase");
-      const { collection, getDocs, orderBy, query } = await import(
+      const { collection, getDocs, orderBy, query, where } = await import(
         "firebase/firestore"
       );
 
       const membersRef = collection(db, "members");
-      const membersQuery = query(membersRef, orderBy("joinDate", "desc"));
-      const membersSnapshot = await getDocs(membersQuery);
-      const membersData = membersSnapshot.docs.map((doc) => ({
+      const membersQuery = query(
+        membersRef,
+        where("gymId", "==", currentGymId),
+        orderBy("joinDate", "desc")
+      );
+      const snapshot = await getDocs(membersQuery);
+      const membersData = snapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
       }));
@@ -134,6 +139,7 @@ const Members = () => {
 
       const memberData = {
         ...memberForm,
+        gymId: currentGymId,
         username,
         password,
         bmi: bmiInfo?.bmi || null,

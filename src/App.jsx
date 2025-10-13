@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { AuthProvider } from "./hooks/useAuth";
+import { AuthProvider, useAuth } from "./hooks/useAuth";
 import ProtectedRoute from "./components/ProtectedRoute";
 import RoleRoute from "./components/RoleRoute";
 import Login from "./pages/Login";
@@ -16,21 +16,58 @@ import MemberProfile from "./pages/members/settings/MemberProfile";
 import MemberSettings from "./pages/members/MemberSettings";
 import AdminComplaints from "./pages/AdminComplaints";
 import AdminPayments from "./pages/AdminPayments";
+import SuperAdminDashboard from "./pages/SuperAdminDashboard";
+
+// Component to handle root redirect based on user role
+function RootRedirect() {
+  const { user } = useAuth();
+
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (user.role === "super_admin") {
+    return <Navigate to="/super-admin" replace />;
+  } else if (user.role === "member") {
+    return <Navigate to="/member-dashboard" replace />;
+  } else {
+    return <Navigate to="/dashboard" replace />;
+  }
+}
 
 function App() {
   return (
-    <AuthProvider>
-      <BrowserRouter>
+    <BrowserRouter>
+      <AuthProvider>
         <Routes>
           {/* Public Routes */}
           <Route path="/login" element={<Login />} />
+
+          {/* Super Admin Routes */}
+          <Route
+            path="/super-admin"
+            element={
+              <ProtectedRoute>
+                <RoleRoute allowedRoles={["super_admin"]}>
+                  <SuperAdminDashboard />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
 
           {/* Protected Routes - Admin/Manager Only */}
           <Route
             path="/dashboard"
             element={
               <ProtectedRoute>
-                <RoleRoute allowedRoles={["admin", "manager"]}>
+                <RoleRoute
+                  allowedRoles={[
+                    "admin",
+                    "manager",
+                    "gym_admin",
+                    "gym_manager",
+                  ]}
+                >
                   <Dashboard />
                 </RoleRoute>
               </ProtectedRoute>
@@ -40,7 +77,14 @@ function App() {
             path="/members"
             element={
               <ProtectedRoute>
-                <RoleRoute allowedRoles={["admin", "manager"]}>
+                <RoleRoute
+                  allowedRoles={[
+                    "admin",
+                    "manager",
+                    "gym_admin",
+                    "gym_manager",
+                  ]}
+                >
                   <Members />
                 </RoleRoute>
               </ProtectedRoute>
@@ -50,7 +94,14 @@ function App() {
             path="/complaints"
             element={
               <ProtectedRoute>
-                <RoleRoute allowedRoles={["admin", "manager"]}>
+                <RoleRoute
+                  allowedRoles={[
+                    "admin",
+                    "manager",
+                    "gym_admin",
+                    "gym_manager",
+                  ]}
+                >
                   <AdminComplaints />
                 </RoleRoute>
               </ProtectedRoute>
@@ -60,12 +111,20 @@ function App() {
             path="/payments"
             element={
               <ProtectedRoute>
-                <RoleRoute allowedRoles={["admin", "manager"]}>
+                <RoleRoute
+                  allowedRoles={[
+                    "admin",
+                    "manager",
+                    "gym_admin",
+                    "gym_manager",
+                  ]}
+                >
                   <AdminPayments />
                 </RoleRoute>
               </ProtectedRoute>
             }
           />
+
           {/* Protected Routes - All Authenticated Users */}
           <Route
             path="/exercises"
@@ -95,7 +154,6 @@ function App() {
               </ProtectedRoute>
             }
           />
-          {/* Member Workout Tracker */}
           <Route
             path="/member/workouts"
             element={
@@ -106,8 +164,6 @@ function App() {
               </ProtectedRoute>
             }
           />
-
-          {/* Member Progress Tracker */}
           <Route
             path="/member/progress"
             element={
@@ -118,7 +174,6 @@ function App() {
               </ProtectedRoute>
             }
           />
-
           <Route
             path="/member-schedules"
             element={
@@ -156,26 +211,9 @@ function App() {
           {/* 404 Not Found */}
           <Route path="*" element={<NotFound />} />
         </Routes>
-      </BrowserRouter>
-    </AuthProvider>
+      </AuthProvider>
+    </BrowserRouter>
   );
-}
-
-// Component to handle root redirect based on user role
-function RootRedirect() {
-  const storedUser = localStorage.getItem("gymUser");
-
-  if (!storedUser) {
-    return <Navigate to="/login" replace />;
-  }
-
-  const user = JSON.parse(storedUser);
-
-  if (user.role === "member") {
-    return <Navigate to="/member-dashboard" replace />;
-  }
-
-  return <Navigate to="/dashboard" replace />;
 }
 
 export default App;
