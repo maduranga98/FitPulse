@@ -1,4 +1,3 @@
-// src/pages/Login.jsx
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
@@ -60,11 +59,80 @@ const Login = () => {
 
   return (
     <div className="fixed inset-0 bg-gray-900 overflow-hidden">
-      <div className="h-full w-full flex items-center justify-center p-6">
+      {/* Grid Pattern Background */}
+      <div className="absolute inset-0 opacity-10">
+        <div
+          className="absolute inset-0"
+          style={{
+            backgroundImage: `
+              linear-gradient(to right, #374151 1px, transparent 1px),
+              linear-gradient(to bottom, #374151 1px, transparent 1px)
+            `,
+            backgroundSize: "40px 40px",
+          }}
+        ></div>
+      </div>
+
+      {/* Animated Gradient Blobs */}
+      <div className="absolute inset-0 overflow-hidden">
+        <div
+          className="absolute -top-4 -left-4 w-96 h-96 bg-blue-600 rounded-full mix-blend-multiply filter blur-3xl opacity-20"
+          style={{
+            animation: "blob 7s infinite",
+          }}
+        ></div>
+        <div
+          className="absolute top-0 -right-4 w-96 h-96 bg-purple-600 rounded-full mix-blend-multiply filter blur-3xl opacity-20"
+          style={{
+            animation: "blob 7s infinite 2s",
+          }}
+        ></div>
+        <div
+          className="absolute -bottom-8 left-1/2 w-96 h-96 bg-indigo-600 rounded-full mix-blend-multiply filter blur-3xl opacity-20"
+          style={{
+            animation: "blob 7s infinite 4s",
+          }}
+        ></div>
+      </div>
+
+      {/* Diagonal Lines Pattern */}
+      <div className="absolute inset-0 opacity-5">
+        <div
+          className="absolute inset-0"
+          style={{
+            backgroundImage: `repeating-linear-gradient(
+              45deg,
+              transparent,
+              transparent 35px,
+              #4B5563 35px,
+              #4B5563 37px
+            )`,
+          }}
+        ></div>
+      </div>
+
+      <style>{`
+        @keyframes blob {
+          0% {
+            transform: translate(0px, 0px) scale(1);
+          }
+          33% {
+            transform: translate(30px, -50px) scale(1.1);
+          }
+          66% {
+            transform: translate(-20px, 20px) scale(0.9);
+          }
+          100% {
+            transform: translate(0px, 0px) scale(1);
+          }
+        }
+      `}</style>
+
+      <div className="relative h-full w-full flex items-center justify-center p-6">
         <div className="w-full max-w-md">
-          <div className="bg-gray-800 rounded-2xl border border-gray-700 p-8 shadow-2xl">
+          <div className="bg-gray-800/90 backdrop-blur-xl rounded-2xl border border-gray-700/50 p-8 shadow-2xl">
             <div className="flex items-center justify-center gap-3 mb-8">
-              <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center">
+              <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-600/50">
                 <svg
                   className="w-7 h-7 text-white"
                   fill="none"
@@ -104,7 +172,7 @@ const Login = () => {
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                  className="w-full px-4 py-3 bg-gray-900/50 backdrop-blur-sm border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
                   placeholder="Enter your username"
                   disabled={loading}
                 />
@@ -118,7 +186,7 @@ const Login = () => {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                  className="w-full px-4 py-3 bg-gray-900/50 backdrop-blur-sm border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
                   placeholder="Enter your password"
                   disabled={loading}
                 />
@@ -127,15 +195,26 @@ const Login = () => {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-600/30 hover:shadow-blue-600/50"
               >
                 {loading ? "Signing in..." : "Sign In"}
               </button>
             </form>
 
-            <div className="mt-6 text-center">
+            <div className="mt-6 text-center space-y-1">
               <p className="text-xs text-gray-500">
-                Powered by Gym Management System
+                Created by{" "}
+                <a
+                  href="https://www.lumoraventures.com/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:text-blue-500 transition font-medium"
+                >
+                  Lumora Ventures PVT LTD
+                </a>
+              </p>
+              <p className="text-xs text-gray-600">
+                © {new Date().getFullYear()} All rights reserved
               </p>
             </div>
           </div>

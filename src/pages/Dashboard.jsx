@@ -19,15 +19,22 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  const isAdmin = user?.role === "admin" || user?.role === "manager";
+  const isAdmin =
+    user?.role === "admin" ||
+    user?.role === "manager" ||
+    user?.role === "gym_admin" ||
+    user?.role === "gym_manager";
+
+  //  Get current gym ID from user
+  const currentGymId = user?.gymId;
 
   useEffect(() => {
-    if (isAdmin) {
+    if (isAdmin && currentGymId) {
       fetchDashboardData();
     } else {
       setLoading(false);
     }
-  }, [isAdmin]);
+  }, [isAdmin, currentGymId]);
 
   const fetchDashboardData = async () => {
     try {
@@ -35,21 +42,28 @@ const Dashboard = () => {
       const { collection, query, getDocs, where, orderBy, limit } =
         await import("firebase/firestore");
 
-      // Fetch members stats
+      // Fetch members stats with gymId filter
       const membersRef = collection(db, "members");
-      const membersSnapshot = await getDocs(membersRef);
+      const membersQuery = query(
+        membersRef,
+        where("gymId", "==", currentGymId)
+      );
+      const membersSnapshot = await getDocs(membersQuery);
       const totalMembers = membersSnapshot.size;
 
+      // Fetch active members with gymId filter
       const activeMembersQuery = query(
         membersRef,
+        where("gymId", "==", currentGymId),
         where("status", "==", "active")
       );
       const activeMembersSnapshot = await getDocs(activeMembersQuery);
       const activeMembers = activeMembersSnapshot.size;
 
-      // Fetch recent members
+      // Fetch recent members with gymId filter
       const recentMembersQuery = query(
         membersRef,
+        where("gymId", "==", currentGymId),
         orderBy("joinDate", "desc"),
         limit(5)
       );
@@ -59,9 +73,13 @@ const Dashboard = () => {
         ...doc.data(),
       }));
 
-      // Fetch payments data
+      // Fetch payments data with gymId filter
       const paymentsRef = collection(db, "payments");
-      const paymentsSnapshot = await getDocs(paymentsRef);
+      const paymentsQuery = query(
+        paymentsRef,
+        where("gymId", "==", currentGymId)
+      );
+      const paymentsSnapshot = await getDocs(paymentsQuery);
 
       let totalRevenue = 0;
       let pendingPayments = 0;
@@ -75,9 +93,10 @@ const Dashboard = () => {
         }
       });
 
-      // Fetch recent payments
+      // Fetch recent payments with gymId filter
       const recentPaymentsQuery = query(
         paymentsRef,
+        where("gymId", "==", currentGymId),
         orderBy("paidAt", "desc"),
         limit(5)
       );
@@ -106,11 +125,54 @@ const Dashboard = () => {
     if (!timestamp) return "N/A";
     const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
     return date.toLocaleDateString("en-US", {
+      year: "numeric",
       month: "short",
       day: "numeric",
-      year: "numeric",
     });
   };
+
+  const formatCurrency = (amount) => {
+    return new Intl.NumberFormat("en-LK", {
+      style: "currency",
+      currency: "LKR",
+      minimumFractionDigits: 0,
+    }).format(amount);
+  };
+
+  const handleLogout = () => {
+    logout();
+    navigate("/login");
+  };
+
+  // Show access denied if not admin
+  if (!isAdmin) {
+    return (
+      <div className="h-screen w-screen bg-gray-900 flex items-center justify-center p-4">
+        <div className="bg-gray-800 border border-gray-700 rounded-xl p-8 text-center max-w-md">
+          <h2 className="text-2xl font-bold text-white mb-2">Access Denied</h2>
+          <p className="text-gray-400">
+            You don't have permission to view this page.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error if no gymId
+  if (!currentGymId) {
+    return (
+      <div className="h-screen w-screen bg-gray-900 flex items-center justify-center p-4">
+        <div className="bg-gray-800 border border-gray-700 rounded-xl p-8 text-center max-w-md">
+          <h2 className="text-2xl font-bold text-white mb-2">
+            Configuration Error
+          </h2>
+          <p className="text-gray-400">
+            Your account is not associated with a gym. Please contact support.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -124,18 +186,17 @@ const Dashboard = () => {
   }
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-gray-900 flex">
+    <div className="h-screen w-screen bg-gray-900 flex overflow-hidden">
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col h-full overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
-        <header className="bg-gray-800 border-b border-gray-700 flex-shrink-0">
-          <div className="flex items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
+        <header className="bg-gray-800 border-b border-gray-700 p-4">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <button
                 onClick={() => setSidebarOpen(true)}
-                className="lg:hidden p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition"
+                className="lg:hidden text-gray-400 hover:text-white"
               >
                 <svg
                   className="w-6 h-6"
@@ -155,23 +216,28 @@ const Dashboard = () => {
                 Dashboard
               </h1>
             </div>
+
             <div className="flex items-center gap-4">
-              <span className="text-sm text-gray-400 hidden sm:inline">
-                Welcome back, {user?.name || user?.username}
-              </span>
-              <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center">
-                <span className="text-white font-semibold">
-                  {(user?.name || user?.username)?.charAt(0).toUpperCase()}
-                </span>
+              <div className="hidden sm:block text-right">
+                <p className="text-sm font-medium text-white">{user?.name}</p>
+                <p className="text-xs text-gray-400 capitalize">
+                  {user?.role?.replace("_", " ")}
+                </p>
               </div>
+              <button
+                onClick={handleLogout}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition"
+              >
+                Logout
+              </button>
             </div>
           </div>
         </header>
 
-        {/* Scrollable Content */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-          {/* Stats Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-8">
+        {/* Main Content */}
+        <main className="flex-1 overflow-y-auto p-6">
+          {/* Stats Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             {/* Total Members */}
             <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
               <div className="flex items-center justify-between mb-4">
@@ -186,7 +252,7 @@ const Dashboard = () => {
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       strokeWidth={2}
-                      d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
+                      d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
                     />
                   </svg>
                 </div>
@@ -289,42 +355,37 @@ const Dashboard = () => {
 
               {recentMembers.length === 0 ? (
                 <div className="text-center py-8">
-                  <p className="text-gray-400">No recent members</p>
+                  <p className="text-gray-400">No members yet</p>
                 </div>
               ) : (
                 <div className="space-y-4">
                   {recentMembers.map((member) => (
                     <div
                       key={member.id}
-                      className="flex items-center gap-4 p-4 bg-gray-900 rounded-lg hover:bg-gray-900/50 transition"
+                      className="flex items-center justify-between p-4 bg-gray-900 rounded-lg"
                     >
-                      <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-purple-600 rounded-full flex items-center justify-center flex-shrink-0">
-                        <span className="text-white font-bold">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold">
                           {member.name.charAt(0).toUpperCase()}
-                        </span>
+                        </div>
+                        <div>
+                          <p className="text-white font-medium">
+                            {member.name}
+                          </p>
+                          <p className="text-sm text-gray-400">
+                            Joined {formatDate(member.joinDate)}
+                          </p>
+                        </div>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-white font-medium truncate">
-                          {member.name}
-                        </p>
-                        <p className="text-gray-400 text-sm truncate">
-                          {member.email}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-xs text-gray-500">
-                          {formatDate(member.joinDate)}
-                        </p>
-                        <span
-                          className={`inline-block px-2 py-1 text-xs font-medium rounded mt-1 ${
-                            member.status === "active"
-                              ? "bg-green-600/20 text-green-600"
-                              : "bg-gray-600/20 text-gray-400"
-                          }`}
-                        >
-                          {member.status}
-                        </span>
-                      </div>
+                      <span
+                        className={`px-3 py-1 rounded-full text-xs font-medium ${
+                          member.status === "active"
+                            ? "bg-green-600/20 text-green-600"
+                            : "bg-gray-600/20 text-gray-400"
+                        }`}
+                      >
+                        {member.status}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -347,164 +408,42 @@ const Dashboard = () => {
 
               {recentPayments.length === 0 ? (
                 <div className="text-center py-8">
-                  <p className="text-gray-400">No recent payments</p>
+                  <p className="text-gray-400">No payments yet</p>
                 </div>
               ) : (
                 <div className="space-y-4">
                   {recentPayments.map((payment) => (
                     <div
                       key={payment.id}
-                      className="flex items-center justify-between p-4 bg-gray-900 rounded-lg hover:bg-gray-900/50 transition"
+                      className="flex items-center justify-between p-4 bg-gray-900 rounded-lg"
                     >
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-green-600/20 rounded-full flex items-center justify-center flex-shrink-0">
-                          <svg
-                            className="w-6 h-6 text-green-600"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M5 13l4 4L19 7"
-                            />
-                          </svg>
-                        </div>
-                        <div>
-                          <p className="text-white font-medium">
-                            {payment.memberName}
-                          </p>
-                          <p className="text-gray-400 text-sm">
-                            {payment.paymentMethod}
-                          </p>
-                        </div>
+                      <div>
+                        <p className="text-white font-medium">
+                          {payment.memberName}
+                        </p>
+                        <p className="text-sm text-gray-400">
+                          {formatDate(payment.paidAt)}
+                        </p>
                       </div>
                       <div className="text-right">
                         <p className="text-white font-bold">
-                          Rs. {payment.amount?.toLocaleString()}
+                          Rs. {payment.amount.toLocaleString()}
                         </p>
-                        <p className="text-xs text-gray-500">
-                          {formatDate(payment.paidAt)}
-                        </p>
+                        <span
+                          className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${
+                            payment.status === "completed"
+                              ? "bg-green-600/20 text-green-600"
+                              : "bg-yellow-600/20 text-yellow-600"
+                          }`}
+                        >
+                          {payment.status}
+                        </span>
                       </div>
                     </div>
                   ))}
                 </div>
               )}
             </div>
-          </div>
-
-          {/* Quick Actions */}
-          <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <Link
-              to="/members"
-              className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-xl p-6 hover:from-blue-700 hover:to-blue-800 transition group"
-            >
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center">
-                  <svg
-                    className="w-6 h-6 text-white"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"
-                    />
-                  </svg>
-                </div>
-                <div>
-                  <p className="text-white font-bold">Add Member</p>
-                  <p className="text-white/80 text-sm">Register new member</p>
-                </div>
-              </div>
-            </Link>
-
-            <Link
-              to="/payments"
-              className="bg-gradient-to-br from-green-600 to-green-700 rounded-xl p-6 hover:from-green-700 hover:to-green-800 transition group"
-            >
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center">
-                  <svg
-                    className="w-6 h-6 text-white"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"
-                    />
-                  </svg>
-                </div>
-                <div>
-                  <p className="text-white font-bold">Record Payment</p>
-                  <p className="text-white/80 text-sm">Log member payment</p>
-                </div>
-              </div>
-            </Link>
-
-            <Link
-              to="/schedules"
-              className="bg-gradient-to-br from-purple-600 to-purple-700 rounded-xl p-6 hover:from-purple-700 hover:to-purple-800 transition group"
-            >
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center">
-                  <svg
-                    className="w-6 h-6 text-white"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                    />
-                  </svg>
-                </div>
-                <div>
-                  <p className="text-white font-bold">Create Schedule</p>
-                  <p className="text-white/80 text-sm">Plan workout routine</p>
-                </div>
-              </div>
-            </Link>
-
-            <Link
-              to="/exercises"
-              className="bg-gradient-to-br from-orange-600 to-orange-700 rounded-xl p-6 hover:from-orange-700 hover:to-orange-800 transition group"
-            >
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center">
-                  <svg
-                    className="w-6 h-6 text-white"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
-                    />
-                  </svg>
-                </div>
-                <div>
-                  <p className="text-white font-bold">Add Exercise</p>
-                  <p className="text-white/80 text-sm">Create new exercise</p>
-                </div>
-              </div>
-            </Link>
           </div>
         </main>
       </div>
