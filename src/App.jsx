@@ -17,6 +17,13 @@ import MemberSettings from "./pages/members/MemberSettings";
 import AdminComplaints from "./pages/AdminComplaints";
 import AdminPayments from "./pages/AdminPayments";
 import SuperAdminDashboard from "./pages/SuperAdminDashboard";
+import Analytics from "./pages/Analytics";
+import MemberAnalytics from "./pages/MemberAnalytics";
+import FinancialAnalytics from "./pages/FinancialAnalytics";
+import ScheduleAnalytics from "./pages/ScheduleAnalytics";
+import ComplaintAnalytics from "./pages/ComplaintAnalytics";
+import OperationalAnalytics from "./pages/OperationalAnalytics";
+import ExerciseAnalytics from "./pages/ExerciseAnalytics";
 
 // Component to handle root redirect based on user role
 function RootRedirect() {
@@ -86,6 +93,125 @@ function App() {
                   ]}
                 >
                   <Members />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/analytics"
+            element={
+              <ProtectedRoute>
+                <RoleRoute
+                  allowedRoles={[
+                    "admin",
+                    "manager",
+                    "gym_admin",
+                    "gym_manager",
+                  ]}
+                >
+                  <Analytics />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/analytics/members"
+            element={
+              <ProtectedRoute>
+                <RoleRoute
+                  allowedRoles={[
+                    "admin",
+                    "manager",
+                    "gym_admin",
+                    "gym_manager",
+                  ]}
+                >
+                  <MemberAnalytics />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/analytics/financial"
+            element={
+              <ProtectedRoute>
+                <RoleRoute
+                  allowedRoles={[
+                    "admin",
+                    "manager",
+                    "gym_admin",
+                    "gym_manager",
+                  ]}
+                >
+                  <FinancialAnalytics />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/analytics/schedules"
+            element={
+              <ProtectedRoute>
+                <RoleRoute
+                  allowedRoles={[
+                    "admin",
+                    "manager",
+                    "gym_admin",
+                    "gym_manager",
+                  ]}
+                >
+                  <ScheduleAnalytics />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/analytics/complaints"
+            element={
+              <ProtectedRoute>
+                <RoleRoute
+                  allowedRoles={[
+                    "admin",
+                    "manager",
+                    "gym_admin",
+                    "gym_manager",
+                  ]}
+                >
+                  <ComplaintAnalytics />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/analytics/operational"
+            element={
+              <ProtectedRoute>
+                <RoleRoute
+                  allowedRoles={[
+                    "admin",
+                    "manager",
+                    "gym_admin",
+                    "gym_manager",
+                  ]}
+                >
+                  <OperationalAnalytics />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/analytics/exercises"
+            element={
+              <ProtectedRoute>
+                <RoleRoute
+                  allowedRoles={[
+                    "admin",
+                    "manager",
+                    "gym_admin",
+                    "gym_manager",
+                  ]}
+                >
+                  <ExerciseAnalytics />
                 </RoleRoute>
               </ProtectedRoute>
             }

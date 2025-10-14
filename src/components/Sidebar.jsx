@@ -6,7 +6,11 @@ const Sidebar = ({ isOpen, onClose }) => {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const isAdmin = user?.role === "admin" || user?.role === "manager";
+  const isAdmin =
+    user?.role === "admin" ||
+    user?.role === "manager" ||
+    user?.role === "gym_admin" ||
+    user?.role === "gym_manager";
   const isMember = user?.role === "member";
 
   const isActiveRoute = (path) => location.pathname === path;
@@ -30,6 +34,7 @@ const Sidebar = ({ isOpen, onClose }) => {
       ),
       label: "Dashboard",
     },
+
     {
       path: "/members",
       icon: (
@@ -90,6 +95,18 @@ const Sidebar = ({ isOpen, onClose }) => {
       ),
       label: "Payments",
     },
+    {
+      path: "/analytics",
+      icon: (
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+        />
+      ),
+      label: "Analytics",
+    },
   ];
 
   // Member Navigation Items
@@ -119,7 +136,7 @@ const Sidebar = ({ isOpen, onClose }) => {
       label: "My Schedules",
     },
     {
-      path: "/member-workouts",
+      path: "/member/workouts",
       icon: (
         <path
           strokeLinecap="round"
@@ -131,13 +148,13 @@ const Sidebar = ({ isOpen, onClose }) => {
       label: "Workout Tracker",
     },
     {
-      path: "/member-progress",
+      path: "/member/progress",
       icon: (
         <path
           strokeLinecap="round"
           strokeLinejoin="round"
           strokeWidth={2}
-          d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 00-2-2m0 0h2a2 2 0 012 2v10a2 2 0 01-2 2h-2a2 2 0 01-2-2V9z"
+          d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
         />
       ),
       label: "My Progress",
@@ -239,7 +256,7 @@ const Sidebar = ({ isOpen, onClose }) => {
                 {user?.name || user?.username}
               </div>
               <div className="text-xs text-gray-400 capitalize">
-                {user?.role || "User"}
+                {user?.role?.replace("_", " ") || "User"}
               </div>
             </div>
             <button
