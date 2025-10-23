@@ -553,11 +553,15 @@ const SuperAdminDashboard = () => {
                     <input
                       type="tel"
                       value={gymForm.phone}
-                      onChange={(e) =>
-                        setGymForm({ ...gymForm, phone: e.target.value })
+                      onChange={
+                        (e) =>
+                          setGymForm({
+                            ...gymForm,
+                            phone: e.target.value.trim(),
+                          }) // Add .trim()
                       }
                       className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="+94712345678"
+                      placeholder="0712345678 or +94712345678"
                       required
                       disabled={smsLoading}
                     />
