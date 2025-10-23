@@ -129,6 +129,14 @@ const Members = () => {
     }
 
     try {
+      // ✅ VALIDATE PHONE BEFORE ADDING
+      if (!memberForm.mobile && !memberForm.whatsapp) {
+        alert(
+          "❌ At least one phone number (Mobile or WhatsApp) is required for SMS"
+        );
+        return;
+      }
+
       const { db } = await import("../config/firebase");
       const { collection, addDoc, Timestamp } = await import(
         "firebase/firestore"
@@ -151,8 +159,37 @@ const Members = () => {
 
       await addDoc(collection(db, "members"), memberData);
 
+      // ✅ SHOW GENERATED CREDENTIALS
       setGeneratedCredentials({ username, password, name: memberForm.name });
 
+      // ✅ SEND SMS NOTIFICATION
+      try {
+        const { sendMemberRegistrationSMS } = await import(
+          "../services/smsService"
+        );
+
+        const phoneUsed = memberForm.mobile || memberForm.whatsapp;
+
+        await sendMemberRegistrationSMS(
+          {
+            name: memberForm.name,
+            mobile: memberForm.mobile,
+            whatsapp: memberForm.whatsapp,
+          },
+          username,
+          password
+        );
+
+        console.log("✅ SMS sent successfully to:", phoneUsed);
+      } catch (smsError) {
+        console.error("⚠️ SMS sending failed:", smsError);
+        // Don't fail the member creation if SMS fails
+        alert(
+          `⚠️ Member added, but SMS sending failed: ${smsError.message}\n\nManually share credentials with the member.`
+        );
+      }
+
+      // ✅ RESET FORM
       setMemberForm({
         name: "",
         age: "",
@@ -173,8 +210,8 @@ const Members = () => {
 
       fetchMembers();
     } catch (error) {
-      console.error("Error adding member:", error);
-      alert("Failed to add member");
+      console.error("❌ Error adding member:", error);
+      alert("Failed to add member: " + error.message);
     }
   };
 

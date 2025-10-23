@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
+import { sendGymRegistrationSMS } from "../services/smsService";
 
 const SuperAdminDashboard = () => {
   const { user, logout } = useAuth();
@@ -12,6 +13,8 @@ const SuperAdminDashboard = () => {
   const [showAddGym, setShowAddGym] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [viewGym, setViewGym] = useState(null);
+  const [smsLoading, setSmsLoading] = useState(false);
+  const [smsStatus, setSmsStatus] = useState(null); // { type: 'success'|'error', message: string }
 
   const [gymForm, setGymForm] = useState({
     name: "",
@@ -28,6 +31,14 @@ const SuperAdminDashboard = () => {
   useEffect(() => {
     fetchGyms();
   }, []);
+
+  // Clear SMS status after 5 seconds
+  useEffect(() => {
+    if (smsStatus) {
+      const timer = setTimeout(() => setSmsStatus(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [smsStatus]);
 
   const fetchGyms = async () => {
     try {
@@ -64,6 +75,10 @@ const SuperAdminDashboard = () => {
       setLoading(false);
     } catch (error) {
       console.error("Error fetching gyms:", error);
+      setSmsStatus({
+        type: "error",
+        message: "Failed to load gyms",
+      });
       setLoading(false);
     }
   };
@@ -71,13 +86,31 @@ const SuperAdminDashboard = () => {
   const handleAddGym = async (e) => {
     e.preventDefault();
 
+    // Validate required fields
+    if (
+      !gymForm.name ||
+      !gymForm.phone ||
+      !gymForm.email ||
+      !gymForm.contactPerson ||
+      !gymForm.adminUsername ||
+      !gymForm.adminPassword
+    ) {
+      setSmsStatus({
+        type: "error",
+        message: "Please fill all required fields",
+      });
+      return;
+    }
+
+    setSmsLoading(true);
+
     try {
       const { db } = await import("../config/firebase");
       const { collection, addDoc, Timestamp } = await import(
         "firebase/firestore"
       );
 
-      // Create gym
+      // Step 1: Create gym in Firestore
       const gymRef = await addDoc(collection(db, "gyms"), {
         name: gymForm.name,
         location: gymForm.location,
@@ -90,7 +123,7 @@ const SuperAdminDashboard = () => {
         updatedAt: Timestamp.now(),
       });
 
-      // Create gym admin user
+      // Step 2: Create gym admin user
       await addDoc(collection(db, "users"), {
         username: gymForm.adminUsername,
         password: gymForm.adminPassword,
@@ -102,7 +135,62 @@ const SuperAdminDashboard = () => {
         createdAt: Timestamp.now(),
       });
 
-      alert("✅ Gym registered successfully!");
+      // Step 3: Send SMS with credentials (MUST succeed or entire operation fails)
+      console.log("🔵 ABOUT TO SEND SMS");
+      console.log("Gym Name:", gymForm.name);
+      console.log("Gym Phone:", gymForm.phone);
+      console.log("Username:", gymForm.adminUsername);
+
+      try {
+        await sendGymRegistrationSMS(
+          {
+            name: gymForm.name,
+            phone: gymForm.phone,
+          },
+          gymForm.adminUsername,
+          gymForm.adminPassword
+        );
+        console.log("🟢 SMS SENT SUCCESSFULLY!");
+      } catch (smsError) {
+        console.error("🔴 SMS SENDING FAILED!");
+        console.error("Error:", smsError.message);
+        throw smsError;
+      }
+      // try {
+      //   await sendGymRegistrationSMS(
+      //     {
+      //       name: gymForm.name,
+      //       phone: gymForm.phone,
+      //     },
+      //     gymForm.adminUsername,
+      //     gymForm.adminPassword
+      //   );
+
+      //   setSmsStatus({
+      //     type: "success",
+      //     message: "✓ Gym registered and credentials sent via SMS!",
+      //   });
+      // } catch (smsError) {
+      //   // SMS failed - delete the created records and throw error
+      //   const { deleteDoc, doc } = await import("firebase/firestore");
+      //   await deleteDoc(doc(db, "gyms", gymRef.id));
+
+      //   // Get the user doc to delete it too
+      //   const usersRef = collection(db, "users");
+      //   const { query: q, where } = await import("firebase/firestore");
+      //   const userQuery = q(
+      //     usersRef,
+      //     where("username", "==", gymForm.adminUsername)
+      //   );
+      //   const userSnapshot = await getDocs(userQuery);
+      //   if (!userSnapshot.empty) {
+      //     await deleteDoc(doc(db, "users", userSnapshot.docs[0].id));
+      //   }
+
+      //   throw smsError;
+      // }
+
+      // Reset form and refresh list
       setShowAddGym(false);
       setGymForm({
         name: "",
@@ -118,7 +206,12 @@ const SuperAdminDashboard = () => {
       fetchGyms();
     } catch (error) {
       console.error("Error adding gym:", error);
-      alert("Failed to register gym");
+      setSmsStatus({
+        type: "error",
+        message: error.message || "Failed to register gym. Please try again.",
+      });
+    } finally {
+      setSmsLoading(false);
     }
   };
 
@@ -133,11 +226,17 @@ const SuperAdminDashboard = () => {
       const { doc, deleteDoc } = await import("firebase/firestore");
 
       await deleteDoc(doc(db, "gyms", gymId));
-      alert("Gym deleted successfully");
+      setSmsStatus({
+        type: "success",
+        message: "Gym deleted successfully",
+      });
       fetchGyms();
     } catch (error) {
       console.error("Error deleting gym:", error);
-      alert("Failed to delete gym");
+      setSmsStatus({
+        type: "error",
+        message: "Failed to delete gym",
+      });
     }
   };
 
@@ -190,7 +289,7 @@ const SuperAdminDashboard = () => {
             </div>
             <button
               onClick={handleLogout}
-              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition"
+              className="px-4 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-600 rounded-lg text-sm font-medium transition"
             >
               Logout
             </button>
@@ -198,110 +297,75 @@ const SuperAdminDashboard = () => {
         </div>
       </header>
 
+      {/* SMS Status Alert */}
+      {smsStatus && (
+        <div
+          className={`mx-6 mt-4 px-4 py-3 rounded-lg text-sm font-medium flex items-center gap-2 ${
+            smsStatus.type === "success"
+              ? "bg-green-600/20 text-green-600 border border-green-600/30"
+              : "bg-red-600/20 text-red-600 border border-red-600/30"
+          }`}
+        >
+          {smsStatus.type === "success" ? (
+            <svg
+              className="w-5 h-5 flex-shrink-0"
+              fill="currentColor"
+              viewBox="0 0 20 20"
+            >
+              <path
+                fillRule="evenodd"
+                d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                clipRule="evenodd"
+              />
+            </svg>
+          ) : (
+            <svg
+              className="w-5 h-5 flex-shrink-0"
+              fill="currentColor"
+              viewBox="0 0 20 20"
+            >
+              <path
+                fillRule="evenodd"
+                d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                clipRule="evenodd"
+              />
+            </svg>
+          )}
+          <span>{smsStatus.message}</span>
+        </div>
+      )}
+
+      {/* Stats Cards */}
+      <div className="px-6 py-4 grid grid-cols-4 gap-4">
+        <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
+          <p className="text-gray-400 text-sm mb-1">Total Gyms</p>
+          <p className="text-3xl font-bold text-white">{totalGyms}</p>
+        </div>
+        <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
+          <p className="text-gray-400 text-sm mb-1">Active Gyms</p>
+          <p className="text-3xl font-bold text-green-600">{activeGyms}</p>
+        </div>
+        <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
+          <p className="text-gray-400 text-sm mb-1">Inactive Gyms</p>
+          <p className="text-3xl font-bold text-red-600">{inactiveGyms}</p>
+        </div>
+        <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
+          <p className="text-gray-400 text-sm mb-1">Total Members</p>
+          <p className="text-3xl font-bold text-blue-600">
+            {totalActiveMembers}
+          </p>
+        </div>
+      </div>
+
       {/* Main Content */}
-      <main className="flex-1 overflow-y-auto p-6">
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="w-12 h-12 bg-blue-600/20 rounded-lg flex items-center justify-center">
-                <svg
-                  className="w-6 h-6 text-blue-600"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
-                  />
-                </svg>
-              </div>
-            </div>
-            <p className="text-gray-400 text-sm mb-1">Total Gyms</p>
-            <p className="text-3xl font-bold text-white">{totalGyms}</p>
-          </div>
-
-          <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="w-12 h-12 bg-green-600/20 rounded-lg flex items-center justify-center">
-                <svg
-                  className="w-6 h-6 text-green-600"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
-              </div>
-            </div>
-            <p className="text-gray-400 text-sm mb-1">Active Gyms</p>
-            <p className="text-3xl font-bold text-white">{activeGyms}</p>
-          </div>
-
-          <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="w-12 h-12 bg-red-600/20 rounded-lg flex items-center justify-center">
-                <svg
-                  className="w-6 h-6 text-red-600"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
-              </div>
-            </div>
-            <p className="text-gray-400 text-sm mb-1">Inactive Gyms</p>
-            <p className="text-3xl font-bold text-white">{inactiveGyms}</p>
-          </div>
-
-          <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="w-12 h-12 bg-purple-600/20 rounded-lg flex items-center justify-center">
-                <svg
-                  className="w-6 h-6 text-purple-600"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
-                  />
-                </svg>
-              </div>
-            </div>
-            <p className="text-gray-400 text-sm mb-1">Total Active Members</p>
-            <p className="text-3xl font-bold text-white">
-              {totalActiveMembers}
+      <main className="flex-1 overflow-auto px-6 py-4">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className="text-xl font-bold text-white">Registered Gyms</h2>
+            <p className="text-sm text-gray-400">
+              Manage gym registrations and details
             </p>
           </div>
-        </div>
-
-        {/* Actions Bar */}
-        <div className="flex items-center justify-between mb-6">
-          <input
-            type="text"
-            placeholder="Search gyms..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="flex-1 max-w-md px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
           <button
             onClick={() => setShowAddGym(true)}
             className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition flex items-center gap-2"
@@ -319,15 +383,26 @@ const SuperAdminDashboard = () => {
                 d="M12 4v16m8-8H4"
               />
             </svg>
-            Register New Gym
+            Register Gym
           </button>
         </div>
 
+        {/* Search */}
+        <div className="mb-6">
+          <input
+            type="text"
+            placeholder="Search by gym name, location, or email..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+
         {/* Gyms Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredGyms.length === 0 ? (
             <div className="col-span-full text-center py-12">
-              <p className="text-gray-400 text-lg">No gyms found</p>
+              <p className="text-gray-400">No gyms found</p>
             </div>
           ) : (
             filteredGyms.map((gym) => (
@@ -336,10 +411,8 @@ const SuperAdminDashboard = () => {
                 className="bg-gray-800 border border-gray-700 rounded-xl p-6 hover:border-gray-600 transition"
               >
                 <div className="flex items-start justify-between mb-4">
-                  <div className="flex-1">
-                    <h3 className="text-lg font-bold text-white mb-1">
-                      {gym.name}
-                    </h3>
+                  <div>
+                    <h3 className="text-lg font-bold text-white">{gym.name}</h3>
                     <p className="text-sm text-gray-400">{gym.location}</p>
                   </div>
                   <span
@@ -353,52 +426,25 @@ const SuperAdminDashboard = () => {
                   </span>
                 </div>
 
-                <div className="space-y-2 mb-4">
-                  <div className="flex items-center gap-2 text-sm text-gray-400">
+                <div className="space-y-2 text-sm mb-4">
+                  <div className="flex items-center gap-2 text-gray-400">
                     <svg
                       className="w-4 h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                      viewBox="0 0 20 20"
                     >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-                      />
-                    </svg>
-                    <span>{gym.contactPerson}</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm text-gray-400">
-                    <svg
-                      className="w-4 h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-                      />
+                      <path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z" />
+                      <path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z" />
                     </svg>
                     <span>{gym.email}</span>
                   </div>
-                  <div className="flex items-center gap-2 text-sm text-gray-400">
+                  <div className="flex items-center gap-2 text-gray-400">
                     <svg
                       className="w-4 h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                      viewBox="0 0 20 20"
                     >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"
-                      />
+                      <path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773c.451.727 1.333 2.127 2.959 3.753 1.626 1.626 3.026 2.508 3.753 2.959l.773-1.548a1 1 0 011.06-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2.57C6.75 18 2 13.25 2 7.43V3z" />
                     </svg>
                     <span>{gym.phone}</span>
                   </div>
@@ -441,7 +487,8 @@ const SuperAdminDashboard = () => {
               </h2>
               <button
                 onClick={() => setShowAddGym(false)}
-                className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg"
+                disabled={smsLoading}
+                className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition disabled:opacity-50"
               >
                 <svg
                   className="w-6 h-6"
@@ -459,171 +506,205 @@ const SuperAdminDashboard = () => {
               </button>
             </div>
 
-            <form onSubmit={handleAddGym} className="p-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Gym Name *
-                  </label>
-                  <input
-                    type="text"
-                    value={gymForm.name}
-                    onChange={(e) =>
-                      setGymForm({ ...gymForm, name: e.target.value })
-                    }
-                    className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="e.g., PowerFit Gym"
-                    required
-                  />
-                </div>
+            <form onSubmit={handleAddGym} className="p-6 space-y-6">
+              {/* Gym Information */}
+              <div>
+                <h3 className="text-lg font-bold text-white mb-4">
+                  Gym Information
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Gym Name *
+                    </label>
+                    <input
+                      type="text"
+                      value={gymForm.name}
+                      onChange={(e) =>
+                        setGymForm({ ...gymForm, name: e.target.value })
+                      }
+                      className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="Elite Fitness"
+                      required
+                      disabled={smsLoading}
+                    />
+                  </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Location/City *
-                  </label>
-                  <input
-                    type="text"
-                    value={gymForm.location}
-                    onChange={(e) =>
-                      setGymForm({ ...gymForm, location: e.target.value })
-                    }
-                    className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="e.g., New York"
-                    required
-                  />
-                </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Location *
+                    </label>
+                    <input
+                      type="text"
+                      value={gymForm.location}
+                      onChange={(e) =>
+                        setGymForm({ ...gymForm, location: e.target.value })
+                      }
+                      className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="Colombo 3"
+                      disabled={smsLoading}
+                    />
+                  </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Phone *
-                  </label>
-                  <input
-                    type="tel"
-                    value={gymForm.phone}
-                    onChange={(e) =>
-                      setGymForm({ ...gymForm, phone: e.target.value })
-                    }
-                    className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="+1 234 567 8900"
-                    required
-                  />
-                </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Phone Number *
+                    </label>
+                    <input
+                      type="tel"
+                      value={gymForm.phone}
+                      onChange={(e) =>
+                        setGymForm({ ...gymForm, phone: e.target.value })
+                      }
+                      className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="+94712345678"
+                      required
+                      disabled={smsLoading}
+                    />
+                  </div>
 
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Full Address *
-                  </label>
-                  <textarea
-                    value={gymForm.address}
-                    onChange={(e) =>
-                      setGymForm({ ...gymForm, address: e.target.value })
-                    }
-                    className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                    placeholder="Street address, building, floor..."
-                    rows="2"
-                    required
-                  />
-                </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Email *
+                    </label>
+                    <input
+                      type="email"
+                      value={gymForm.email}
+                      onChange={(e) =>
+                        setGymForm({ ...gymForm, email: e.target.value })
+                      }
+                      className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="contact@gym.com"
+                      required
+                      disabled={smsLoading}
+                    />
+                  </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Contact Person *
-                  </label>
-                  <input
-                    type="text"
-                    value={gymForm.contactPerson}
-                    onChange={(e) =>
-                      setGymForm({ ...gymForm, contactPerson: e.target.value })
-                    }
-                    className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Owner/Manager name"
-                    required
-                  />
-                </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Full Address *
+                    </label>
+                    <textarea
+                      value={gymForm.address}
+                      onChange={(e) =>
+                        setGymForm({ ...gymForm, address: e.target.value })
+                      }
+                      className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                      placeholder="Street address, building, floor..."
+                      rows="2"
+                      disabled={smsLoading}
+                    />
+                  </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Email *
-                  </label>
-                  <input
-                    type="email"
-                    value={gymForm.email}
-                    onChange={(e) =>
-                      setGymForm({ ...gymForm, email: e.target.value })
-                    }
-                    className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="contact@gym.com"
-                    required
-                  />
-                </div>
-
-                <div className="md:col-span-2 border-t border-gray-700 pt-6 mt-2">
-                  <h3 className="text-lg font-bold text-white mb-4">
-                    Admin Credentials
-                  </h3>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Admin Username *
-                  </label>
-                  <input
-                    type="text"
-                    value={gymForm.adminUsername}
-                    onChange={(e) =>
-                      setGymForm({ ...gymForm, adminUsername: e.target.value })
-                    }
-                    className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="admin_username"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Admin Password *
-                  </label>
-                  <input
-                    type="text"
-                    value={gymForm.adminPassword}
-                    onChange={(e) =>
-                      setGymForm({ ...gymForm, adminPassword: e.target.value })
-                    }
-                    className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="secure_password"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Status *
-                  </label>
-                  <select
-                    value={gymForm.status}
-                    onChange={(e) =>
-                      setGymForm({ ...gymForm, status: e.target.value })
-                    }
-                    className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
-                  >
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                  </select>
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Contact Person *
+                    </label>
+                    <input
+                      type="text"
+                      value={gymForm.contactPerson}
+                      onChange={(e) =>
+                        setGymForm({
+                          ...gymForm,
+                          contactPerson: e.target.value,
+                        })
+                      }
+                      className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="Owner/Manager name"
+                      required
+                      disabled={smsLoading}
+                    />
+                  </div>
                 </div>
               </div>
 
-              <div className="flex gap-3 mt-6">
+              {/* Admin Credentials */}
+              <div className="border-t border-gray-700 pt-6">
+                <h3 className="text-lg font-bold text-white mb-4">
+                  Admin Credentials
+                </h3>
+                <p className="text-sm text-gray-400 mb-4">
+                  These credentials will be sent to the gym phone number via SMS
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Admin Username *
+                    </label>
+                    <input
+                      type="text"
+                      value={gymForm.adminUsername}
+                      onChange={(e) =>
+                        setGymForm({
+                          ...gymForm,
+                          adminUsername: e.target.value,
+                        })
+                      }
+                      className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="gym_admin_001"
+                      required
+                      disabled={smsLoading}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Admin Password *
+                    </label>
+                    <input
+                      type="text"
+                      value={gymForm.adminPassword}
+                      onChange={(e) =>
+                        setGymForm({
+                          ...gymForm,
+                          adminPassword: e.target.value,
+                        })
+                      }
+                      className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="SecurePass123"
+                      required
+                      disabled={smsLoading}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Form Actions */}
+              <div className="border-t border-gray-700 pt-6 flex gap-3">
                 <button
                   type="submit"
-                  className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition"
+                  disabled={smsLoading}
+                  className="flex-1 px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 text-white rounded-lg font-medium transition flex items-center justify-center gap-2"
                 >
-                  Register Gym
+                  {smsLoading ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      <span>Registering & Sending SMS...</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg
+                        className="w-5 h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M12 4v16m8-8H4"
+                        />
+                      </svg>
+                      Register Gym
+                    </>
+                  )}
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowAddGym(false)}
-                  className="px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-medium transition"
+                  disabled={smsLoading}
+                  className="px-6 py-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-700/50 text-white rounded-lg font-medium transition"
                 >
                   Cancel
                 </button>
@@ -659,16 +740,16 @@ const SuperAdminDashboard = () => {
               </button>
             </div>
 
-            <div className="p-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                <div className="bg-gray-900 rounded-lg p-4">
+            <div className="p-6 space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
                   <p className="text-sm text-gray-400 mb-1">Location</p>
                   <p className="text-white font-medium">{viewGym.location}</p>
                 </div>
-                <div className="bg-gray-900 rounded-lg p-4">
+                <div>
                   <p className="text-sm text-gray-400 mb-1">Status</p>
                   <span
-                    className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${
+                    className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${
                       viewGym.status === "active"
                         ? "bg-green-600/20 text-green-600"
                         : "bg-red-600/20 text-red-600"
@@ -677,44 +758,41 @@ const SuperAdminDashboard = () => {
                     {viewGym.status}
                   </span>
                 </div>
-                <div className="bg-gray-900 rounded-lg p-4">
+                <div>
+                  <p className="text-sm text-gray-400 mb-1">Email</p>
+                  <p className="text-white font-medium">{viewGym.email}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-400 mb-1">Phone</p>
+                  <p className="text-white font-medium">{viewGym.phone}</p>
+                </div>
+                <div>
                   <p className="text-sm text-gray-400 mb-1">Contact Person</p>
                   <p className="text-white font-medium">
                     {viewGym.contactPerson}
                   </p>
                 </div>
-                <div className="bg-gray-900 rounded-lg p-4">
-                  <p className="text-sm text-gray-400 mb-1">Phone</p>
-                  <p className="text-white font-medium">{viewGym.phone}</p>
-                </div>
-                <div className="bg-gray-900 rounded-lg p-4 md:col-span-2">
-                  <p className="text-sm text-gray-400 mb-1">Email</p>
-                  <p className="text-white font-medium">{viewGym.email}</p>
-                </div>
-                <div className="bg-gray-900 rounded-lg p-4 md:col-span-2">
-                  <p className="text-sm text-gray-400 mb-1">Address</p>
-                  <p className="text-white font-medium">{viewGym.address}</p>
-                </div>
-                <div className="bg-gray-900 rounded-lg p-4">
+                <div>
                   <p className="text-sm text-gray-400 mb-1">Active Members</p>
                   <p className="text-2xl font-bold text-blue-600">
                     {viewGym.activeMembersCount || 0}
                   </p>
                 </div>
-                <div className="bg-gray-900 rounded-lg p-4">
-                  <p className="text-sm text-gray-400 mb-1">Gym ID</p>
-                  <code className="text-sm text-white font-mono">
-                    {viewGym.id}
-                  </code>
-                </div>
               </div>
 
-              <button
-                onClick={() => setViewGym(null)}
-                className="w-full px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-medium transition"
-              >
-                Close
-              </button>
+              <div>
+                <p className="text-sm text-gray-400 mb-1">Address</p>
+                <p className="text-white">{viewGym.address}</p>
+              </div>
+
+              <div className="border-t border-gray-700 pt-6 flex gap-3">
+                <button
+                  onClick={() => setViewGym(null)}
+                  className="flex-1 px-6 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-medium transition"
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         </div>
