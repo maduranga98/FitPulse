@@ -111,7 +111,7 @@ const AdminPayments = () => {
 
     try {
       const { db } = await import("../config/firebase");
-      const { collection, addDoc, Timestamp } = await import(
+      const { collection, addDoc, Timestamp, doc, getDoc } = await import(
         "firebase/firestore"
       );
 
@@ -139,8 +139,48 @@ const AdminPayments = () => {
         recordedById: user?.id || user?.uid || "",
       };
 
+      // Save payment to database
       await addDoc(collection(db, "payments"), paymentData);
 
+      // ✅ SEND SMS NOTIFICATION TO MEMBER
+      try {
+        const { sendPaymentReceiptSMS } = await import(
+          "../services/smsService"
+        );
+
+        // Get full member data including phone numbers
+        const memberRef = doc(db, "members", selectedMember.id);
+        const memberSnap = await getDoc(memberRef);
+
+        if (memberSnap.exists()) {
+          const memberData = memberSnap.data();
+
+          // Check if member has phone number
+          if (memberData.mobile || memberData.whatsapp) {
+            await sendPaymentReceiptSMS(
+              {
+                name: memberData.name,
+                mobile: memberData.mobile,
+                whatsapp: memberData.whatsapp,
+              },
+              paymentData
+            );
+
+            console.log(
+              "✅ Payment receipt SMS sent successfully to:",
+              memberData.name
+            );
+          } else {
+            console.warn("⚠️ Member has no phone number for SMS");
+          }
+        }
+      } catch (smsError) {
+        console.error("⚠️ SMS sending failed:", smsError);
+        // Don't fail the payment recording if SMS fails
+        // Just log it and continue
+      }
+
+      // Reset form and close modal
       setPaymentForm({
         amount: "",
         month: getCurrentMonth(),
@@ -152,7 +192,7 @@ const AdminPayments = () => {
       setSelectedMember(null);
       fetchData();
 
-      alert("Payment recorded successfully! ✅");
+      alert("Payment recorded successfully! ✅\nSMS receipt sent to member.");
     } catch (error) {
       console.error("Error recording payment:", error);
       alert("Failed to record payment. Please try again.");
