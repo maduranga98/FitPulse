@@ -1,16 +1,16 @@
 // src/services/smsService.js
 /**
  * SMS Service for text.lk API
- * Handles sending SMS notifications for gym registrations
+ * Handles sending SMS notifications for gym registrations and payments
  *
  * FIXED: Using POST with form-urlencoded body instead of GET
  * This prevents double-encoding and ensures proper message delivery
  */
 
 // text.lk API Configuration - Using HTTP endpoint
-const TEXTLK_HTTP_ENDPOINT = "https://app.text.lk/api/http/sms/send";
-const API_TOKEN = "1909|6rua4gJwhz1qtPMb4NnF6ASHMXf0pMZENCZXnQCF6d7d33d4";
-const SENDER_ID = import.meta.env.VITE_TEXTLK_SENDER_ID || "TextLKDemo";
+const TEXTLK_HTTP_ENDPOINT = import.meta.env.VITE_HTTP_ENDPOINT;
+const API_TOKEN = import.meta.env.VITE_API_TOKEN;
+const SENDER_ID = import.meta.env.VITE_TEXTLK_SENDER_ID || "Lumora Tech";
 
 /**
  * Validate phone number (Sri Lankan format)
@@ -77,6 +77,35 @@ Password: ${password}
 
 ⚠️ Keep your credentials safe.
 ✓ Do not share with anyone.`;
+};
+
+/**
+ * Build SMS message for payment receipt
+ */
+const buildPaymentReceiptMessage = (
+  memberName,
+  amount,
+  month,
+  paymentMethod
+) => {
+  const monthName = new Date(month + "-01").toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+  });
+
+  return `💰 Payment Received - GymNex
+
+Dear ${memberName},
+
+Your payment has been successfully received!
+
+📅 Month: ${monthName}
+💵 Amount: Rs. ${amount.toFixed(2)}
+💳 Method: ${paymentMethod}
+
+Thank you for your payment!
+
+For any queries, contact your gym.`;
 };
 
 /**
@@ -244,6 +273,41 @@ export const sendMemberRegistrationSMS = async (
   return {
     success: true,
     message: "SMS sent successfully",
+    smsId: result.data?.data?.id || null,
+    timestamp: new Date(),
+  };
+};
+
+/**
+ * Send payment receipt SMS to member
+ * @param {Object} memberData - Member data with phone
+ * @param {Object} paymentData - Payment details
+ * @returns {Promise<Object>} - SMS sending result
+ */
+export const sendPaymentReceiptSMS = async (memberData, paymentData) => {
+  // Use mobile number, fallback to whatsapp
+  const phoneNumber = memberData.mobile || memberData.whatsapp;
+
+  if (!phoneNumber) {
+    throw new Error("Member phone number (mobile or whatsapp) is required");
+  }
+
+  const message = buildPaymentReceiptMessage(
+    memberData.name,
+    paymentData.amount,
+    paymentData.month,
+    paymentData.paymentMethod
+  );
+
+  const result = await sendSMS(phoneNumber, message);
+
+  if (!result.success) {
+    throw new Error(result.error);
+  }
+
+  return {
+    success: true,
+    message: "Payment receipt SMS sent successfully",
     smsId: result.data?.data?.id || null,
     timestamp: new Date(),
   };
