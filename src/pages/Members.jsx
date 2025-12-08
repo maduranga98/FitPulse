@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../hooks/useAuth";
 import Sidebar from "../components/Sidebar";
 
@@ -14,6 +14,16 @@ const Members = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterLevel, setFilterLevel] = useState("all");
+
+  const [uploadingFacePhoto, setUploadingFacePhoto] = useState(false);
+  const [faceUploadProgress, setFaceUploadProgress] = useState(0);
+  const [showCameraModal, setShowCameraModal] = useState(false);
+  const [cameraStream, setCameraStream] = useState(null);
+  const [capturedFacePhoto, setCapturedFacePhoto] = useState(null);
+  const [faceCapturePreview, setFaceCapturePreview] = useState(null);
+
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
 
   const isAdmin = user?.role === "gym_admin" || user?.role === "manager";
 
@@ -40,7 +50,7 @@ const Members = () => {
 
   useEffect(() => {
     fetchMembers();
-  }, []);
+  }, [currentGymId]);
 
   useEffect(() => {
     if (memberForm.weight && memberForm.height) {
@@ -50,7 +60,116 @@ const Members = () => {
     }
   }, [memberForm.weight, memberForm.height]);
 
+  // Cleanup camera stream on unmount
+  useEffect(() => {
+    return () => {
+      if (cameraStream) {
+        cameraStream.getTracks().forEach((track) => track.stop());
+      }
+      // Cleanup preview URL
+      if (faceCapturePreview) {
+        URL.revokeObjectURL(faceCapturePreview);
+      }
+    };
+  }, [cameraStream, faceCapturePreview]);
+
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+          facingMode: "user",
+        },
+      });
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        setCameraStream(stream);
+      }
+    } catch (error) {
+      console.error("Error accessing camera:", error);
+      alert(
+        "Cannot access camera. Please ensure camera permissions are granted."
+      );
+    }
+  };
+
+  const stopCamera = () => {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach((track) => track.stop());
+      setCameraStream(null);
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+  };
+
+  const openCameraModal = () => {
+    setShowCameraModal(true);
+    setTimeout(() => {
+      startCamera();
+    }, 300);
+  };
+
+  const closeCameraModal = () => {
+    stopCamera();
+    setShowCameraModal(false);
+  };
+
+  const capturePhoto = () => {
+    if (!videoRef.current || !canvasRef.current) return;
+
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    const context = canvas.getContext("2d");
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    canvas.toBlob(
+      (blob) => {
+        if (blob) {
+          const file = new File([blob], `face_${Date.now()}.jpg`, {
+            type: "image/jpeg",
+          });
+          setCapturedFacePhoto(file);
+
+          const previewUrl = URL.createObjectURL(blob);
+          setFaceCapturePreview(previewUrl);
+
+          stopCamera();
+          setShowCameraModal(false);
+
+          console.log("✅ Face photo captured successfully");
+        }
+      },
+      "image/jpeg",
+      0.9
+    );
+  };
+
+  const retakePhoto = () => {
+    clearCapturedPhoto();
+    openCameraModal();
+  };
+
+  const clearCapturedPhoto = () => {
+    setCapturedFacePhoto(null);
+    if (faceCapturePreview) {
+      URL.revokeObjectURL(faceCapturePreview);
+    }
+    setFaceCapturePreview(null);
+  };
+
   const fetchMembers = async () => {
+    if (!currentGymId) {
+      setLoading(false);
+      return;
+    }
+
     try {
       const { db } = await import("../config/firebase");
       const { collection, getDocs, orderBy, query, where } = await import(
@@ -128,23 +247,80 @@ const Members = () => {
       return;
     }
 
-    try {
-      // ✅ VALIDATE PHONE BEFORE ADDING
-      if (!memberForm.mobile && !memberForm.whatsapp) {
-        alert(
-          "❌ At least one phone number (Mobile or WhatsApp) is required for SMS"
-        );
-        return;
-      }
+    // Validation
+    if (!memberForm.mobile && !memberForm.whatsapp) {
+      alert(
+        "❌ At least one phone number (Mobile or WhatsApp) is required for SMS"
+      );
+      return;
+    }
 
-      const { db } = await import("../config/firebase");
+    if (!capturedFacePhoto) {
+      const confirmWithoutFace = window.confirm(
+        "⚠️ No face photo captured. Member won't be able to use face recognition attendance.\n\nContinue without face photo?"
+      );
+      if (!confirmWithoutFace) return;
+    }
+
+    try {
+      const { db, storage } = await import("../config/firebase");
       const { collection, addDoc, Timestamp } = await import(
         "firebase/firestore"
+      );
+      const { ref, uploadBytesResumable, getDownloadURL } = await import(
+        "firebase/storage"
       );
 
       const username = generateUsername(memberForm.name);
       const password = generatePassword();
 
+      let facePhotoURL = null;
+
+      // Upload face photo if captured
+      if (capturedFacePhoto) {
+        try {
+          setUploadingFacePhoto(true);
+
+          const timestamp = Date.now();
+          const fileName = `faces/${currentGymId}/${username}_${timestamp}.jpg`;
+          const storageRef = ref(storage, fileName);
+
+          const uploadTask = uploadBytesResumable(
+            storageRef,
+            capturedFacePhoto
+          );
+
+          await new Promise((resolve, reject) => {
+            uploadTask.on(
+              "state_changed",
+              (snapshot) => {
+                const progress =
+                  (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                setFaceUploadProgress(progress);
+                console.log(`Face photo upload: ${progress.toFixed(0)}%`);
+              },
+              (error) => {
+                console.error("Face photo upload error:", error);
+                reject(error);
+              },
+              async () => {
+                facePhotoURL = await getDownloadURL(uploadTask.snapshot.ref);
+                console.log("✅ Face photo uploaded:", facePhotoURL);
+                resolve();
+              }
+            );
+          });
+
+          setUploadingFacePhoto(false);
+        } catch (uploadError) {
+          console.error("❌ Face photo upload failed:", uploadError);
+          alert("Failed to upload face photo. Please try again.");
+          setUploadingFacePhoto(false);
+          return;
+        }
+      }
+
+      // Create member data
       const memberData = {
         ...memberForm,
         gymId: currentGymId,
@@ -153,22 +329,22 @@ const Members = () => {
         bmi: bmiInfo?.bmi || null,
         bmiCategory: bmiInfo?.category || null,
         role: "member",
+        facePhotoURL: facePhotoURL,
+        faceRegistered: facePhotoURL ? true : false,
+        faceEnrolledAt: facePhotoURL ? Timestamp.now() : null,
         createdAt: Timestamp.now(),
         joinDate: Timestamp.fromDate(new Date(memberForm.joinDate)),
       };
 
       await addDoc(collection(db, "members"), memberData);
 
-      // ✅ SHOW GENERATED CREDENTIALS
       setGeneratedCredentials({ username, password, name: memberForm.name });
 
-      // ✅ SEND SMS NOTIFICATION
+      // Send SMS notification
       try {
         const { sendMemberRegistrationSMS } = await import(
           "../services/smsService"
         );
-
-        const phoneUsed = memberForm.mobile || memberForm.whatsapp;
 
         await sendMemberRegistrationSMS(
           {
@@ -180,16 +356,15 @@ const Members = () => {
           password
         );
 
-        console.log("✅ SMS sent successfully to:", phoneUsed);
+        console.log("✅ SMS sent successfully");
       } catch (smsError) {
         console.error("⚠️ SMS sending failed:", smsError);
-        // Don't fail the member creation if SMS fails
         alert(
           `⚠️ Member added, but SMS sending failed: ${smsError.message}\n\nManually share credentials with the member.`
         );
       }
 
-      // ✅ RESET FORM
+      // Reset form
       setMemberForm({
         name: "",
         age: "",
@@ -208,6 +383,9 @@ const Members = () => {
         notes: "",
       });
 
+      clearCapturedPhoto();
+      setFaceUploadProgress(0);
+
       fetchMembers();
     } catch (error) {
       console.error("❌ Error adding member:", error);
@@ -221,7 +399,7 @@ const Members = () => {
       return;
     }
 
-    if (!confirm("Are you sure you want to delete this member?")) return;
+    if (!window.confirm("Are you sure you want to delete this member?")) return;
 
     try {
       const { db } = await import("../config/firebase");
@@ -308,7 +486,7 @@ const Members = () => {
             <div className="flex items-center gap-4">
               <button
                 onClick={() => setSidebarOpen(true)}
-                className="lg:hidden p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg"
+                className="lg:hidden p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition"
               >
                 <svg
                   className="w-6 h-6"
@@ -354,6 +532,7 @@ const Members = () => {
         </header>
 
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+          {/* Stats Grid */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
             <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
               <div className="text-gray-400 text-sm mb-1">Total Members</div>
@@ -391,6 +570,7 @@ const Members = () => {
             </div>
           </div>
 
+          {/* Filters */}
           <div className="mb-6 flex flex-col sm:flex-row gap-4">
             <div className="flex-1">
               <input
@@ -422,6 +602,7 @@ const Members = () => {
             </select>
           </div>
 
+          {/* Members Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredMembers.length === 0 ? (
               <div className="col-span-full text-center py-12">
@@ -531,6 +712,130 @@ const Members = () => {
         </main>
       </div>
 
+      {/* Camera Modal */}
+      {showCameraModal && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[60] p-4">
+          <div className="bg-gray-900 rounded-xl p-6 max-w-2xl w-full border border-gray-700">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                <svg
+                  className="w-6 h-6 text-blue-500"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"
+                  />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"
+                  />
+                </svg>
+                Capture Face Photo
+              </h3>
+              <button
+                onClick={closeCameraModal}
+                className="text-gray-400 hover:text-white transition"
+              >
+                <svg
+                  className="w-6 h-6"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+
+            {/* Guidelines */}
+            <div className="mb-4 p-4 bg-blue-900/20 border border-blue-500/30 rounded-lg">
+              <p className="text-sm text-blue-300 font-medium mb-2">
+                📸 Photo Guidelines:
+              </p>
+              <ul className="text-xs text-gray-400 space-y-1">
+                <li>• Position face in the center of the frame</li>
+                <li>• Look directly at the camera</li>
+                <li>• Ensure good lighting (no shadows on face)</li>
+                <li>• Remove glasses, masks, or hats</li>
+                <li>• Keep neutral expression</li>
+              </ul>
+            </div>
+
+            {/* Camera Preview */}
+            <div
+              className="relative bg-black rounded-lg overflow-hidden mb-4"
+              style={{ aspectRatio: "4/3" }}
+            >
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                className="w-full h-full object-cover"
+              />
+
+              {/* Face Guide Overlay */}
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="w-64 h-80 border-4 border-blue-500/50 rounded-full flex items-center justify-center">
+                  <div className="text-blue-400 text-sm font-medium bg-black/50 px-3 py-1 rounded-full">
+                    Position face here
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Canvas (hidden) */}
+            <canvas ref={canvasRef} className="hidden" />
+
+            {/* Action Buttons */}
+            <div className="flex gap-3">
+              <button
+                onClick={closeCameraModal}
+                className="flex-1 px-6 py-3 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={capturePhoto}
+                className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-semibold flex items-center justify-center gap-2"
+              >
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"
+                  />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"
+                  />
+                </svg>
+                Capture Photo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Add Member Modal */}
       {showAddMember && !generatedCredentials && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -538,8 +843,11 @@ const Members = () => {
             <div className="sticky top-0 bg-gray-800 border-b border-gray-700 p-6 flex items-center justify-between z-10">
               <h2 className="text-2xl font-bold text-white">Add New Member</h2>
               <button
-                onClick={() => setShowAddMember(false)}
-                className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg"
+                onClick={() => {
+                  setShowAddMember(false);
+                  clearCapturedPhoto();
+                }}
+                className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition"
               >
                 <svg
                   className="w-6 h-6"
@@ -720,6 +1028,177 @@ const Members = () => {
                   </div>
                 )}
 
+                {/* Face Recognition Section */}
+                <div className="md:col-span-2 mt-6">
+                  <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
+                    <svg
+                      className="w-5 h-5 text-blue-500"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                      />
+                    </svg>
+                    Face Recognition (Optional)
+                  </h3>
+                  <p className="text-sm text-gray-400 mb-4">
+                    Capture a clear frontal face photo for automatic attendance
+                    marking
+                  </p>
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-300 mb-3">
+                    Face Photo
+                  </label>
+
+                  {faceCapturePreview ? (
+                    <div className="space-y-4">
+                      {/* Photo Preview */}
+                      <div className="flex justify-center">
+                        <div className="relative">
+                          <img
+                            src={faceCapturePreview}
+                            alt="Captured face"
+                            className="w-64 h-64 object-cover rounded-lg border-2 border-green-500"
+                          />
+                          <div className="absolute top-2 right-2 bg-green-500 text-white px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1">
+                            <svg
+                              className="w-4 h-4"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M5 13l4 4L19 7"
+                              />
+                            </svg>
+                            Captured
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Upload Progress */}
+                      {uploadingFacePhoto && (
+                        <div>
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm text-gray-400">
+                              Uploading face photo...
+                            </span>
+                            <span className="text-sm text-blue-400">
+                              {faceUploadProgress.toFixed(0)}%
+                            </span>
+                          </div>
+                          <div className="w-full bg-gray-700 rounded-full h-2">
+                            <div
+                              className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                              style={{ width: `${faceUploadProgress}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Action Buttons */}
+                      <div className="flex gap-3">
+                        <button
+                          type="button"
+                          onClick={retakePhoto}
+                          className="flex-1 px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition font-medium flex items-center justify-center gap-2"
+                          disabled={uploadingFacePhoto}
+                        >
+                          <svg
+                            className="w-5 h-5"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                            />
+                          </svg>
+                          Retake Photo
+                        </button>
+                        <button
+                          type="button"
+                          onClick={clearCapturedPhoto}
+                          className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-medium flex items-center justify-center gap-2"
+                          disabled={uploadingFacePhoto}
+                        >
+                          <svg
+                            className="w-5 h-5"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                            />
+                          </svg>
+                          Remove Photo
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      {/* Capture Button */}
+                      <button
+                        type="button"
+                        onClick={openCameraModal}
+                        className="w-full px-6 py-8 bg-gradient-to-br from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white rounded-xl transition-all duration-300 transform hover:scale-[1.02] font-semibold text-lg flex items-center justify-center gap-3"
+                      >
+                        <svg
+                          className="w-8 h-8"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"
+                          />
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"
+                          />
+                        </svg>
+                        Open Camera to Capture Face
+                      </button>
+
+                      {/* Guidelines */}
+                      <div className="mt-4 p-3 bg-blue-900/20 border border-blue-500/30 rounded-lg">
+                        <p className="text-xs text-blue-300 font-medium mb-2">
+                          📸 Capture Guidelines:
+                        </p>
+                        <ul className="text-xs text-gray-400 space-y-1 list-disc list-inside">
+                          <li>Use your device camera (mobile or laptop)</li>
+                          <li>Ensure good lighting (no shadows on face)</li>
+                          <li>Face should be front-facing and centered</li>
+                          <li>Remove sunglasses, masks, or hats</li>
+                          <li>Keep neutral expression</li>
+                        </ul>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {/* Medical Information */}
                 <div className="md:col-span-2 mt-4">
                   <h3 className="text-lg font-bold text-white mb-4">
@@ -879,13 +1358,19 @@ const Members = () => {
               <div className="flex gap-3 mt-6">
                 <button
                   type="submit"
-                  className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition"
+                  disabled={uploadingFacePhoto}
+                  className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Add Member & Generate Credentials
+                  {uploadingFacePhoto
+                    ? "Uploading..."
+                    : "Add Member & Generate Credentials"}
                 </button>
                 <button
                   type="button"
-                  onClick={() => setShowAddMember(false)}
+                  onClick={() => {
+                    setShowAddMember(false);
+                    clearCapturedPhoto();
+                  }}
                   className="px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-medium transition"
                 >
                   Cancel
@@ -956,7 +1441,7 @@ const Members = () => {
                           );
                           alert("Username copied!");
                         }}
-                        className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm"
+                        className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm transition"
                       >
                         Copy
                       </button>
@@ -981,7 +1466,7 @@ const Members = () => {
                           );
                           alert("Password copied!");
                         }}
-                        className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm"
+                        className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm transition"
                       >
                         Copy
                       </button>
@@ -1058,7 +1543,7 @@ const Members = () => {
               </div>
               <button
                 onClick={() => setViewMember(null)}
-                className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg"
+                className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition"
               >
                 <svg
                   className="w-6 h-6"
