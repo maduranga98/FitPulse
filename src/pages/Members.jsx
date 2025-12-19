@@ -1587,12 +1587,8 @@ const Members = () => {
           memberName={memberForm.name || "New Member"}
           onComplete={(photos) => {
             console.log("✅ Multi-angle capture complete:", photos);
-            // Add preview URLs to photos
-            const photosWithPreview = photos.map((photo) => ({
-              ...photo,
-              url: URL.createObjectURL(photo.blob),
-            }));
-            setCapturedFacePhotos(photosWithPreview);
+            // Photos already have blob and url properties
+            setCapturedFacePhotos(photos);
             setShowMultiAngleCaptureModal(false);
           }}
           onCancel={() => {

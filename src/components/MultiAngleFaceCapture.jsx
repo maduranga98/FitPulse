@@ -149,6 +149,24 @@ const MultiAngleFaceCapture = ({
       // Stop camera before uploading
       stopCamera();
 
+      // If memberId is null, this is for new member registration
+      // Just return the photos with blobs to the parent component
+      if (!memberId) {
+        const photosWithBlobs = capturedPhotos.map((photo, index) => ({
+          blob: photo.blob,
+          url: photo.url,
+          angle: photo.angle,
+          index: index,
+        }));
+
+        if (onComplete) {
+          onComplete(photosWithBlobs);
+        }
+
+        setIsProcessing(false);
+        return;
+      }
+
       const uploadedPhotos = [];
 
       // Upload each photo
@@ -188,6 +206,8 @@ const MultiAngleFaceCapture = ({
       if (onComplete) {
         onComplete(uploadedPhotos);
       }
+
+      setIsProcessing(false);
     } catch (err) {
       console.error("Upload error:", err);
       setError("Failed to upload photos. Please try again.");
