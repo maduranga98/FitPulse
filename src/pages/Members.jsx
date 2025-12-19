@@ -170,7 +170,7 @@ const Members = () => {
 
       let facePhotosArray = [];
 
-      // Upload all face photos (3 photos)
+      // Upload all face photos (6 photos: 3 angles x 2 copies)
       if (capturedFacePhotos && capturedFacePhotos.length > 0) {
         try {
           setUploadingFacePhoto(true);
@@ -179,7 +179,8 @@ const Members = () => {
             const photo = capturedFacePhotos[i];
 
             const timestamp = Date.now();
-            const fileName = `faces/${currentGymId}/${username}_${photo.angle}_${timestamp}.jpg`;
+            const copyLabel = photo.copy ? `copy${photo.copy}` : '';
+            const fileName = `faces/${currentGymId}/${username}_${photo.angle}_${copyLabel}_${timestamp}.jpg`;
             const storageRef = ref(storage, fileName);
 
             const uploadTask = uploadBytesResumable(storageRef, photo.blob);
@@ -192,7 +193,7 @@ const Members = () => {
                     (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
                   setFaceUploadProgress(progress);
                   console.log(
-                    `Photo ${i + 1}/3 upload: ${progress.toFixed(0)}%`
+                    `Photo ${i + 1}/6 upload: ${progress.toFixed(0)}%`
                   );
                 },
                 (error) => {
@@ -207,9 +208,10 @@ const Members = () => {
                     url: downloadURL,
                     angle: photo.angle,
                     uploadedAt: new Date().toISOString(),
-                    index: i,
+                    index: photo.index,
+                    copy: photo.copy,
                   });
-                  console.log(`✅ Photo ${i + 1}/3 uploaded`);
+                  console.log(`✅ Photo ${i + 1}/6 uploaded`);
                   resolve();
                 }
               );
@@ -834,14 +836,14 @@ const Members = () => {
                     Face Recognition (Optional)
                   </h3>
                   <p className="text-sm text-gray-400 mb-4">
-                    Capture 3 face photos from different angles for better
+                    Capture 3 face photos from different angles (saved as 6 images) for better
                     recognition accuracy
                   </p>
                 </div>
 
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-300 mb-3">
-                    Face Photos (3 Angles)
+                    Face Photos (6 Images: 3 Angles × 2 Copies)
                   </label>
 
                   {capturedFacePhotos.length > 0 ? (
@@ -856,7 +858,7 @@ const Members = () => {
                               className="w-full h-32 object-cover rounded-lg border-2 border-green-500"
                             />
                             <div className="absolute top-2 left-2 bg-green-500 text-white px-2 py-1 rounded text-xs font-semibold">
-                              {photo.angle}
+                              {photo.angle} {photo.copy ? `(${photo.copy})` : ''}
                             </div>
                           </div>
                         ))}
@@ -964,7 +966,7 @@ const Members = () => {
                           📸 Multi-Angle Capture:
                         </p>
                         <ul className="text-xs text-gray-400 space-y-1 list-disc list-inside">
-                          <li>Capture 3 photos from different angles</li>
+                          <li>Capture 3 photos from different angles (saved as 6 images)</li>
                           <li>Improves recognition accuracy by 10-20%</li>
                           <li>Takes only 2-3 minutes</li>
                           <li>Works better in varying lighting conditions</li>

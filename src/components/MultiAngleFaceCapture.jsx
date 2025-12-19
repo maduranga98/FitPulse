@@ -152,12 +152,26 @@ const MultiAngleFaceCapture = ({
       // If memberId is null, this is for new member registration
       // Just return the photos with blobs to the parent component
       if (!memberId) {
-        const photosWithBlobs = capturedPhotos.map((photo, index) => ({
-          blob: photo.blob,
-          url: photo.url,
-          angle: photo.angle,
-          index: index,
-        }));
+        // Duplicate each photo to get 6 images total
+        const photosWithBlobs = [];
+        capturedPhotos.forEach((photo, index) => {
+          // First copy
+          photosWithBlobs.push({
+            blob: photo.blob,
+            url: photo.url,
+            angle: photo.angle,
+            index: index * 2,
+            copy: 1,
+          });
+          // Second copy (duplicate)
+          photosWithBlobs.push({
+            blob: photo.blob,
+            url: photo.url,
+            angle: photo.angle,
+            index: index * 2 + 1,
+            copy: 2,
+          });
+        });
 
         if (onComplete) {
           onComplete(photosWithBlobs);
@@ -169,27 +183,45 @@ const MultiAngleFaceCapture = ({
 
       const uploadedPhotos = [];
 
-      // Upload each photo
+      // Upload each photo twice (duplicate)
       for (let i = 0; i < capturedPhotos.length; i++) {
         const photo = capturedPhotos[i];
         if (!photo) continue;
 
-        const timestamp = Date.now();
-        const filename = `${memberId}_${photo.angle}_${timestamp}.jpg`;
-        const photoRef = storageRef(storage, `faces/${memberId}/${filename}`);
+        // Upload first copy
+        let timestamp = Date.now();
+        let filename = `${memberId}_${photo.angle}_copy1_${timestamp}.jpg`;
+        let photoRef = storageRef(storage, `faces/${memberId}/${filename}`);
 
         await uploadBytes(photoRef, photo.blob);
-        const downloadURL = await getDownloadURL(photoRef);
+        let downloadURL = await getDownloadURL(photoRef);
 
         uploadedPhotos.push({
           url: downloadURL,
           angle: photo.angle,
           uploadedAt: new Date().toISOString(),
-          index: i,
+          index: i * 2,
+          copy: 1,
+        });
+
+        // Upload second copy (duplicate)
+        timestamp = Date.now();
+        filename = `${memberId}_${photo.angle}_copy2_${timestamp}.jpg`;
+        photoRef = storageRef(storage, `faces/${memberId}/${filename}`);
+
+        await uploadBytes(photoRef, photo.blob);
+        downloadURL = await getDownloadURL(photoRef);
+
+        uploadedPhotos.push({
+          url: downloadURL,
+          angle: photo.angle,
+          uploadedAt: new Date().toISOString(),
+          index: i * 2 + 1,
+          copy: 2,
         });
       }
 
-      // Update member document with all 3 photos
+      // Update member document with all 6 photos (3 angles x 2 copies)
       const memberRef = doc(db, "members", memberId);
       await updateDoc(memberRef, {
         facePhotos: uploadedPhotos,
