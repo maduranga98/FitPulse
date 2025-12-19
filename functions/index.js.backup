@@ -1,148 +1,148 @@
-const functions = require("firebase-functions");
-const admin = require("firebase-admin");
-const vision = require("@google-cloud/vision");
+import { storage, firestore } from "firebase-functions";
+import {
+  initializeApp,
+  storage as _storage,
+  firestore as _firestore,
+} from "firebase-admin";
+import { ImageAnnotatorClient } from "@google-cloud/vision";
 
-admin.initializeApp();
+initializeApp();
 
-exports.recognizeFace = functions.storage
-  .object()
-  .onFinalize(async (object) => {
-    const filePath = object.name;
-    const bucketName = object.bucket;
+export const recognizeFace = storage.object().onFinalize(async (object) => {
+  const filePath = object.name;
+  const bucketName = object.bucket;
 
-    console.log("📸 New image uploaded:", filePath);
+  console.log("📸 New image uploaded:", filePath);
 
-    if (!filePath.startsWith("temp-captures/")) {
-      console.log("⏭️  Skipping - not in temp-captures folder");
+  if (!filePath.startsWith("temp-captures/")) {
+    console.log("⏭️  Skipping - not in temp-captures folder");
+    return null;
+  }
+
+  try {
+    const client = new ImageAnnotatorClient();
+    const gcsUri = `gs://${bucketName}/${filePath}`;
+
+    console.log("🔍 Detecting face in image...");
+    const [result] = await client.faceDetection(gcsUri);
+    const faces = result.faceAnnotations;
+
+    if (!faces || faces.length === 0) {
+      console.log("❌ No face detected in image");
+      await _storage().bucket(bucketName).file(filePath).delete();
       return null;
     }
 
-    try {
-      const client = new vision.ImageAnnotatorClient();
-      const gcsUri = `gs://${bucketName}/${filePath}`;
+    console.log(`✅ Detected ${faces.length} face(s)`);
+    const detectedFace = faces[0];
 
-      console.log("🔍 Detecting face in image...");
-      const [result] = await client.faceDetection(gcsUri);
-      const faces = result.faceAnnotations;
+    const filename = filePath.split("/")[1];
+    const deviceId = filename.split("_").slice(0, 2).join("_");
+    console.log("📱 Device ID:", deviceId);
 
-      if (!faces || faces.length === 0) {
-        console.log("❌ No face detected in image");
-        await admin.storage().bucket(bucketName).file(filePath).delete();
-        return null;
+    console.log("👥 Fetching registered members...");
+    const db = _firestore();
+    const membersSnapshot = await db
+      .collection("members")
+      .where("faceRegistered", "==", true)
+      .get();
+
+    if (membersSnapshot.empty) {
+      console.log("⚠️  No registered members found");
+      await _storage().bucket(bucketName).file(filePath).delete();
+      return null;
+    }
+
+    console.log(`📋 Found ${membersSnapshot.size} registered members`);
+
+    let bestMatch = null;
+    let highestConfidence = 0;
+
+    for (const memberDoc of membersSnapshot.docs) {
+      const member = memberDoc.data();
+
+      if (!member.facePhotoURL) {
+        continue;
       }
 
-      console.log(`✅ Detected ${faces.length} face(s)`);
-      const detectedFace = faces[0];
+      try {
+        const [compareResult] = await client.faceDetection(member.facePhotoURL);
+        const memberFaces = compareResult.faceAnnotations;
 
-      const filename = filePath.split("/")[1];
-      const deviceId = filename.split("_").slice(0, 2).join("_");
-      console.log("📱 Device ID:", deviceId);
-
-      console.log("👥 Fetching registered members...");
-      const db = admin.firestore();
-      const membersSnapshot = await db
-        .collection("members")
-        .where("faceRegistered", "==", true)
-        .get();
-
-      if (membersSnapshot.empty) {
-        console.log("⚠️  No registered members found");
-        await admin.storage().bucket(bucketName).file(filePath).delete();
-        return null;
-      }
-
-      console.log(`📋 Found ${membersSnapshot.size} registered members`);
-
-      let bestMatch = null;
-      let highestConfidence = 0;
-
-      for (const memberDoc of membersSnapshot.docs) {
-        const member = memberDoc.data();
-
-        if (!member.facePhotoURL) {
+        if (!memberFaces || memberFaces.length === 0) {
+          console.log(`  ⚠️  ${member.name}: No face in stored photo`);
           continue;
         }
 
-        try {
-          const [compareResult] = await client.faceDetection(
-            member.facePhotoURL
-          );
-          const memberFaces = compareResult.faceAnnotations;
+        const memberFace = memberFaces[0];
+        const similarity = compareAdvancedFaces(detectedFace, memberFace);
 
-          if (!memberFaces || memberFaces.length === 0) {
-            console.log(`  ⚠️  ${member.name}: No face in stored photo`);
-            continue;
-          }
-
-          const memberFace = memberFaces[0];
-          const similarity = compareAdvancedFaces(detectedFace, memberFace);
-
-          console.log(
-            `  Comparing with ${member.name}: ${(similarity * 100).toFixed(1)}%`
-          );
-
-          if (similarity > highestConfidence && similarity > 0.6) {
-            highestConfidence = similarity;
-            bestMatch = {
-              id: memberDoc.id,
-              ...member,
-            };
-          }
-        } catch (error) {
-          console.error(
-            `  ❌ Error comparing with ${member.name}:`,
-            error.message
-          );
-        }
-      }
-
-      if (bestMatch) {
         console.log(
-          `✅ MATCH FOUND: ${bestMatch.name} (${(
-            highestConfidence * 100
-          ).toFixed(1)}% confidence)`
+          `  Comparing with ${member.name}: ${(similarity * 100).toFixed(1)}%`
         );
 
-        const today = new Date().toISOString().split("T")[0];
-        const existingAttendance = await db
-          .collection("attendance")
-          .where("memberId", "==", bestMatch.id)
-          .where("date", "==", today)
-          .limit(1)
-          .get();
-
-        if (!existingAttendance.empty) {
-          console.log("⚠️  Member already checked in today");
-        } else {
-          await db.collection("attendance").add({
-            memberId: bestMatch.id,
-            memberName: bestMatch.name,
-            gymId: bestMatch.gymId,
-            deviceId: deviceId,
-            checkInTime: admin.firestore.FieldValue.serverTimestamp(),
-            date: today,
-            confidence: highestConfidence * 100,
-            status: "verified",
-            recognitionMethod: "cloud-vision-improved",
-          });
-
-          console.log("✅ Attendance marked successfully!");
+        if (similarity > highestConfidence && similarity > 0.6) {
+          highestConfidence = similarity;
+          bestMatch = {
+            id: memberDoc.id,
+            ...member,
+          };
         }
-      } else {
-        console.log("❌ No matching member found (confidence too low)");
-        console.log(
-          `   Highest confidence was: ${(highestConfidence * 100).toFixed(1)}%`
+      } catch (error) {
+        console.error(
+          `  ❌ Error comparing with ${member.name}:`,
+          error.message
         );
       }
-
-      await admin.storage().bucket(bucketName).file(filePath).delete();
-      console.log("🗑️  Temp file deleted");
-    } catch (error) {
-      console.error("❌ Error processing image:", error);
     }
 
-    return null;
-  });
+    if (bestMatch) {
+      console.log(
+        `✅ MATCH FOUND: ${bestMatch.name} (${(highestConfidence * 100).toFixed(
+          1
+        )}% confidence)`
+      );
+
+      const today = new Date().toISOString().split("T")[0];
+      const existingAttendance = await db
+        .collection("attendance")
+        .where("memberId", "==", bestMatch.id)
+        .where("date", "==", today)
+        .limit(1)
+        .get();
+
+      if (!existingAttendance.empty) {
+        console.log("⚠️  Member already checked in today");
+      } else {
+        await db.collection("attendance").add({
+          memberId: bestMatch.id,
+          memberName: bestMatch.name,
+          gymId: bestMatch.gymId,
+          deviceId: deviceId,
+          checkInTime: _firestore.FieldValue.serverTimestamp(),
+          date: today,
+          confidence: highestConfidence * 100,
+          status: "verified",
+          recognitionMethod: "cloud-vision-improved",
+        });
+
+        console.log("✅ Attendance marked successfully!");
+      }
+    } else {
+      console.log("❌ No matching member found (confidence too low)");
+      console.log(
+        `   Highest confidence was: ${(highestConfidence * 100).toFixed(1)}%`
+      );
+    }
+
+    await _storage().bucket(bucketName).file(filePath).delete();
+    console.log("🗑️  Temp file deleted");
+  } catch (error) {
+    console.error("❌ Error processing image:", error);
+  }
+
+  return null;
+});
 
 function compareAdvancedFaces(face1, face2) {
   let totalScore = 0;
@@ -284,9 +284,9 @@ function compareLandmarks(landmarks1, landmarks2) {
   return enhancedSimilarity;
 }
 
-exports.processFaceRegistration = functions.firestore
+export const processFaceRegistration = firestore
   .document("members/{memberId}")
-  .onCreate(async (snap, context) => {
+  .onCreate(async (snap) => {
     const member = snap.data();
 
     if (!member.facePhotoURL || !member.faceRegistered) {
@@ -296,7 +296,7 @@ exports.processFaceRegistration = functions.firestore
     console.log("📸 Processing face registration for:", member.name);
 
     try {
-      const client = new vision.ImageAnnotatorClient();
+      const client = new ImageAnnotatorClient();
       const [result] = await client.faceDetection(member.facePhotoURL);
       const faces = result.faceAnnotations;
 
@@ -319,7 +319,7 @@ exports.processFaceRegistration = functions.firestore
         faceRollAngle: faceData.rollAngle,
         facePanAngle: faceData.panAngle,
         faceTiltAngle: faceData.tiltAngle,
-        faceEnrolledAt: admin.firestore.FieldValue.serverTimestamp(),
+        faceEnrolledAt: _firestore.FieldValue.serverTimestamp(),
       });
 
       console.log("✅ Face registration processed successfully");
