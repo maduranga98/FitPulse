@@ -1,17 +1,14 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
+import { isAdmin, isMember } from "../utils/authUtils";
 
 const Sidebar = ({ isOpen, onClose }) => {
   const { user, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
 
-  const isAdmin =
-    user?.role === "admin" ||
-    user?.role === "manager" ||
-    user?.role === "gym_admin" ||
-    user?.role === "gym_manager";
-  const isMember = user?.role === "member";
+  const userIsAdmin = isAdmin(user);
+  const userIsMember = isMember(user);
 
   const isActiveRoute = (path) => location.pathname === path;
 
@@ -162,7 +159,7 @@ const Sidebar = ({ isOpen, onClose }) => {
   ];
 
   // Select correct nav items based on role
-  const navItems = isMember ? memberNavItems : adminNavItems;
+  const navItems = userIsMember ? memberNavItems : adminNavItems;
 
   return (
     <>

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import Sidebar from "../components/Sidebar";
+import { isAdmin, validateGymId } from "../utils/authUtils";
 
 const Analytics = () => {
   const { user } = useAuth();
@@ -9,11 +10,8 @@ const Analytics = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [selectedAnalytic, setSelectedAnalytic] = useState(null);
 
-  const isAdmin =
-    user?.role === "admin" ||
-    user?.role === "manager" ||
-    user?.role === "gym_admin" ||
-    user?.role === "gym_manager";
+  const userIsAdmin = isAdmin(user);
+  const gymValidation = validateGymId(user);
 
   const handleAnalyticClick = (analyticId) => {
     const routes = {
