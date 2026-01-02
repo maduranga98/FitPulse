@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../hooks/useAuth";
 import Sidebar from "../components/Sidebar";
 import MultiAngleFaceCapture from "../components/MultiAngleFaceCapture";
+import { isAdmin, validateGymId } from "../utils/authUtils";
+import { calculateBMI, validateBMIInputs } from "../utils/validationUtils";
 
 const Members = () => {
   const { user } = useAuth();
@@ -23,7 +25,8 @@ const Members = () => {
   const [uploadingFacePhoto, setUploadingFacePhoto] = useState(false);
   const [faceUploadProgress, setFaceUploadProgress] = useState(0);
 
-  const isAdmin = user?.role === "gym_admin" || user?.role === "manager";
+  const userIsAdmin = isAdmin(user);
+  const gymValidation = validateGymId(user);
 
   const [memberForm, setMemberForm] = useState({
     name: "",
@@ -52,7 +55,8 @@ const Members = () => {
 
   useEffect(() => {
     if (memberForm.weight && memberForm.height) {
-      calculateBMI(memberForm.weight, memberForm.height);
+      const bmiData = calculateBMI(memberForm.weight, memberForm.height);
+      setBmiInfo(bmiData);
     } else {
       setBmiInfo(null);
     }
@@ -90,33 +94,6 @@ const Members = () => {
     }
   };
 
-  const calculateBMI = (weight, height) => {
-    const weightKg = parseFloat(weight);
-    const heightM = parseFloat(height) / 100;
-
-    if (weightKg > 0 && heightM > 0) {
-      const bmi = (weightKg / (heightM * heightM)).toFixed(1);
-      let category = "";
-      let color = "";
-
-      if (bmi < 18.5) {
-        category = "Underweight";
-        color = "text-blue-600";
-      } else if (bmi >= 18.5 && bmi < 25) {
-        category = "Normal weight";
-        color = "text-green-600";
-      } else if (bmi >= 25 && bmi < 30) {
-        category = "Overweight";
-        color = "text-yellow-600";
-      } else {
-        category = "Obese";
-        color = "text-red-600";
-      }
-
-      setBmiInfo({ bmi, category, color });
-    }
-  };
-
   const generateUsername = (name) => {
     const cleanName = name.toLowerCase().replace(/\s+/g, "");
     const randomNum = Math.floor(1000 + Math.random() * 9000);
@@ -136,7 +113,7 @@ const Members = () => {
   const handleAddMember = async (e) => {
     e.preventDefault();
 
-    if (!isAdmin) {
+    if (!userIsAdmin) {
       alert("You don't have permission to add members");
       return;
     }
@@ -147,6 +124,15 @@ const Members = () => {
         "❌ At least one phone number (Mobile or WhatsApp) is required for SMS"
       );
       return;
+    }
+
+    // Validate BMI inputs if provided
+    if (memberForm.weight && memberForm.height) {
+      const bmiValidation = validateBMIInputs(memberForm.weight, memberForm.height);
+      if (!bmiValidation.isValid) {
+        alert("❌ Invalid measurements:\n" + bmiValidation.errors.join("\n"));
+        return;
+      }
     }
 
     if (capturedFacePhotos.length === 0) {
@@ -307,7 +293,7 @@ const Members = () => {
   };
 
   const handleDeleteMember = async (id) => {
-    if (!isAdmin) {
+    if (!userIsAdmin) {
       alert("You don't have permission to delete members");
       return;
     }
@@ -327,7 +313,7 @@ const Members = () => {
   };
 
   const handleUpdateStatus = async (id, newStatus) => {
-    if (!isAdmin) {
+    if (!userIsAdmin) {
       alert("You don't have permission to update member status");
       return;
     }
@@ -378,6 +364,31 @@ const Members = () => {
     setShowAddMember(false);
   };
 
+  // Show error if gymId validation fails
+  if (!gymValidation.isValid) {
+    return (
+      <div className="h-screen w-screen bg-gray-900 flex items-center justify-center p-4">
+        <div className="bg-gray-800 border border-gray-700 rounded-xl p-8 text-center max-w-md">
+          <div className="flex justify-center mb-4">
+            <div className="w-16 h-16 bg-yellow-600/20 rounded-full flex items-center justify-center">
+              <svg className="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            </div>
+          </div>
+          <h2 className="text-2xl font-bold text-white mb-2">Configuration Error</h2>
+          <p className="text-gray-400 mb-4">{gymValidation.error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div className="h-screen w-screen bg-gray-900 flex items-center justify-center">
@@ -419,7 +430,7 @@ const Members = () => {
                 Members
               </h1>
             </div>
-            {isAdmin && (
+            {userIsAdmin && (
               <button
                 onClick={() => setShowAddMember(true)}
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition flex items-center gap-2"
@@ -520,7 +531,7 @@ const Members = () => {
             {filteredMembers.length === 0 ? (
               <div className="col-span-full text-center py-12">
                 <p className="text-gray-400 text-lg">No members found</p>
-                {isAdmin && (
+                {userIsAdmin && (
                   <button
                     onClick={() => setShowAddMember(true)}
                     className="mt-4 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition"
@@ -597,7 +608,7 @@ const Members = () => {
                     >
                       View Details
                     </button>
-                    {isAdmin && (
+                    {userIsAdmin && (
                       <button
                         onClick={() => handleDeleteMember(member.id)}
                         className="px-4 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-600 rounded-lg text-sm font-medium transition"
@@ -1339,7 +1350,7 @@ const Members = () => {
             </div>
 
             <div className="p-6">
-              {isAdmin && (
+              {userIsAdmin && (
                 <div className="mb-6 flex gap-3">
                   <button
                     onClick={() => handleUpdateStatus(viewMember.id, "active")}
@@ -1543,7 +1554,7 @@ const Members = () => {
                 </div>
               )}
 
-              {isAdmin && viewMember.username && (
+              {userIsAdmin && viewMember.username && (
                 <div className="mb-6">
                   <h3 className="text-lg font-bold text-white mb-4">
                     Login Credentials

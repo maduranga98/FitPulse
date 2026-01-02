@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../hooks/useAuth";
 import Sidebar from "../components/Sidebar";
 import { where } from "firebase/firestore";
+import { isAdmin, validateGymId } from "../utils/authUtils";
 
 const AdminComplaints = () => {
   const { user } = useAuth();
@@ -21,7 +22,8 @@ const AdminComplaints = () => {
   });
   const [submitting, setSubmitting] = useState(false);
 
-  const isAdmin = user?.role === "gym_admin" || user?.role === "manager";
+  const userIsAdmin = isAdmin(user);
+  const gymValidation = validateGymId(user);
 
   const categories = [
     "all",
@@ -34,10 +36,12 @@ const AdminComplaints = () => {
   ];
 
   useEffect(() => {
-    if (isAdmin) {
+    if (userIsAdmin && currentGymId) {
       fetchComplaints();
+    } else {
+      setLoading(false);
     }
-  }, [isAdmin]);
+  }, [userIsAdmin, currentGymId]);
 
   const fetchComplaints = async () => {
     try {
@@ -67,17 +71,34 @@ const AdminComplaints = () => {
   };
 
   const handleUpdateStatus = async (complaintId, newStatus) => {
+    // Validate: Cannot mark as "Resolved" without providing a response
+    const complaint = complaints.find(c => c.id === complaintId);
+    if (newStatus === "Resolved" && (!complaint?.responses || complaint.responses.length === 0)) {
+      alert("❌ Cannot mark complaint as Resolved without providing a response.\n\nPlease click 'Add Response' to provide a resolution message first.");
+
+      // Revert the dropdown selection
+      if (viewComplaint?.id === complaintId) {
+        // Force re-render to reset the dropdown
+        setViewComplaint({ ...viewComplaint });
+      }
+      return;
+    }
+
     try {
       const { db } = await import("../config/firebase");
-      const { doc, updateDoc } = await import("firebase/firestore");
+      const { doc, updateDoc, Timestamp } = await import("firebase/firestore");
 
-      await updateDoc(doc(db, "complaints", complaintId), {
+      const updateData = {
         status: newStatus,
-      });
+        statusUpdatedAt: Timestamp.now(),
+        statusUpdatedBy: user.name || user.username,
+      };
+
+      await updateDoc(doc(db, "complaints", complaintId), updateData);
 
       fetchComplaints();
       if (viewComplaint?.id === complaintId) {
-        setViewComplaint({ ...viewComplaint, status: newStatus });
+        setViewComplaint({ ...viewComplaint, ...updateData });
       }
     } catch (error) {
       console.error("Error updating status:", error);
@@ -87,6 +108,18 @@ const AdminComplaints = () => {
 
   const handleSubmitResponse = async (e) => {
     e.preventDefault();
+
+    // Validate response message
+    if (!responseForm.message || responseForm.message.trim().length === 0) {
+      alert("❌ Please provide a response message.");
+      return;
+    }
+
+    if (responseForm.message.trim().length < 10) {
+      alert("❌ Response message is too short. Please provide a detailed response (at least 10 characters).");
+      return;
+    }
+
     setSubmitting(true);
 
     try {
@@ -96,18 +129,21 @@ const AdminComplaints = () => {
       );
 
       const response = {
-        message: responseForm.message,
-        adminName: user.name,
+        message: responseForm.message.trim(),
+        adminName: user.name || user.username,
         adminId: user.id,
         respondedAt: Timestamp.now(),
       };
 
       const updateData = {
         responses: arrayUnion(response),
+        lastResponseAt: Timestamp.now(),
       };
 
       if (responseForm.newStatus) {
         updateData.status = responseForm.newStatus;
+        updateData.statusUpdatedAt = Timestamp.now();
+        updateData.statusUpdatedBy = user.name || user.username;
       }
 
       await updateDoc(doc(db, "complaints", viewComplaint.id), updateData);
@@ -183,14 +219,46 @@ const AdminComplaints = () => {
     return matchesStatus && matchesCategory && matchesSearch;
   });
 
-  if (!isAdmin) {
+  if (!userIsAdmin) {
     return (
       <div className="h-screen w-screen bg-gray-900 flex items-center justify-center p-4">
         <div className="bg-gray-800 border border-gray-700 rounded-xl p-8 text-center max-w-md">
+          <div className="flex justify-center mb-4">
+            <div className="w-16 h-16 bg-red-600/20 rounded-full flex items-center justify-center">
+              <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            </div>
+          </div>
           <h2 className="text-2xl font-bold text-white mb-2">Access Denied</h2>
           <p className="text-gray-400">
             You don't have permission to view this page.
           </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error if gymId validation fails
+  if (!gymValidation.isValid) {
+    return (
+      <div className="h-screen w-screen bg-gray-900 flex items-center justify-center p-4">
+        <div className="bg-gray-800 border border-gray-700 rounded-xl p-8 text-center max-w-md">
+          <div className="flex justify-center mb-4">
+            <div className="w-16 h-16 bg-yellow-600/20 rounded-full flex items-center justify-center">
+              <svg className="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            </div>
+          </div>
+          <h2 className="text-2xl font-bold text-white mb-2">Configuration Error</h2>
+          <p className="text-gray-400 mb-4">{gymValidation.error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition"
+          >
+            Retry
+          </button>
         </div>
       </div>
     );
@@ -556,6 +624,7 @@ const AdminComplaints = () => {
                       handleUpdateStatus(viewComplaint.id, e.target.value)
                     }
                     className="px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
+                    title={viewComplaint.status !== "Resolved" && (!viewComplaint.responses || viewComplaint.responses.length === 0) ? "Add a response before marking as Resolved" : ""}
                   >
                     <option value="Pending">Pending</option>
                     <option value="In Progress">In Progress</option>

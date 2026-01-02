@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import Sidebar from "../components/Sidebar";
+import { isAdmin, validateGymId } from "../utils/authUtils";
 
 const Dashboard = () => {
   const { user, logout } = useAuth();
@@ -19,22 +20,17 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  const isAdmin =
-    user?.role === "admin" ||
-    user?.role === "manager" ||
-    user?.role === "gym_admin" ||
-    user?.role === "gym_manager";
-
-  //  Get current gym ID from user
+  const userIsAdmin = isAdmin(user);
+  const gymValidation = validateGymId(user);
   const currentGymId = user?.gymId;
 
   useEffect(() => {
-    if (isAdmin && currentGymId) {
+    if (userIsAdmin && currentGymId) {
       fetchDashboardData();
     } else {
       setLoading(false);
     }
-  }, [isAdmin, currentGymId]);
+  }, [userIsAdmin, currentGymId]);
 
   const fetchDashboardData = async () => {
     try {
@@ -145,30 +141,67 @@ const Dashboard = () => {
   };
 
   // Show access denied if not admin
-  if (!isAdmin) {
+  if (!userIsAdmin) {
     return (
       <div className="h-screen w-screen bg-gray-900 flex items-center justify-center p-4">
         <div className="bg-gray-800 border border-gray-700 rounded-xl p-8 text-center max-w-md">
+          <div className="flex justify-center mb-4">
+            <div className="w-16 h-16 bg-red-600/20 rounded-full flex items-center justify-center">
+              <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            </div>
+          </div>
           <h2 className="text-2xl font-bold text-white mb-2">Access Denied</h2>
-          <p className="text-gray-400">
+          <p className="text-gray-400 mb-4">
             You don't have permission to view this page.
           </p>
+          <button
+            onClick={() => navigate(-1)}
+            className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition"
+          >
+            Go Back
+          </button>
         </div>
       </div>
     );
   }
 
-  // Show error if no gymId
-  if (!currentGymId) {
+  // Show error if gymId validation fails
+  if (!gymValidation.isValid) {
     return (
       <div className="h-screen w-screen bg-gray-900 flex items-center justify-center p-4">
         <div className="bg-gray-800 border border-gray-700 rounded-xl p-8 text-center max-w-md">
+          <div className="flex justify-center mb-4">
+            <div className="w-16 h-16 bg-yellow-600/20 rounded-full flex items-center justify-center">
+              <svg className="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            </div>
+          </div>
           <h2 className="text-2xl font-bold text-white mb-2">
             Configuration Error
           </h2>
-          <p className="text-gray-400">
-            Your account is not associated with a gym. Please contact support.
+          <p className="text-gray-400 mb-4">
+            {gymValidation.error}
           </p>
+          <div className="flex gap-3 justify-center">
+            <button
+              onClick={() => {
+                logout();
+                navigate("/login");
+              }}
+              className="px-6 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-medium transition"
+            >
+              Logout
+            </button>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition"
+            >
+              Retry
+            </button>
+          </div>
         </div>
       </div>
     );
