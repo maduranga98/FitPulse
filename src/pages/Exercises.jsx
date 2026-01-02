@@ -13,6 +13,7 @@ const Exercises = ({ onLogout, onNavigate }) => {
   const [showAddExercise, setShowAddExercise] = useState(false);
   const [showAddCategory, setShowAddCategory] = useState(false);
   const [viewExercise, setViewExercise] = useState(null);
+  const [editingExercise, setEditingExercise] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [uploadingFiles, setUploadingFiles] = useState(false);
   const [uploadProgress, setUploadProgress] = useState({});
@@ -160,6 +161,75 @@ const Exercises = ({ onLogout, onNavigate }) => {
     } catch (error) {
       console.error("Error adding category:", error);
       alert("Failed to add category");
+    }
+  };
+
+  const handleEditExercise = (exercise) => {
+    setEditingExercise(exercise);
+    setExerciseForm({
+      name: exercise.name,
+      category: exercise.category,
+      steps: exercise.steps?.length > 0 ? exercise.steps : [""],
+      targetedSections: exercise.targetedSections?.length > 0 ? exercise.targetedSections : [""],
+      repsCount: exercise.repsCount || "",
+      sets: exercise.sets || "",
+      duration: exercise.duration || "",
+      difficulty: exercise.difficulty || "beginner",
+      equipment: exercise.equipment || "",
+      notes: exercise.notes || "",
+      photoURLs: exercise.photoURLs?.length > 0 ? exercise.photoURLs : [""],
+      videoURLs: exercise.videoURLs?.length > 0 ? exercise.videoURLs : [""],
+    });
+    setShowAddExercise(true);
+  };
+
+  const handleUpdateExercise = async (e) => {
+    e.preventDefault();
+    try {
+      const { db } = await import("../config/firebase");
+      const { doc, updateDoc, Timestamp } = await import("firebase/firestore");
+
+      // Find the selected category to get its name
+      const selectedCategory = categories.find(
+        (cat) => cat.id === exerciseForm.category
+      );
+
+      // Clean up arrays
+      const cleanedForm = {
+        ...exerciseForm,
+        gymId: currentGymId,
+        categoryName: selectedCategory ? selectedCategory.name : "",
+        steps: exerciseForm.steps.filter((s) => s.trim() !== ""),
+        targetedSections: exerciseForm.targetedSections.filter(
+          (t) => t.trim() !== ""
+        ),
+        photoURLs: exerciseForm.photoURLs.filter((p) => p.trim() !== ""),
+        videoURLs: exerciseForm.videoURLs.filter((v) => v.trim() !== ""),
+        updatedAt: Timestamp.now(),
+      };
+
+      await updateDoc(doc(db, "exercises", editingExercise.id), cleanedForm);
+
+      setShowAddExercise(false);
+      setEditingExercise(null);
+      setExerciseForm({
+        name: "",
+        category: "",
+        steps: [""],
+        targetedSections: [""],
+        repsCount: "",
+        sets: "",
+        duration: "",
+        difficulty: "beginner",
+        equipment: "",
+        notes: "",
+        photoURLs: [""],
+        videoURLs: [""],
+      });
+      fetchData();
+    } catch (error) {
+      console.error("Error updating exercise:", error);
+      alert("Failed to update exercise");
     }
   };
 
@@ -597,7 +667,25 @@ const Exercises = ({ onLogout, onNavigate }) => {
                           onClick={() => setViewExercise(exercise)}
                           className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition"
                         >
-                          View Details
+                          View
+                        </button>
+                        <button
+                          onClick={() => handleEditExercise(exercise)}
+                          className="px-4 py-2 bg-green-600/20 hover:bg-green-600/30 text-green-600 rounded-lg text-sm font-medium transition"
+                        >
+                          <svg
+                            className="w-4 h-4"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                            />
+                          </svg>
                         </button>
                         <button
                           onClick={() => handleDeleteExercise(exercise.id)}
@@ -633,10 +721,27 @@ const Exercises = ({ onLogout, onNavigate }) => {
           <div className="bg-gray-800 rounded-2xl border border-gray-700 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-gray-800 border-b border-gray-700 p-6 flex items-center justify-between">
               <h2 className="text-2xl font-bold text-white">
-                Add New Exercise
+                {editingExercise ? "Edit Exercise" : "Add New Exercise"}
               </h2>
               <button
-                onClick={() => setShowAddExercise(false)}
+                onClick={() => {
+                  setShowAddExercise(false);
+                  setEditingExercise(null);
+                  setExerciseForm({
+                    name: "",
+                    category: "",
+                    steps: [""],
+                    targetedSections: [""],
+                    repsCount: "",
+                    sets: "",
+                    duration: "",
+                    difficulty: "beginner",
+                    equipment: "",
+                    notes: "",
+                    photoURLs: [""],
+                    videoURLs: [""],
+                  });
+                }}
                 className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg"
               >
                 <svg
@@ -1182,13 +1287,30 @@ const Exercises = ({ onLogout, onNavigate }) => {
 
               <div className="flex gap-3 mt-6">
                 <button
-                  onClick={handleAddExercise}
+                  onClick={editingExercise ? handleUpdateExercise : handleAddExercise}
                   className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition"
                 >
-                  Add Exercise
+                  {editingExercise ? "Update Exercise" : "Add Exercise"}
                 </button>
                 <button
-                  onClick={() => setShowAddExercise(false)}
+                  onClick={() => {
+                    setShowAddExercise(false);
+                    setEditingExercise(null);
+                    setExerciseForm({
+                      name: "",
+                      category: "",
+                      steps: [""],
+                      targetedSections: [""],
+                      repsCount: "",
+                      sets: "",
+                      duration: "",
+                      difficulty: "beginner",
+                      equipment: "",
+                      notes: "",
+                      photoURLs: [""],
+                      videoURLs: [""],
+                    });
+                  }}
                   className="px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-medium transition"
                 >
                   Cancel

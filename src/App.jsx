@@ -17,6 +17,7 @@ import MemberSettings from "./pages/members/MemberSettings";
 import AdminComplaints from "./pages/AdminComplaints";
 import AdminPayments from "./pages/AdminPayments";
 import SuperAdminDashboard from "./pages/SuperAdminDashboard";
+import BulkExerciseImport from "./pages/BulkExerciseImport";
 import Analytics from "./pages/Analytics";
 import MemberAnalytics from "./pages/MemberAnalytics";
 import FinancialAnalytics from "./pages/FinancialAnalytics";
@@ -57,6 +58,16 @@ function App() {
               <ProtectedRoute>
                 <RoleRoute allowedRoles={["super_admin"]}>
                   <SuperAdminDashboard />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/super-admin/bulk-exercise-import"
+            element={
+              <ProtectedRoute>
+                <RoleRoute allowedRoles={["super_admin"]}>
+                  <BulkExerciseImport />
                 </RoleRoute>
               </ProtectedRoute>
             }
