@@ -71,11 +71,15 @@ const CommonExercises = () => {
       const exercisesRef = collection(db, "exercises");
       const snapshot = await getDocs(exercisesRef);
       const exercisesList = snapshot.docs
-        .filter((doc) => !doc.data().gymId) // Only exercises without gymId
+        .filter((doc) => {
+          const data = doc.data();
+          return !data.gymId || data.gymId === null || data.gymId === "";
+        })
         .map((doc) => ({
           id: doc.id,
           ...doc.data(),
         }));
+      console.log("Super Admin - Common exercises loaded:", exercisesList.length);
       setExercises(exercisesList);
     } catch (error) {
       console.error("Error fetching common exercises:", error);
@@ -91,11 +95,15 @@ const CommonExercises = () => {
       const categoriesRef = collection(db, "exerciseCategories");
       const snapshot = await getDocs(categoriesRef);
       const categoriesList = snapshot.docs
-        .filter((doc) => !doc.data().gymId) // Only categories without gymId
+        .filter((doc) => {
+          const data = doc.data();
+          return !data.gymId || data.gymId === null || data.gymId === "";
+        })
         .map((doc) => ({
           id: doc.id,
           ...doc.data(),
         }));
+      console.log("Super Admin - Common categories loaded:", categoriesList.length);
       setCategories(categoriesList);
     } catch (error) {
       console.error("Error fetching categories:", error);

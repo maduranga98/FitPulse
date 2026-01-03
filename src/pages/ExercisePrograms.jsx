@@ -83,12 +83,16 @@ const ExercisePrograms = () => {
       const commonExercisesRef = collection(db, "exercises");
       const commonSnapshot = await getDocs(commonExercisesRef);
       const commonExercisesList = commonSnapshot.docs
-        .filter((doc) => !doc.data().gymId) // Only exercises without gymId
+        .filter((doc) => {
+          const data = doc.data();
+          return !data.gymId || data.gymId === null || data.gymId === "";
+        })
         .map((doc) => ({
           id: doc.id,
           ...doc.data(),
           isCommon: true,
         }));
+      console.log("Programs - Common exercises loaded:", commonExercisesList.length);
       setCommonExercises(commonExercisesList);
     } catch (error) {
       console.error("Error fetching exercises:", error);
