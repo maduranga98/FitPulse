@@ -1,0 +1,463 @@
+import { useState, useEffect } from "react";
+import { useAuth } from "../../hooks/useAuth";
+import { useNavigate, useLocation } from "react-router-dom";
+import MemberLayout from "../../components/MemberLayout";
+
+const MemberWorkoutSession = () => {
+  const { user: currentUser } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const { workout, day, scheduleId } = location.state || {};
+
+  const [exercises, setExercises] = useState([]);
+  const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
+  const [exerciseLogs, setExerciseLogs] = useState([]);
+  const [workoutNotes, setWorkoutNotes] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [showSuccessAnimation, setShowSuccessAnimation] = useState(false);
+
+  useEffect(() => {
+    if (!workout || !day || !scheduleId) {
+      navigate("/member/workouts");
+      return;
+    }
+    fetchExercises();
+  }, []);
+
+  const fetchExercises = async () => {
+    try {
+      const { db } = await import("../../config/firebase");
+      const { collection, getDocs } = await import("firebase/firestore");
+
+      const exercisesSnapshot = await getDocs(collection(db, "exercises"));
+      const exercisesData = exercisesSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      setExercises(exercisesData);
+
+      // Initialize exercise logs
+      const initialLogs = workout.exercises.map((exercise) => ({
+        exerciseId: exercise.exerciseId,
+        sets: exercise.sets.map((set) => ({
+          plannedReps: set.reps,
+          actualReps: set.reps,
+          weight: 0,
+          rest: set.rest,
+          completed: false,
+        })),
+      }));
+
+      setExerciseLogs(initialLogs);
+      setLoading(false);
+    } catch (error) {
+      console.error("Error fetching exercises:", error);
+      setLoading(false);
+    }
+  };
+
+  const getExerciseName = (exerciseId) => {
+    const exercise = exercises.find((e) => e.id === exerciseId);
+    return exercise?.name || "Unknown Exercise";
+  };
+
+  const updateSetData = (exerciseIndex, setIndex, field, value) => {
+    setExerciseLogs((prev) => {
+      const updated = [...prev];
+      updated[exerciseIndex].sets[setIndex][field] = value;
+      return updated;
+    });
+  };
+
+  const markSetComplete = (exerciseIndex, setIndex) => {
+    setExerciseLogs((prev) => {
+      const updated = [...prev];
+      updated[exerciseIndex].sets[setIndex].completed = true;
+      return updated;
+    });
+  };
+
+  const getCurrentExercise = () => {
+    if (!workout || currentExerciseIndex >= workout.exercises.length) return null;
+    return workout.exercises[currentExerciseIndex];
+  };
+
+  const getCurrentExerciseLog = () => {
+    return exerciseLogs[currentExerciseIndex];
+  };
+
+  const goToNextExercise = () => {
+    if (currentExerciseIndex < workout.exercises.length - 1) {
+      setCurrentExerciseIndex(currentExerciseIndex + 1);
+      window.scrollTo(0, 0);
+    }
+  };
+
+  const goToPreviousExercise = () => {
+    if (currentExerciseIndex > 0) {
+      setCurrentExerciseIndex(currentExerciseIndex - 1);
+      window.scrollTo(0, 0);
+    }
+  };
+
+  const isLastExercise = () => {
+    return currentExerciseIndex === workout.exercises.length - 1;
+  };
+
+  const isFirstExercise = () => {
+    return currentExerciseIndex === 0;
+  };
+
+  const allSetsCompleted = () => {
+    const currentLog = getCurrentExerciseLog();
+    if (!currentLog) return false;
+    return currentLog.sets.every((set) => set.completed);
+  };
+
+  const completeWorkout = async () => {
+    try {
+      const { db } = await import("../../config/firebase");
+      const { collection, addDoc, Timestamp } = await import("firebase/firestore");
+
+      // Prepare exercise logs for saving
+      const finalLogs = exerciseLogs.map((log, index) => ({
+        exerciseId: log.exerciseId,
+        exerciseName: getExerciseName(log.exerciseId),
+        sets: log.sets.map((set) => ({
+          plannedReps: set.plannedReps,
+          actualReps: parseInt(set.actualReps) || 0,
+          weight: parseFloat(set.weight) || 0,
+          rest: set.rest,
+        })),
+      }));
+
+      // Save workout log
+      await addDoc(collection(db, "workoutLogs"), {
+        memberId: currentUser.id,
+        scheduleId: scheduleId,
+        day: day,
+        exercises: finalLogs,
+        completedAt: Timestamp.now(),
+        duration: 0,
+        notes: workoutNotes,
+      });
+
+      // Show success animation
+      setShowSuccessAnimation(true);
+      setTimeout(() => {
+        navigate("/member/workouts");
+      }, 2000);
+    } catch (error) {
+      console.error("Error saving workout:", error);
+      alert("Failed to save workout. Please try again.");
+    }
+  };
+
+  if (loading) {
+    return (
+      <MemberLayout>
+        <div className="h-full flex items-center justify-center p-4">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-gray-400">Loading workout...</p>
+          </div>
+        </div>
+      </MemberLayout>
+    );
+  }
+
+  const currentExercise = getCurrentExercise();
+  const currentLog = getCurrentExerciseLog();
+
+  if (!currentExercise || !currentLog) {
+    return (
+      <MemberLayout>
+        <div className="h-full flex items-center justify-center p-4">
+          <div className="text-center">
+            <p className="text-gray-400">No exercise data available</p>
+            <button
+              onClick={() => navigate("/member/workouts")}
+              className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg"
+            >
+              Go Back
+            </button>
+          </div>
+        </div>
+      </MemberLayout>
+    );
+  }
+
+  return (
+    <MemberLayout>
+      <div className="min-h-full bg-gray-900">
+        {/* Header with Progress */}
+        <div className="bg-gradient-to-r from-blue-600 to-purple-600 p-4 sm:p-6">
+          <div className="max-w-4xl mx-auto">
+            <div className="flex items-center justify-between mb-4">
+              <button
+                onClick={() => {
+                  if (window.confirm("Are you sure you want to exit? Your progress will be lost.")) {
+                    navigate("/member/workouts");
+                  }
+                }}
+                className="text-white/80 hover:text-white transition flex items-center gap-2"
+              >
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 19l-7-7 7-7"
+                  />
+                </svg>
+                <span className="text-sm sm:text-base">Exit Workout</span>
+              </button>
+              <div className="text-white/90 text-sm sm:text-base font-medium capitalize">
+                {day}'s Workout
+              </div>
+            </div>
+
+            {/* Progress Bar */}
+            <div className="mb-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-white/80 text-xs sm:text-sm">
+                  Exercise {currentExerciseIndex + 1} of {workout.exercises.length}
+                </span>
+                <span className="text-white/80 text-xs sm:text-sm">
+                  {Math.round(((currentExerciseIndex + 1) / workout.exercises.length) * 100)}%
+                </span>
+              </div>
+              <div className="w-full bg-white/20 rounded-full h-2">
+                <div
+                  className="bg-white h-2 rounded-full transition-all duration-300"
+                  style={{
+                    width: `${((currentExerciseIndex + 1) / workout.exercises.length) * 100}%`,
+                  }}
+                ></div>
+              </div>
+            </div>
+
+            <h1 className="text-2xl sm:text-3xl font-bold text-white">
+              {getExerciseName(currentExercise.exerciseId)}
+            </h1>
+          </div>
+        </div>
+
+        {/* Main Content */}
+        <div className="max-w-4xl mx-auto p-4 sm:p-6">
+          {/* Exercise Info */}
+          <div className="bg-gray-800 rounded-xl p-4 sm:p-6 mb-4 border border-gray-700">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg sm:text-xl font-bold text-white">
+                Sets to Complete
+              </h2>
+              <span className="text-3xl">💪</span>
+            </div>
+
+            {/* Sets */}
+            <div className="space-y-4">
+              {currentExercise.sets.map((set, setIndex) => {
+                const setLog = currentLog.sets[setIndex];
+                const isCompleted = setLog.completed;
+
+                return (
+                  <div
+                    key={setIndex}
+                    className={`bg-gray-900 rounded-lg p-4 sm:p-5 border-2 transition ${
+                      isCompleted ? "border-green-500" : "border-gray-700"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <h3 className="text-white font-semibold text-base sm:text-lg">
+                          Set {setIndex + 1}
+                        </h3>
+                        <p className="text-gray-400 text-sm">
+                          Target: {set.reps} reps • Rest: {set.rest}
+                        </p>
+                      </div>
+                      {isCompleted && (
+                        <div className="flex items-center gap-2 text-green-500">
+                          <svg
+                            className="w-6 h-6"
+                            fill="currentColor"
+                            viewBox="0 0 20 20"
+                          >
+                            <path
+                              fillRule="evenodd"
+                              d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                              clipRule="evenodd"
+                            />
+                          </svg>
+                          <span className="font-medium hidden sm:inline">Done</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 sm:gap-4 mb-4">
+                      <div>
+                        <label className="block text-sm text-gray-400 mb-2">
+                          Reps Completed
+                        </label>
+                        <input
+                          type="number"
+                          value={setLog.actualReps}
+                          onChange={(e) =>
+                            updateSetData(
+                              currentExerciseIndex,
+                              setIndex,
+                              "actualReps",
+                              e.target.value
+                            )
+                          }
+                          disabled={isCompleted}
+                          className="w-full px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg text-white text-base focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                          min="0"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm text-gray-400 mb-2">
+                          Weight (kg)
+                        </label>
+                        <input
+                          type="number"
+                          value={setLog.weight}
+                          onChange={(e) =>
+                            updateSetData(
+                              currentExerciseIndex,
+                              setIndex,
+                              "weight",
+                              e.target.value
+                            )
+                          }
+                          disabled={isCompleted}
+                          step="0.5"
+                          className="w-full px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg text-white text-base focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                          min="0"
+                        />
+                      </div>
+                    </div>
+
+                    {!isCompleted && (
+                      <button
+                        onClick={() =>
+                          markSetComplete(currentExerciseIndex, setIndex)
+                        }
+                        className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition active:scale-95"
+                      >
+                        Mark as Complete
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Workout Notes - Only show on last exercise */}
+          {isLastExercise() && (
+            <div className="bg-gray-800 rounded-xl p-4 sm:p-6 mb-4 border border-gray-700">
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Workout Notes (Optional)
+              </label>
+              <textarea
+                value={workoutNotes}
+                onChange={(e) => setWorkoutNotes(e.target.value)}
+                rows="3"
+                className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="How did you feel? Any achievements or challenges?"
+              />
+            </div>
+          )}
+
+          {/* Navigation Buttons */}
+          <div className="flex gap-3">
+            <button
+              onClick={goToPreviousExercise}
+              disabled={isFirstExercise()}
+              className="flex-1 py-4 bg-gray-800 hover:bg-gray-700 disabled:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition flex items-center justify-center gap-2 active:scale-95"
+            >
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15 19l-7-7 7-7"
+                />
+              </svg>
+              <span className="hidden sm:inline">Previous</span>
+            </button>
+
+            {!isLastExercise() ? (
+              <button
+                onClick={goToNextExercise}
+                disabled={!allSetsCompleted()}
+                className="flex-1 py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white rounded-lg font-medium transition flex items-center justify-center gap-2 active:scale-95"
+              >
+                <span className="hidden sm:inline">Next Exercise</span>
+                <span className="sm:hidden">Next</span>
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 5l7 7-7 7"
+                  />
+                </svg>
+              </button>
+            ) : (
+              <button
+                onClick={completeWorkout}
+                disabled={!allSetsCompleted()}
+                className="flex-1 py-4 bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-700 hover:to-blue-700 disabled:from-gray-700 disabled:to-gray-700 disabled:cursor-not-allowed text-white rounded-lg font-medium transition flex items-center justify-center gap-2 active:scale-95"
+              >
+                Complete Workout 🎉
+              </button>
+            )}
+          </div>
+
+          {/* Helper Text */}
+          {!allSetsCompleted() && (
+            <p className="text-center text-gray-400 text-sm mt-4">
+              Complete all sets to continue
+            </p>
+          )}
+        </div>
+
+        {/* Success Animation */}
+        {showSuccessAnimation && (
+          <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4">
+            <div className="text-center animate-bounce">
+              <div className="text-6xl sm:text-8xl mb-4">🎉</div>
+              <h2 className="text-2xl sm:text-4xl font-bold text-white mb-2">
+                Awesome Work!
+              </h2>
+              <p className="text-lg sm:text-xl text-gray-300">
+                Workout completed successfully!
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+    </MemberLayout>
+  );
+};
+
+export default MemberWorkoutSession;
