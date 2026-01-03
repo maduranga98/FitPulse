@@ -55,38 +55,34 @@ const Exercises = ({ onLogout, onNavigate }) => {
         "firebase/firestore"
       );
 
-      // Fetch categories - ADD WHERE CLAUSE
+      // Fetch gym-specific categories
       const categoriesRef = collection(db, "exerciseCategories");
-      const categoriesQuery = currentGymId
-        ? query(
-            categoriesRef,
-            where("gymId", "==", currentGymId),
-            orderBy("name", "asc")
-          )
-        : query(categoriesRef, orderBy("name", "asc"));
+      const categoriesQuery = query(
+        categoriesRef,
+        where("gymId", "==", currentGymId),
+        orderBy("name", "asc")
+      );
       const categoriesSnapshot = await getDocs(categoriesQuery);
       const categoriesData = categoriesSnapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
       }));
 
-      // Fetch exercises - ADD WHERE CLAUSE
-      const exercisesRef = collection(db, "exercises");
-      const exercisesQuery = currentGymId
-        ? query(
-            exercisesRef,
-            where("gymId", "==", currentGymId),
-            orderBy("name", "asc")
-          )
-        : query(exercisesRef, orderBy("name", "asc"));
-      const exercisesSnapshot = await getDocs(exercisesQuery);
-      const exercisesData = exercisesSnapshot.docs.map((doc) => ({
+      // Fetch gym-specific exercises from gym_exercises collection
+      const gymExercisesRef = collection(db, "gym_exercises");
+      const gymExercisesQuery = query(
+        gymExercisesRef,
+        where("gymId", "==", currentGymId),
+        orderBy("name", "asc")
+      );
+      const gymExercisesSnapshot = await getDocs(gymExercisesQuery);
+      const gymExercisesData = gymExercisesSnapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
       }));
 
       setCategories(categoriesData);
-      setExercises(exercisesData);
+      setExercises(gymExercisesData);
       setLoading(false);
     } catch (error) {
       console.error("Error fetching data:", error);
@@ -97,27 +93,29 @@ const Exercises = ({ onLogout, onNavigate }) => {
   const fetchCommonData = async () => {
     try {
       const { db } = await import("../config/firebase");
-      const { collection, getDocs, orderBy, query } = await import(
+      const { collection, getDocs } = await import(
         "firebase/firestore"
       );
 
-      // Fetch common categories
-      const commonCategoriesRef = collection(db, "commonExerciseCategories");
-      const commonCategoriesQuery = query(commonCategoriesRef, orderBy("name", "asc"));
-      const commonCategoriesSnapshot = await getDocs(commonCategoriesQuery);
-      const commonCategoriesData = commonCategoriesSnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
+      // Fetch common categories (no gymId) from exerciseCategories collection
+      const categoriesRef = collection(db, "exerciseCategories");
+      const categoriesSnapshot = await getDocs(categoriesRef);
+      const commonCategoriesData = categoriesSnapshot.docs
+        .filter((doc) => !doc.data().gymId) // Only categories without gymId
+        .map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
 
-      // Fetch common exercises
-      const commonExercisesRef = collection(db, "commonExercises");
-      const commonExercisesQuery = query(commonExercisesRef, orderBy("name", "asc"));
-      const commonExercisesSnapshot = await getDocs(commonExercisesQuery);
-      const commonExercisesData = commonExercisesSnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
+      // Fetch common exercises (no gymId) from exercises collection
+      const exercisesRef = collection(db, "exercises");
+      const exercisesSnapshot = await getDocs(exercisesRef);
+      const commonExercisesData = exercisesSnapshot.docs
+        .filter((doc) => !doc.data().gymId) // Only exercises without gymId
+        .map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
 
       setCommonCategories(commonCategoriesData);
       setCommonExercises(commonExercisesData);
@@ -153,7 +151,7 @@ const Exercises = ({ onLogout, onNavigate }) => {
         createdAt: Timestamp.now(),
       };
 
-      await addDoc(collection(db, "exercises"), cleanedForm);
+      await addDoc(collection(db, "gym_exercises"), cleanedForm);
 
       setShowAddExercise(false);
       setExerciseForm({
@@ -244,7 +242,7 @@ const Exercises = ({ onLogout, onNavigate }) => {
         updatedAt: Timestamp.now(),
       };
 
-      await updateDoc(doc(db, "exercises", editingExercise.id), cleanedForm);
+      await updateDoc(doc(db, "gym_exercises", editingExercise.id), cleanedForm);
 
       setShowAddExercise(false);
       setEditingExercise(null);
@@ -276,7 +274,7 @@ const Exercises = ({ onLogout, onNavigate }) => {
       const { db } = await import("../config/firebase");
       const { doc, deleteDoc } = await import("firebase/firestore");
 
-      await deleteDoc(doc(db, "exercises", id));
+      await deleteDoc(doc(db, "gym_exercises", id));
       fetchData();
     } catch (error) {
       console.error("Error deleting exercise:", error);
@@ -471,7 +469,7 @@ const Exercises = ({ onLogout, onNavigate }) => {
         createdAt: Timestamp.now(),
       };
 
-      await addDoc(collection(db, "exercises"), exerciseData);
+      await addDoc(collection(db, "gym_exercises"), exerciseData);
       alert("Exercise copied to your gym successfully!");
       fetchData(); // Refresh gym exercises
     } catch (error) {

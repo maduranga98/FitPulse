@@ -64,17 +64,18 @@ const CommonExercises = () => {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState({});
 
-  // Fetch common exercises
+  // Fetch common exercises (no gymId)
   const fetchExercises = async () => {
     setLoading(true);
     try {
-      const exercisesRef = collection(db, "commonExercises");
-      const q = query(exercisesRef, orderBy("createdAt", "desc"));
-      const snapshot = await getDocs(q);
-      const exercisesList = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
+      const exercisesRef = collection(db, "exercises");
+      const snapshot = await getDocs(exercisesRef);
+      const exercisesList = snapshot.docs
+        .filter((doc) => !doc.data().gymId) // Only exercises without gymId
+        .map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
       setExercises(exercisesList);
     } catch (error) {
       console.error("Error fetching common exercises:", error);
@@ -84,15 +85,17 @@ const CommonExercises = () => {
     }
   };
 
-  // Fetch common categories
+  // Fetch common categories (no gymId)
   const fetchCategories = async () => {
     try {
-      const categoriesRef = collection(db, "commonExerciseCategories");
+      const categoriesRef = collection(db, "exerciseCategories");
       const snapshot = await getDocs(categoriesRef);
-      const categoriesList = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
+      const categoriesList = snapshot.docs
+        .filter((doc) => !doc.data().gymId) // Only categories without gymId
+        .map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
       setCategories(categoriesList);
     } catch (error) {
       console.error("Error fetching categories:", error);
@@ -212,12 +215,12 @@ const CommonExercises = () => {
 
       if (editMode && selectedExercise) {
         // Update existing
-        await updateDoc(doc(db, "commonExercises", selectedExercise.id), exerciseData);
+        await updateDoc(doc(db, "exercises", selectedExercise.id), exerciseData);
         alert("Exercise updated successfully!");
       } else {
-        // Add new
+        // Add new - NO gymId for common exercises
         exerciseData.createdAt = Timestamp.now();
-        await addDoc(collection(db, "commonExercises"), exerciseData);
+        await addDoc(collection(db, "exercises"), exerciseData);
         alert("Exercise added successfully!");
       }
 
@@ -242,7 +245,8 @@ const CommonExercises = () => {
     }
 
     try {
-      await addDoc(collection(db, "commonExerciseCategories"), {
+      // Add category without gymId for common categories
+      await addDoc(collection(db, "exerciseCategories"), {
         ...categoryFormData,
         createdAt: Timestamp.now(),
       });
@@ -263,7 +267,7 @@ const CommonExercises = () => {
     }
 
     try {
-      await deleteDoc(doc(db, "commonExercises", id));
+      await deleteDoc(doc(db, "exercises", id));
       alert("Exercise deleted successfully!");
       fetchExercises();
     } catch (error) {
