@@ -6,6 +6,9 @@ import {
   query,
   where,
   Timestamp,
+  doc,
+  updateDoc,
+  deleteDoc,
 } from "firebase/firestore";
 import { db } from "../config/firebase";
 import { useAuth } from "../hooks/useAuth";
@@ -84,11 +87,8 @@ const BulkExerciseImport = () => {
 
   const fetchExistingExercises = async () => {
     try {
-      const exercisesQuery = query(
-        collection(db, 'exercises'),
-        where('gymId', '==', 'common')
-      );
-      const exercisesSnapshot = await getDocs(exercisesQuery);
+      // Fetch ALL exercises regardless of gymId
+      const exercisesSnapshot = await getDocs(collection(db, 'exercises'));
       const exercisesData = exercisesSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
@@ -209,7 +209,19 @@ const BulkExerciseImport = () => {
       return;
     }
 
-    if (!window.confirm(`Import ${validExercises.length} exercises as ${isCommon ? 'common' : 'gym-specific'}?`)) {
+    const updateCount = validExercises.filter(ex => ex.id).length;
+    const newCount = validExercises.length - updateCount;
+
+    let confirmMessage = '';
+    if (updateCount > 0 && newCount > 0) {
+      confirmMessage = `Update ${updateCount} existing exercise(s) and create ${newCount} new exercise(s)?`;
+    } else if (updateCount > 0) {
+      confirmMessage = `Update ${updateCount} existing exercise(s)?`;
+    } else {
+      confirmMessage = `Import ${newCount} new exercise(s) as ${isCommon ? 'common' : 'gym-specific'}?`;
+    }
+
+    if (!window.confirm(confirmMessage)) {
       return;
     }
 
@@ -231,7 +243,7 @@ const BulkExerciseImport = () => {
           name: exercise.name,
           category: categoryId,
           categoryName: exercise.categoryName.trim(),
-          gymId: isCommon ? 'common' : selectedGym,
+          gymId: exercise.gymId || (isCommon ? 'common' : selectedGym),
           difficulty: exercise.difficulty,
           equipment: exercise.equipment || "",
           repsCount: exercise.repsCount || "",
@@ -242,10 +254,19 @@ const BulkExerciseImport = () => {
           notes: exercise.notes || "",
           photoURLs: exercise.photoURLs || [],
           videoURLs: exercise.videoURLs || [],
-          createdAt: Timestamp.now(),
         };
 
-        await addDoc(collection(db, "exercises"), exerciseData);
+        // Check if this is an update (has id) or new exercise
+        if (exercise.id) {
+          // Update existing exercise
+          exerciseData.updatedAt = Timestamp.now();
+          await updateDoc(doc(db, "exercises", exercise.id), exerciseData);
+        } else {
+          // Create new exercise
+          exerciseData.createdAt = Timestamp.now();
+          await addDoc(collection(db, "exercises"), exerciseData);
+        }
+
         successfulImports++;
       } catch (error) {
         importErrors.push(`Exercise "${exercise.name}": ${error.message}`);
@@ -280,8 +301,10 @@ const BulkExerciseImport = () => {
 
   const handleExportExercises = () => {
     const exportData = existingExercises.map(ex => ({
+      id: ex.id,
       name: ex.name,
       categoryName: ex.categoryName,
+      gymId: ex.gymId,
       difficulty: ex.difficulty,
       equipment: ex.equipment,
       repsCount: ex.repsCount,
@@ -670,6 +693,17 @@ const BulkExerciseImport = () => {
                 </ul>
               </div>
 
+              <div className="mt-4 p-4 bg-green-900 bg-opacity-20 rounded-lg">
+                <h3 className="font-semibold mb-2">🔄 Bulk Update Workflow:</h3>
+                <ul className="list-disc list-inside space-y-1 text-sm text-gray-300">
+                  <li><strong>Step 1:</strong> Go to "View & Edit Exercises" tab and click "Export All"</li>
+                  <li><strong>Step 2:</strong> Edit the exported JSON file (update photoURLs, videoURLs, etc.)</li>
+                  <li><strong>Step 3:</strong> Upload the edited JSON file here</li>
+                  <li><strong>Step 4:</strong> The system will automatically update existing exercises (with id) or create new ones</li>
+                  <li><strong>Note:</strong> Keep the "id" field in the JSON to update existing exercises. Remove it to create new ones.</li>
+                </ul>
+              </div>
+
               <div className="mt-4 p-4 bg-yellow-900 bg-opacity-20 rounded-lg">
                 <h3 className="font-semibold mb-2">Important Notes:</h3>
                 <ul className="list-disc list-inside space-y-1 text-sm text-gray-300">
@@ -687,7 +721,10 @@ const BulkExerciseImport = () => {
           /* View & Edit Exercises */
           <div className="bg-gray-800 rounded-lg p-6">
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-semibold">Added Common Exercises</h2>
+              <div>
+                <h2 className="text-xl font-semibold">All Exercises</h2>
+                <p className="text-sm text-gray-400 mt-1">Export all exercises to update images and links, then re-import</p>
+              </div>
               <button
                 onClick={handleExportExercises}
                 disabled={existingExercises.length === 0}
@@ -702,7 +739,7 @@ const BulkExerciseImport = () => {
 
             {existingExercises.length === 0 ? (
               <div className="text-center py-12 text-gray-400">
-                <p>No common exercises found</p>
+                <p>No exercises found</p>
                 <p className="text-sm mt-2">Import some exercises to see them here</p>
               </div>
             ) : (
@@ -712,6 +749,7 @@ const BulkExerciseImport = () => {
                     <tr>
                       <th className="px-4 py-3 text-left">Name</th>
                       <th className="px-4 py-3 text-left">Category</th>
+                      <th className="px-4 py-3 text-left">Gym</th>
                       <th className="px-4 py-3 text-left">Difficulty</th>
                       <th className="px-4 py-3 text-left">Equipment</th>
                       <th className="px-4 py-3 text-left">Actions</th>
@@ -722,6 +760,15 @@ const BulkExerciseImport = () => {
                       <tr key={exercise.id} className="border-b border-gray-700 hover:bg-gray-750">
                         <td className="px-4 py-3">{exercise.name}</td>
                         <td className="px-4 py-3">{exercise.categoryName}</td>
+                        <td className="px-4 py-3">
+                          <span className={`px-2 py-1 rounded text-xs ${
+                            exercise.gymId === 'common'
+                              ? 'bg-purple-600/20 text-purple-600'
+                              : 'bg-blue-600/20 text-blue-600'
+                          }`}>
+                            {exercise.gymId === 'common' ? 'Common' : 'Gym-specific'}
+                          </span>
+                        </td>
                         <td className="px-4 py-3">
                           <span className={`px-2 py-1 rounded text-xs ${
                             exercise.difficulty === 'beginner' ? 'bg-green-600/20 text-green-600' :
