@@ -41,10 +41,10 @@ const BulkExerciseImport = () => {
   }, [user, navigate]);
 
   useEffect(() => {
-    if (selectedGym || isCommon) {
+    if (selectedGym) {
       fetchCategories();
     }
-  }, [selectedGym, isCommon]);
+  }, [selectedGym]);
 
   const fetchGyms = async () => {
     try {
@@ -63,19 +63,8 @@ const BulkExerciseImport = () => {
     try {
       let categoriesData = [];
 
-      if (isCommon) {
-        // Fetch common categories (where gymId is 'common' or doesn't exist)
-        const commonCategoriesQuery = query(
-          collection(db, 'exerciseCategories'),
-          where('gymId', '==', 'common')
-        );
-        const commonSnapshot = await getDocs(commonCategoriesQuery);
-        categoriesData = commonSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-      } else if (selectedGym) {
-        // Fetch gym-specific categories
+      if (selectedGym) {
+        // Always fetch categories from the selected gym
         const categoriesQuery = query(
           collection(db, 'exerciseCategories'),
           where('gymId', '==', selectedGym)
@@ -127,8 +116,8 @@ const BulkExerciseImport = () => {
       return;
     }
 
-    if (!isCommon && !selectedGym) {
-      alert('Please select a gym or mark as common');
+    if (!selectedGym) {
+      alert('Please select a gym');
       return;
     }
 
@@ -208,8 +197,8 @@ const BulkExerciseImport = () => {
   };
 
   const handleBulkImport = async () => {
-    if (!isCommon && !selectedGym) {
-      alert('Please select a gym or mark as common');
+    if (!selectedGym) {
+      alert('Please select a gym');
       return;
     }
 
@@ -476,36 +465,39 @@ const BulkExerciseImport = () => {
                 </label>
               </div>
 
-              {!isCommon && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Select Gym
-                  </label>
-                  <select
-                    value={selectedGym}
-                    onChange={(e) => {
-                      setSelectedGym(e.target.value);
-                      resetForm();
-                    }}
-                    className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">Select a gym...</option>
-                    {gyms.map(gym => (
-                      <option key={gym.id} value={gym.id}>
-                        {gym.name} - {gym.location}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
+              <div className="mt-4">
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Select Gym {isCommon && <span className="text-gray-500">(for category reference)</span>}
+                </label>
+                <select
+                  value={selectedGym}
+                  onChange={(e) => {
+                    setSelectedGym(e.target.value);
+                    resetForm();
+                  }}
+                  className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Select a gym...</option>
+                  {gyms.map(gym => (
+                    <option key={gym.id} value={gym.id}>
+                      {gym.name} - {gym.location}
+                    </option>
+                  ))}
+                </select>
+                {isCommon && selectedGym && (
+                  <p className="text-xs text-gray-400 mt-2">
+                    Exercises will be saved as common but use this gym's category structure
+                  </p>
+                )}
+              </div>
 
-              {(isCommon || selectedGym) && categories.length > 0 && (
+              {selectedGym && categories.length > 0 && (
                 <div className="mt-4">
                   <h3 className="text-sm font-semibold mb-2">Available Categories:</h3>
                   <div className="flex flex-wrap gap-2">
                     {categories.map(cat => (
                       <span key={cat.id} className="px-3 py-1 bg-blue-600 rounded-full text-sm">
-                        {cat.icon} {cat.name}
+                        {cat.icon} {cat.name.trim()}
                       </span>
                     ))}
                   </div>
@@ -532,7 +524,7 @@ const BulkExerciseImport = () => {
                   accept=".json"
                   onChange={handleFileChange}
                   className="block w-full text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700"
-                  disabled={!isCommon && !selectedGym}
+                  disabled={!selectedGym}
                 />
               </div>
 
@@ -544,7 +536,7 @@ const BulkExerciseImport = () => {
 
               <button
                 onClick={parseAndPreview}
-                disabled={!selectedFile || (!isCommon && !selectedGym)}
+                disabled={!selectedFile || !selectedGym}
                 className="px-6 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Parse and Preview
@@ -661,8 +653,8 @@ const BulkExerciseImport = () => {
               <h2 className="text-xl font-semibold mb-4">Instructions</h2>
               <ol className="list-decimal list-inside space-y-2 text-gray-300">
                 <li>Choose if exercises should be common (all gyms) or gym-specific</li>
-                <li>If gym-specific, select the target gym</li>
-                <li>Make sure the required categories exist (check available categories above)</li>
+                <li>Select a gym to use its category structure</li>
+                <li>Check the available categories (must match exactly in your JSON)</li>
                 <li>Download the sample JSON file to see the required format</li>
                 <li>Prepare your JSON file with exercise data (can be an array of exercises or a single exercise)</li>
                 <li>Upload the JSON file and click "Parse and Preview"</li>
@@ -670,15 +662,23 @@ const BulkExerciseImport = () => {
                 <li>Click "Import" to save valid exercises to the database</li>
               </ol>
 
+              <div className="mt-4 p-4 bg-blue-900 bg-opacity-20 rounded-lg">
+                <h3 className="font-semibold mb-2">💡 Common vs Gym-Specific:</h3>
+                <ul className="list-disc list-inside space-y-1 text-sm text-gray-300">
+                  <li><strong>Common:</strong> Exercises saved as common are available to all gyms, but you still need to select a gym to use its category structure for validation</li>
+                  <li><strong>Gym-Specific:</strong> Exercises are only available to the selected gym</li>
+                </ul>
+              </div>
+
               <div className="mt-4 p-4 bg-yellow-900 bg-opacity-20 rounded-lg">
                 <h3 className="font-semibold mb-2">Important Notes:</h3>
                 <ul className="list-disc list-inside space-y-1 text-sm text-gray-300">
-                  <li>The categoryName must match an existing category name exactly</li>
-                  <li>Category matching is case-insensitive and trims whitespace</li>
+                  <li>The categoryName must match an existing category name from the selected gym</li>
+                  <li>Category matching is case-insensitive and trims whitespace automatically</li>
                   <li>Difficulty must be: beginner, intermediate, or advanced</li>
                   <li>Steps and targetedSections must be arrays</li>
                   <li>photoURLs and videoURLs are optional but must be arrays if provided</li>
-                  <li>Multi-word categories like "Core / Abs" or "Mobility & Flexibility" are supported</li>
+                  <li>Multi-word categories like "Core / Abs" or "Mobility & Flexibility" are fully supported</li>
                 </ul>
               </div>
             </div>
