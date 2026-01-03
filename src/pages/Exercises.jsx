@@ -7,7 +7,9 @@ const Exercises = ({ onLogout, onNavigate }) => {
   const currentGymId = user?.gymId;
   const [exercises, setExercises] = useState([]);
   const [commonExercises, setCommonExercises] = useState([]);
-  const [selectedCommonExerciseIds, setSelectedCommonExerciseIds] = useState([]); // IDs of selected common exercises
+  const [selectedCommonExerciseIds, setSelectedCommonExerciseIds] = useState(
+    []
+  ); // IDs of selected common exercises
   const [categories, setCategories] = useState([]);
   const [commonCategories, setCommonCategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState("all");
@@ -129,9 +131,7 @@ const Exercises = ({ onLogout, onNavigate }) => {
   const fetchCommonData = async () => {
     try {
       const { db } = await import("../config/firebase");
-      const { collection, getDocs } = await import(
-        "firebase/firestore"
-      );
+      const { collection, getDocs } = await import("firebase/firestore");
 
       // Fetch common categories (no gymId) from exerciseCategories collection
       const categoriesRef = collection(db, "exerciseCategories");
@@ -145,14 +145,14 @@ const Exercises = ({ onLogout, onNavigate }) => {
           id: doc.id,
           ...doc.data(),
         }));
-
+      console.log(commonCategoriesData);
       // Fetch common exercises (no gymId) from exercises collection
       const exercisesRef = collection(db, "exercises");
       const exercisesSnapshot = await getDocs(exercisesRef);
       const commonExercisesData = exercisesSnapshot.docs
         .filter((doc) => {
           const data = doc.data();
-          return !data.gymId || data.gymId === null || data.gymId === "";
+          return !data.gymId || data.gymId === "common" || data.gymId === "";
         })
         .map((doc) => ({
           id: doc.id,
@@ -249,7 +249,10 @@ const Exercises = ({ onLogout, onNavigate }) => {
       name: exercise.name,
       category: exercise.category,
       steps: exercise.steps?.length > 0 ? exercise.steps : [""],
-      targetedSections: exercise.targetedSections?.length > 0 ? exercise.targetedSections : [""],
+      targetedSections:
+        exercise.targetedSections?.length > 0
+          ? exercise.targetedSections
+          : [""],
       repsCount: exercise.repsCount || "",
       sets: exercise.sets || "",
       duration: exercise.duration || "",
@@ -287,7 +290,10 @@ const Exercises = ({ onLogout, onNavigate }) => {
         updatedAt: Timestamp.now(),
       };
 
-      await updateDoc(doc(db, "gym_exercises", editingExercise.id), cleanedForm);
+      await updateDoc(
+        doc(db, "gym_exercises", editingExercise.id),
+        cleanedForm
+      );
 
       setShowAddExercise(false);
       setEditingExercise(null);
@@ -495,7 +501,15 @@ const Exercises = ({ onLogout, onNavigate }) => {
 
     try {
       const { db } = await import("../config/firebase");
-      const { collection, addDoc, deleteDoc, getDocs, query, where, Timestamp } = await import("firebase/firestore");
+      const {
+        collection,
+        addDoc,
+        deleteDoc,
+        getDocs,
+        query,
+        where,
+        Timestamp,
+      } = await import("firebase/firestore");
 
       const selectionsRef = collection(db, "gym_exercise_selections");
       const isSelected = selectedCommonExerciseIds.includes(exerciseId);
@@ -511,7 +525,9 @@ const Exercises = ({ onLogout, onNavigate }) => {
         const deletePromises = snapshot.docs.map((doc) => deleteDoc(doc.ref));
         await Promise.all(deletePromises);
 
-        setSelectedCommonExerciseIds((prev) => prev.filter((id) => id !== exerciseId));
+        setSelectedCommonExerciseIds((prev) =>
+          prev.filter((id) => id !== exerciseId)
+        );
         console.log("Deselected exercise:", exerciseId);
       } else {
         // Select - add to selections
@@ -556,7 +572,8 @@ const Exercises = ({ onLogout, onNavigate }) => {
   // Filter common exercises for browse modal
   const filteredBrowseExercises = commonExercises.filter((exercise) => {
     const matchesCategory =
-      browseSelectedCategory === "all" || exercise.category === browseSelectedCategory;
+      browseSelectedCategory === "all" ||
+      exercise.category === browseSelectedCategory;
     const matchesSearch =
       exercise.name.toLowerCase().includes(browseSearchTerm.toLowerCase()) ||
       exercise.targetedSections?.some((s) =>
@@ -653,7 +670,9 @@ const Exercises = ({ onLogout, onNavigate }) => {
                     d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
                   />
                 </svg>
-                <span className="hidden sm:inline">Browse Common Exercises</span>
+                <span className="hidden sm:inline">
+                  Browse Common Exercises
+                </span>
                 <span className="sm:hidden">Browse</span>
               </button>
               <button
@@ -683,9 +702,12 @@ const Exercises = ({ onLogout, onNavigate }) => {
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
           {/* Title */}
           <div className="mb-6">
-            <h2 className="text-2xl font-bold text-white">🏋️ My Gym Exercises</h2>
+            <h2 className="text-2xl font-bold text-white">
+              🏋️ My Gym Exercises
+            </h2>
             <p className="text-gray-400 text-sm mt-1">
-              Custom exercises you created + Selected common exercises from the library
+              Custom exercises you created + Selected common exercises from the
+              library
             </p>
           </div>
 
@@ -726,7 +748,9 @@ const Exercises = ({ onLogout, onNavigate }) => {
             >
               <div className="text-2xl mb-2">📋</div>
               <div className="text-sm font-medium">All</div>
-              <div className="text-xs mt-1">{currentExercises.length} exercises</div>
+              <div className="text-xs mt-1">
+                {currentExercises.length} exercises
+              </div>
             </button>
             {currentCategories.map((cat) => (
               <button
@@ -880,7 +904,9 @@ const Exercises = ({ onLogout, onNavigate }) => {
                                 </svg>
                               </button>
                               <button
-                                onClick={() => handleDeleteExercise(exercise.id)}
+                                onClick={() =>
+                                  handleDeleteExercise(exercise.id)
+                                }
                                 className="px-4 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-600 rounded-lg text-sm font-medium transition"
                               >
                                 <svg
@@ -901,7 +927,9 @@ const Exercises = ({ onLogout, onNavigate }) => {
                           ) : (
                             // Common exercise (selected) - can only deselect, read-only
                             <button
-                              onClick={() => handleToggleCommonExercise(exercise.id)}
+                              onClick={() =>
+                                handleToggleCommonExercise(exercise.id)
+                              }
                               className="flex-1 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-medium transition"
                             >
                               Remove from My Gym
@@ -910,7 +938,9 @@ const Exercises = ({ onLogout, onNavigate }) => {
                         ) : (
                           // Common exercises tab - show select/deselect button
                           <button
-                            onClick={() => handleToggleCommonExercise(exercise.id)}
+                            onClick={() =>
+                              handleToggleCommonExercise(exercise.id)
+                            }
                             className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition ${
                               selectedCommonExerciseIds.includes(exercise.id)
                                 ? "bg-green-600 hover:bg-green-700 text-white"
@@ -978,6 +1008,7 @@ const Exercises = ({ onLogout, onNavigate }) => {
             </div>
 
             <div className="p-6">
+              {/* Form Content Omitted for brevity, assumed same as original */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Basic Info */}
                 <div>
@@ -1504,7 +1535,9 @@ const Exercises = ({ onLogout, onNavigate }) => {
 
               <div className="flex gap-3 mt-6">
                 <button
-                  onClick={editingExercise ? handleUpdateExercise : handleAddExercise}
+                  onClick={
+                    editingExercise ? handleUpdateExercise : handleAddExercise
+                  }
                   className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition"
                 >
                   {editingExercise ? "Update Exercise" : "Add Exercise"}
@@ -1634,9 +1667,228 @@ const Exercises = ({ onLogout, onNavigate }) => {
         </div>
       )}
 
-      {/* View Exercise Modal */}
-      {viewExercise && (
+      {/* Browse Common Exercises Modal */}
+      {showBrowseModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-gray-900 rounded-2xl border border-gray-700 w-full max-w-7xl max-h-[95vh] flex flex-col">
+            {/* Header */}
+            <div className="border-b border-gray-700 p-6 flex items-center justify-between flex-shrink-0">
+              <div>
+                <h2 className="text-2xl font-bold text-white">
+                  Browse Common Exercise Library
+                </h2>
+                <p className="text-gray-400 text-sm mt-1">
+                  Select exercises to add to your gym (
+                  {selectedCommonExerciseIds.length} selected)
+                </p>
+              </div>
+              <button
+                onClick={() => setShowBrowseModal(false)}
+                className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition"
+              >
+                <svg
+                  className="w-6 h-6"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+
+            {/* Search and Filter */}
+            <div className="p-6 border-b border-gray-700 flex-shrink-0">
+              <div className="flex flex-col sm:flex-row gap-4">
+                <div className="flex-1">
+                  <input
+                    type="text"
+                    placeholder="Search common exercises..."
+                    value={browseSearchTerm}
+                    onChange={(e) => setBrowseSearchTerm(e.target.value)}
+                    className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+                {/* Category Dropdown (REPLACED BUTTONS) */}
+                <select
+                  value={browseSelectedCategory}
+                  onChange={(e) => setBrowseSelectedCategory(e.target.value)}
+                  className="w-full sm:w-auto px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                >
+                  <option value="all">
+                    All Categories ({commonExercises.length})
+                  </option>
+                  {commonCategories.map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.icon} {cat.name} (
+                      {
+                        commonExercises.filter((ex) => ex.category === cat.id)
+                          .length
+                      }
+                      )
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Exercises Grid */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {filteredBrowseExercises.length === 0 ? (
+                <div className="text-center py-12">
+                  <div className="text-6xl mb-4">🔍</div>
+                  <p className="text-gray-400 text-lg">
+                    {commonExercises.length === 0
+                      ? "No common exercises available yet"
+                      : "No exercises found matching your search"}
+                  </p>
+                  {browseSearchTerm && (
+                    <button
+                      onClick={() => setBrowseSearchTerm("")}
+                      className="mt-4 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition"
+                    >
+                      Clear Search
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {filteredBrowseExercises.map((exercise) => {
+                    const isSelected = selectedCommonExerciseIds.includes(
+                      exercise.id
+                    );
+                    const category = commonCategories.find(
+                      (c) => c.id === exercise.category
+                    );
+                    return (
+                      <div
+                        key={exercise.id}
+                        className={`bg-gray-800 border rounded-xl overflow-hidden transition ${
+                          isSelected
+                            ? "border-green-600 ring-2 ring-green-600/30"
+                            : "border-gray-700 hover:border-purple-500"
+                        }`}
+                      >
+                        {exercise.photoURLs?.[0] && (
+                          <div className="h-48 bg-gray-900 overflow-hidden">
+                            <img
+                              src={exercise.photoURLs[0]}
+                              alt={exercise.name}
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                        )}
+                        <div className="p-5">
+                          <div className="flex items-start justify-between mb-3">
+                            <div>
+                              <h3 className="text-lg font-bold text-white mb-1">
+                                {exercise.name}
+                              </h3>
+                              {category && (
+                                <span className="text-xs text-gray-400">
+                                  {category.icon} {category.name}
+                                </span>
+                              )}
+                            </div>
+                            <span
+                              className={`px-2 py-1 rounded text-xs font-medium ${
+                                exercise.difficulty === "beginner"
+                                  ? "bg-green-600/20 text-green-600"
+                                  : exercise.difficulty === "intermediate"
+                                  ? "bg-yellow-600/20 text-yellow-600"
+                                  : "bg-red-600/20 text-red-600"
+                              }`}
+                            >
+                              {exercise.difficulty}
+                            </span>
+                          </div>
+
+                          {exercise.targetedSections?.length > 0 && (
+                            <div className="mb-3">
+                              <div className="flex flex-wrap gap-2">
+                                {exercise.targetedSections
+                                  .slice(0, 3)
+                                  .map((section, idx) => (
+                                    <span
+                                      key={idx}
+                                      className="px-2 py-1 bg-blue-600/20 text-blue-600 text-xs rounded"
+                                    >
+                                      {section}
+                                    </span>
+                                  ))}
+                                {exercise.targetedSections.length > 3 && (
+                                  <span className="px-2 py-1 bg-gray-700 text-gray-400 text-xs rounded">
+                                    +{exercise.targetedSections.length - 3}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="flex items-center gap-4 mb-4 text-sm text-gray-400">
+                            {exercise.sets && exercise.repsCount && (
+                              <span>
+                                {exercise.sets} × {exercise.repsCount}
+                              </span>
+                            )}
+                            {exercise.duration && (
+                              <span>{exercise.duration} min</span>
+                            )}
+                          </div>
+
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => setViewExercise(exercise)}
+                              className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition"
+                            >
+                              View Details
+                            </button>
+                            <button
+                              onClick={() =>
+                                handleToggleCommonExercise(exercise.id)
+                              }
+                              className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition ${
+                                isSelected
+                                  ? "bg-green-600 hover:bg-green-700 text-white"
+                                  : "bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white"
+                              }`}
+                            >
+                              {isSelected ? "✓ Selected" : "Select"}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="border-t border-gray-700 p-6 flex items-center justify-between flex-shrink-0">
+              <div className="text-gray-400 text-sm">
+                {selectedCommonExerciseIds.length} exercise(s) selected for your
+                gym
+              </div>
+              <button
+                onClick={() => setShowBrowseModal(false)}
+                className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View Exercise Modal - MOVED AFTER BROWSE MODAL AND UPDATED Z-INDEX */}
+      {viewExercise && (
+        <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
           <div className="bg-gray-800 rounded-2xl border border-gray-700 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-gray-800 border-b border-gray-700 p-6 flex items-center justify-between">
               <h2 className="text-2xl font-bold text-white">
@@ -1683,7 +1935,6 @@ const Exercises = ({ onLogout, onNavigate }) => {
               )}
 
               {/* Videos */}
-
               {viewExercise.videoURLs?.filter((url) => url).length > 0 && (
                 <div className="mb-6">
                   <h3 className="text-lg font-bold text-white mb-3">Videos</h3>
@@ -1845,224 +2096,6 @@ const Exercises = ({ onLogout, onNavigate }) => {
                 className="w-full px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-medium transition"
               >
                 Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Browse Common Exercises Modal */}
-      {showBrowseModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-gray-800 rounded-2xl border border-gray-700 w-full max-w-7xl max-h-[95vh] flex flex-col">
-            {/* Header */}
-            <div className="border-b border-gray-700 p-6 flex items-center justify-between flex-shrink-0">
-              <div>
-                <h2 className="text-2xl font-bold text-white">Browse Common Exercise Library</h2>
-                <p className="text-gray-400 text-sm mt-1">
-                  Select exercises to add to your gym ({selectedCommonExerciseIds.length} selected)
-                </p>
-              </div>
-              <button
-                onClick={() => setShowBrowseModal(false)}
-                className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition"
-              >
-                <svg
-                  className="w-6 h-6"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-              </button>
-            </div>
-
-            {/* Search and Filter */}
-            <div className="p-6 border-b border-gray-700 flex-shrink-0">
-              <div className="flex flex-col sm:flex-row gap-4 mb-4">
-                <div className="flex-1">
-                  <input
-                    type="text"
-                    placeholder="Search common exercises..."
-                    value={browseSearchTerm}
-                    onChange={(e) => setBrowseSearchTerm(e.target.value)}
-                    className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  />
-                </div>
-              </div>
-
-              {/* Category Filter Buttons */}
-              <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={() => setBrowseSelectedCategory("all")}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
-                    browseSelectedCategory === "all"
-                      ? "bg-purple-600 text-white"
-                      : "bg-gray-700 text-gray-300 hover:bg-gray-600"
-                  }`}
-                >
-                  All Categories ({commonExercises.length})
-                </button>
-                {commonCategories.map((cat) => (
-                  <button
-                    key={cat.id}
-                    onClick={() => setBrowseSelectedCategory(cat.id)}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
-                      browseSelectedCategory === cat.id
-                        ? "bg-purple-600 text-white"
-                        : "bg-gray-700 text-gray-300 hover:bg-gray-600"
-                    }`}
-                  >
-                    {cat.icon} {cat.name} ({commonExercises.filter(ex => ex.category === cat.id).length})
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Exercises Grid */}
-            <div className="flex-1 overflow-y-auto p-6">
-              {filteredBrowseExercises.length === 0 ? (
-                <div className="text-center py-12">
-                  <div className="text-6xl mb-4">🔍</div>
-                  <p className="text-gray-400 text-lg">
-                    {commonExercises.length === 0
-                      ? "No common exercises available yet"
-                      : "No exercises found matching your search"}
-                  </p>
-                  {browseSearchTerm && (
-                    <button
-                      onClick={() => setBrowseSearchTerm("")}
-                      className="mt-4 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition"
-                    >
-                      Clear Search
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {filteredBrowseExercises.map((exercise) => {
-                    const isSelected = selectedCommonExerciseIds.includes(exercise.id);
-                    const category = commonCategories.find(
-                      (c) => c.id === exercise.category
-                    );
-                    return (
-                      <div
-                        key={exercise.id}
-                        className={`bg-gray-900 border rounded-xl overflow-hidden transition ${
-                          isSelected
-                            ? "border-green-600 ring-2 ring-green-600/30"
-                            : "border-gray-700 hover:border-gray-600"
-                        }`}
-                      >
-                        {exercise.photoURLs?.[0] && (
-                          <div className="h-48 bg-gray-800 overflow-hidden">
-                            <img
-                              src={exercise.photoURLs[0]}
-                              alt={exercise.name}
-                              className="w-full h-full object-cover"
-                            />
-                          </div>
-                        )}
-                        <div className="p-5">
-                          <div className="flex items-start justify-between mb-3">
-                            <div>
-                              <h3 className="text-lg font-bold text-white mb-1">
-                                {exercise.name}
-                              </h3>
-                              {category && (
-                                <span className="text-xs text-gray-400">
-                                  {category.icon} {category.name}
-                                </span>
-                              )}
-                            </div>
-                            <span
-                              className={`px-2 py-1 rounded text-xs font-medium ${
-                                exercise.difficulty === "beginner"
-                                  ? "bg-green-600/20 text-green-600"
-                                  : exercise.difficulty === "intermediate"
-                                  ? "bg-yellow-600/20 text-yellow-600"
-                                  : "bg-red-600/20 text-red-600"
-                              }`}
-                            >
-                              {exercise.difficulty}
-                            </span>
-                          </div>
-
-                          {exercise.targetedSections?.length > 0 && (
-                            <div className="mb-3">
-                              <div className="flex flex-wrap gap-2">
-                                {exercise.targetedSections
-                                  .slice(0, 3)
-                                  .map((section, idx) => (
-                                    <span
-                                      key={idx}
-                                      className="px-2 py-1 bg-blue-600/20 text-blue-600 text-xs rounded"
-                                    >
-                                      {section}
-                                    </span>
-                                  ))}
-                                {exercise.targetedSections.length > 3 && (
-                                  <span className="px-2 py-1 bg-gray-700 text-gray-400 text-xs rounded">
-                                    +{exercise.targetedSections.length - 3}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          )}
-
-                          <div className="flex items-center gap-4 mb-4 text-sm text-gray-400">
-                            {exercise.sets && exercise.repsCount && (
-                              <span>
-                                {exercise.sets} × {exercise.repsCount}
-                              </span>
-                            )}
-                            {exercise.duration && (
-                              <span>{exercise.duration} min</span>
-                            )}
-                          </div>
-
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => setViewExercise(exercise)}
-                              className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition"
-                            >
-                              View Details
-                            </button>
-                            <button
-                              onClick={() => handleToggleCommonExercise(exercise.id)}
-                              className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition ${
-                                isSelected
-                                  ? "bg-green-600 hover:bg-green-700 text-white"
-                                  : "bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white"
-                              }`}
-                            >
-                              {isSelected ? "✓ Selected" : "Select"}
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Footer */}
-            <div className="border-t border-gray-700 p-6 flex items-center justify-between flex-shrink-0">
-              <div className="text-gray-400 text-sm">
-                {selectedCommonExerciseIds.length} exercise(s) selected for your gym
-              </div>
-              <button
-                onClick={() => setShowBrowseModal(false)}
-                className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition"
-              >
-                Done
               </button>
             </div>
           </div>
