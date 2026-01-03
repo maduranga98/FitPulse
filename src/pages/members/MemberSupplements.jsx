@@ -232,13 +232,25 @@ const MemberSupplements = () => {
                 supplements.map((supplement) => (
                   <div
                     key={supplement.id}
-                    className="bg-gray-800 border border-gray-700 rounded-xl p-5 hover:border-gray-600 transition"
+                    className="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden hover:border-gray-600 transition"
                   >
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex-1">
-                        <h3 className="text-lg font-bold text-white mb-2">
-                          {supplement.name}
-                        </h3>
+                    {/* Product Image */}
+                    {supplement.imageURLs?.[0] && (
+                      <div className="h-48 bg-gray-900 overflow-hidden">
+                        <img
+                          src={supplement.imageURLs[0]}
+                          alt={supplement.name}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                    )}
+
+                    <div className="p-5">
+                      <div className="flex items-start justify-between mb-4">
+                        <div className="flex-1">
+                          <h3 className="text-lg font-bold text-white mb-2">
+                            {supplement.name}
+                          </h3>
                         {supplement.category && (
                           <span className="inline-block px-2 py-1 bg-purple-600/20 text-purple-600 rounded text-xs font-medium">
                             {supplement.category}
@@ -296,6 +308,7 @@ const MemberSupplements = () => {
                         ? "Out of Stock"
                         : "Request Supplement"}
                     </button>
+                    </div>
                   </div>
                 ))
               )}
