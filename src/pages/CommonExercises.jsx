@@ -11,7 +11,7 @@ import {
   Timestamp,
 } from "firebase/firestore";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
-import { db, storage } from "../firebase";
+import { db, storage } from "../config/firebase";
 import Sidebar from "../components/Sidebar";
 import ExerciseDetailModal from "../components/ExerciseDetailModal";
 import { isSuperAdmin } from "../utils/authUtils";
