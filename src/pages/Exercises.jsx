@@ -48,12 +48,19 @@ const Exercises = ({ onLogout, onNavigate }) => {
   });
 
   useEffect(() => {
-    fetchData();
-    fetchCommonData();
-    fetchSelectedCommonExercises();
-  }, []);
+    if (currentGymId) {
+      fetchData();
+      fetchCommonData();
+      fetchSelectedCommonExercises();
+    }
+  }, [currentGymId]);
 
   const fetchData = async () => {
+    if (!currentGymId) {
+      setLoading(false);
+      return;
+    }
+
     try {
       const { db } = await import("../config/firebase");
       const { collection, getDocs, orderBy, query, where } = await import(
@@ -97,6 +104,10 @@ const Exercises = ({ onLogout, onNavigate }) => {
 
   // Fetch selected common exercises for this gym
   const fetchSelectedCommonExercises = async () => {
+    if (!currentGymId) {
+      return;
+    }
+
     try {
       const { db } = await import("../config/firebase");
       const { collection, getDocs, query, where } = await import(
@@ -477,6 +488,11 @@ const Exercises = ({ onLogout, onNavigate }) => {
 
   // Toggle selection of a common exercise
   const handleToggleCommonExercise = async (exerciseId) => {
+    if (!currentGymId) {
+      alert("Unable to select exercise: Gym ID not found");
+      return;
+    }
+
     try {
       const { db } = await import("../config/firebase");
       const { collection, addDoc, deleteDoc, getDocs, query, where, Timestamp } = await import("firebase/firestore");
