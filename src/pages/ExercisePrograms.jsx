@@ -65,29 +65,30 @@ const ExercisePrograms = () => {
   // Fetch exercises
   const fetchExercises = async () => {
     try {
-      // Fetch gym-specific exercises
-      const exercisesRef = collection(db, "exercises");
-      const q = query(
-        exercisesRef,
+      // Fetch gym-specific exercises from gym_exercises collection
+      const gymExercisesRef = collection(db, "gym_exercises");
+      const gymQuery = query(
+        gymExercisesRef,
         where("gymId", "==", currentGymId),
         orderBy("name", "asc")
       );
-      const snapshot = await getDocs(q);
-      const exercisesList = snapshot.docs.map((doc) => ({
+      const gymSnapshot = await getDocs(gymQuery);
+      const exercisesList = gymSnapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
       }));
       setExercises(exercisesList);
 
-      // Fetch common exercises
-      const commonExercisesRef = collection(db, "commonExercises");
-      const commonQuery = query(commonExercisesRef, orderBy("name", "asc"));
-      const commonSnapshot = await getDocs(commonQuery);
-      const commonExercisesList = commonSnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-        isCommon: true,
-      }));
+      // Fetch common exercises (no gymId) from exercises collection
+      const commonExercisesRef = collection(db, "exercises");
+      const commonSnapshot = await getDocs(commonExercisesRef);
+      const commonExercisesList = commonSnapshot.docs
+        .filter((doc) => !doc.data().gymId) // Only exercises without gymId
+        .map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+          isCommon: true,
+        }));
       setCommonExercises(commonExercisesList);
     } catch (error) {
       console.error("Error fetching exercises:", error);
