@@ -101,7 +101,10 @@ const Exercises = ({ onLogout, onNavigate }) => {
       const categoriesRef = collection(db, "exerciseCategories");
       const categoriesSnapshot = await getDocs(categoriesRef);
       const commonCategoriesData = categoriesSnapshot.docs
-        .filter((doc) => !doc.data().gymId) // Only categories without gymId
+        .filter((doc) => {
+          const data = doc.data();
+          return !data.gymId || data.gymId === null || data.gymId === "";
+        })
         .map((doc) => ({
           id: doc.id,
           ...doc.data(),
@@ -111,11 +114,17 @@ const Exercises = ({ onLogout, onNavigate }) => {
       const exercisesRef = collection(db, "exercises");
       const exercisesSnapshot = await getDocs(exercisesRef);
       const commonExercisesData = exercisesSnapshot.docs
-        .filter((doc) => !doc.data().gymId) // Only exercises without gymId
+        .filter((doc) => {
+          const data = doc.data();
+          return !data.gymId || data.gymId === null || data.gymId === "";
+        })
         .map((doc) => ({
           id: doc.id,
           ...doc.data(),
         }));
+
+      console.log("Common exercises fetched:", commonExercisesData.length);
+      console.log("Common categories fetched:", commonCategoriesData.length);
 
       setCommonCategories(commonCategoriesData);
       setCommonExercises(commonExercisesData);
