@@ -12,6 +12,7 @@ import Schedules from "./pages/Schedules";
 import MemberDashboard from "./pages/members/MemberDashboard";
 import NotFound from "./pages/NotFound";
 import MemberWorkoutTracker from "./pages/members/MemberWorkoutTracker";
+import MemberWorkoutSession from "./pages/members/MemberWorkoutSession";
 import MemberProgressTracker from "./pages/members/MemberProgressTracker";
 import MemberSchedules from "./pages/members/MemberSchedules";
 import MemberProfile from "./pages/members/settings/MemberProfile";
@@ -363,6 +364,16 @@ function App() {
               <ProtectedRoute>
                 <RoleRoute allowedRoles={["member"]}>
                   <MemberWorkoutTracker />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/member/workout-session"
+            element={
+              <ProtectedRoute>
+                <RoleRoute allowedRoles={["member"]}>
+                  <MemberWorkoutSession />
                 </RoleRoute>
               </ProtectedRoute>
             }
