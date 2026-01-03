@@ -18,6 +18,9 @@ import MemberProfile from "./pages/members/settings/MemberProfile";
 import MemberSettings from "./pages/members/MemberSettings";
 import AdminComplaints from "./pages/AdminComplaints";
 import AdminPayments from "./pages/AdminPayments";
+import Supplements from "./pages/Supplements";
+import SupplementRequests from "./pages/SupplementRequests";
+import MemberSupplements from "./pages/members/MemberSupplements";
 import SuperAdminDashboard from "./pages/SuperAdminDashboard";
 import BulkExerciseImport from "./pages/BulkExerciseImport";
 import Analytics from "./pages/Analytics";
@@ -273,6 +276,40 @@ function App() {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/supplements"
+            element={
+              <ProtectedRoute>
+                <RoleRoute
+                  allowedRoles={[
+                    "admin",
+                    "manager",
+                    "gym_admin",
+                    "gym_manager",
+                  ]}
+                >
+                  <Supplements />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/supplement-requests"
+            element={
+              <ProtectedRoute>
+                <RoleRoute
+                  allowedRoles={[
+                    "admin",
+                    "manager",
+                    "gym_admin",
+                    "gym_manager",
+                  ]}
+                >
+                  <SupplementRequests />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
 
           {/* Protected Routes - All Authenticated Users */}
           <Route
@@ -366,6 +403,16 @@ function App() {
               <ProtectedRoute>
                 <RoleRoute allowedRoles={["member"]}>
                   <MemberSettings />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/member/supplements"
+            element={
+              <ProtectedRoute>
+                <RoleRoute allowedRoles={["member"]}>
+                  <MemberSupplements />
                 </RoleRoute>
               </ProtectedRoute>
             }
