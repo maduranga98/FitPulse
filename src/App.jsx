@@ -6,6 +6,8 @@ import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Members from "./pages/Members";
 import Exercises from "./pages/Exercises";
+import CommonExercises from "./pages/CommonExercises";
+import ExercisePrograms from "./pages/ExercisePrograms";
 import Schedules from "./pages/Schedules";
 import MemberDashboard from "./pages/members/MemberDashboard";
 import NotFound from "./pages/NotFound";
@@ -68,6 +70,16 @@ function App() {
               <ProtectedRoute>
                 <RoleRoute allowedRoles={["super_admin"]}>
                   <BulkExerciseImport />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/super-admin/common-exercises"
+            element={
+              <ProtectedRoute>
+                <RoleRoute allowedRoles={["super_admin"]}>
+                  <CommonExercises />
                 </RoleRoute>
               </ProtectedRoute>
             }
@@ -268,6 +280,23 @@ function App() {
             element={
               <ProtectedRoute>
                 <Exercises />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/exercise-programs"
+            element={
+              <ProtectedRoute>
+                <RoleRoute
+                  allowedRoles={[
+                    "admin",
+                    "manager",
+                    "gym_admin",
+                    "gym_manager",
+                  ]}
+                >
+                  <ExercisePrograms />
+                </RoleRoute>
               </ProtectedRoute>
             }
           />
