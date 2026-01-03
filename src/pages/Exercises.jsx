@@ -6,7 +6,9 @@ const Exercises = ({ onLogout, onNavigate }) => {
   const { user } = useAuth();
   const currentGymId = user?.gymId;
   const [exercises, setExercises] = useState([]);
+  const [commonExercises, setCommonExercises] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [commonCategories, setCommonCategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -17,6 +19,7 @@ const Exercises = ({ onLogout, onNavigate }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [uploadingFiles, setUploadingFiles] = useState(false);
   const [uploadProgress, setUploadProgress] = useState({});
+  const [activeTab, setActiveTab] = useState("my-gym");
 
   // Form states
   const [exerciseForm, setExerciseForm] = useState({
@@ -42,6 +45,7 @@ const Exercises = ({ onLogout, onNavigate }) => {
 
   useEffect(() => {
     fetchData();
+    fetchCommonData();
   }, []);
 
   const fetchData = async () => {
@@ -87,6 +91,38 @@ const Exercises = ({ onLogout, onNavigate }) => {
     } catch (error) {
       console.error("Error fetching data:", error);
       setLoading(false);
+    }
+  };
+
+  const fetchCommonData = async () => {
+    try {
+      const { db } = await import("../config/firebase");
+      const { collection, getDocs, orderBy, query } = await import(
+        "firebase/firestore"
+      );
+
+      // Fetch common categories
+      const commonCategoriesRef = collection(db, "commonExerciseCategories");
+      const commonCategoriesQuery = query(commonCategoriesRef, orderBy("name", "asc"));
+      const commonCategoriesSnapshot = await getDocs(commonCategoriesQuery);
+      const commonCategoriesData = commonCategoriesSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      // Fetch common exercises
+      const commonExercisesRef = collection(db, "commonExercises");
+      const commonExercisesQuery = query(commonExercisesRef, orderBy("name", "asc"));
+      const commonExercisesSnapshot = await getDocs(commonExercisesQuery);
+      const commonExercisesData = commonExercisesSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      setCommonCategories(commonCategoriesData);
+      setCommonExercises(commonExercisesData);
+    } catch (error) {
+      console.error("Error fetching common data:", error);
     }
   };
 
@@ -407,7 +443,48 @@ const Exercises = ({ onLogout, onNavigate }) => {
     }
   };
 
-  const filteredExercises = exercises.filter((exercise) => {
+  const handleCopyToMyGym = async (commonExercise) => {
+    if (!window.confirm(`Copy "${commonExercise.name}" to your gym exercises?`)) {
+      return;
+    }
+
+    try {
+      const { db } = await import("../config/firebase");
+      const { collection, addDoc, Timestamp } = await import("firebase/firestore");
+
+      // Copy the exercise data with new gymId
+      const exerciseData = {
+        name: commonExercise.name,
+        category: commonExercise.category,
+        categoryName: commonExercise.categoryName,
+        difficulty: commonExercise.difficulty,
+        equipment: commonExercise.equipment,
+        sets: commonExercise.sets,
+        repsCount: commonExercise.repsCount,
+        duration: commonExercise.duration,
+        targetedSections: commonExercise.targetedSections || [],
+        steps: commonExercise.steps || [],
+        notes: commonExercise.notes || "",
+        photoURLs: commonExercise.photoURLs || [],
+        videoURLs: commonExercise.videoURLs || [],
+        gymId: currentGymId,
+        createdAt: Timestamp.now(),
+      };
+
+      await addDoc(collection(db, "exercises"), exerciseData);
+      alert("Exercise copied to your gym successfully!");
+      fetchData(); // Refresh gym exercises
+    } catch (error) {
+      console.error("Error copying exercise:", error);
+      alert("Failed to copy exercise");
+    }
+  };
+
+  // Get the right data based on active tab
+  const currentExercises = activeTab === "common" ? commonExercises : exercises;
+  const currentCategories = activeTab === "common" ? commonCategories : categories;
+
+  const filteredExercises = currentExercises.filter((exercise) => {
     const matchesCategory =
       selectedCategory === "all" || exercise.category === selectedCategory;
     const matchesSearch =
@@ -514,6 +591,36 @@ const Exercises = ({ onLogout, onNavigate }) => {
         </header>
 
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+          {/* Tab Switcher */}
+          <div className="mb-6 flex gap-3">
+            <button
+              onClick={() => {
+                setActiveTab("my-gym");
+                setSelectedCategory("all");
+              }}
+              className={`flex-1 sm:flex-none px-6 py-3 rounded-xl font-medium transition ${
+                activeTab === "my-gym"
+                  ? "bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg"
+                  : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+              }`}
+            >
+              🏋️ My Gym Exercises
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab("common");
+                setSelectedCategory("all");
+              }}
+              className={`flex-1 sm:flex-none px-6 py-3 rounded-xl font-medium transition ${
+                activeTab === "common"
+                  ? "bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg"
+                  : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+              }`}
+            >
+              🌍 Common Exercises
+            </button>
+          </div>
+
           {/* Search and Filter */}
           <div className="mb-6 flex flex-col sm:flex-row gap-4">
             <div className="flex-1">
@@ -531,7 +638,7 @@ const Exercises = ({ onLogout, onNavigate }) => {
               className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="all">All Categories</option>
-              {categories.map((cat) => (
+              {currentCategories.map((cat) => (
                 <option key={cat.id} value={cat.id}>
                   {cat.icon} {cat.name}
                 </option>
@@ -551,9 +658,9 @@ const Exercises = ({ onLogout, onNavigate }) => {
             >
               <div className="text-2xl mb-2">📋</div>
               <div className="text-sm font-medium">All</div>
-              <div className="text-xs mt-1">{exercises.length} exercises</div>
+              <div className="text-xs mt-1">{currentExercises.length} exercises</div>
             </button>
-            {categories.map((cat) => (
+            {currentCategories.map((cat) => (
               <button
                 key={cat.id}
                 onClick={() => setSelectedCategory(cat.id)}
@@ -566,7 +673,7 @@ const Exercises = ({ onLogout, onNavigate }) => {
                 <div className="text-2xl mb-2">{cat.icon}</div>
                 <div className="text-sm font-medium truncate">{cat.name}</div>
                 <div className="text-xs mt-1">
-                  {exercises.filter((e) => e.category === cat.id).length}{" "}
+                  {currentExercises.filter((e) => e.category === cat.id).length}{" "}
                   exercises
                 </div>
               </button>
@@ -587,7 +694,7 @@ const Exercises = ({ onLogout, onNavigate }) => {
               </div>
             ) : (
               filteredExercises.map((exercise) => {
-                const category = categories.find(
+                const category = currentCategories.find(
                   (c) => c.id === exercise.category
                 );
                 return (
@@ -616,17 +723,24 @@ const Exercises = ({ onLogout, onNavigate }) => {
                             </span>
                           )}
                         </div>
-                        <span
-                          className={`px-2 py-1 rounded text-xs font-medium ${
-                            exercise.difficulty === "beginner"
-                              ? "bg-green-600/20 text-green-600"
-                              : exercise.difficulty === "intermediate"
-                              ? "bg-yellow-600/20 text-yellow-600"
-                              : "bg-red-600/20 text-red-600"
-                          }`}
-                        >
-                          {exercise.difficulty}
-                        </span>
+                        <div className="flex flex-col items-end gap-1">
+                          <span
+                            className={`px-2 py-1 rounded text-xs font-medium ${
+                              exercise.difficulty === "beginner"
+                                ? "bg-green-600/20 text-green-600"
+                                : exercise.difficulty === "intermediate"
+                                ? "bg-yellow-600/20 text-yellow-600"
+                                : "bg-red-600/20 text-red-600"
+                            }`}
+                          >
+                            {exercise.difficulty}
+                          </span>
+                          {activeTab === "common" && (
+                            <span className="px-2 py-1 bg-purple-600/20 text-purple-600 rounded text-xs font-medium">
+                              Common
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       {exercise.targetedSections?.length > 0 && (
@@ -669,42 +783,53 @@ const Exercises = ({ onLogout, onNavigate }) => {
                         >
                           View
                         </button>
-                        <button
-                          onClick={() => handleEditExercise(exercise)}
-                          className="px-4 py-2 bg-green-600/20 hover:bg-green-600/30 text-green-600 rounded-lg text-sm font-medium transition"
-                        >
-                          <svg
-                            className="w-4 h-4"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                        {activeTab === "my-gym" ? (
+                          <>
+                            <button
+                              onClick={() => handleEditExercise(exercise)}
+                              className="px-4 py-2 bg-green-600/20 hover:bg-green-600/30 text-green-600 rounded-lg text-sm font-medium transition"
+                            >
+                              <svg
+                                className="w-4 h-4"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                                />
+                              </svg>
+                            </button>
+                            <button
+                              onClick={() => handleDeleteExercise(exercise.id)}
+                              className="px-4 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-600 rounded-lg text-sm font-medium transition"
+                            >
+                              <svg
+                                className="w-4 h-4"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
                             />
                           </svg>
-                        </button>
-                        <button
-                          onClick={() => handleDeleteExercise(exercise.id)}
-                          className="px-4 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-600 rounded-lg text-sm font-medium transition"
-                        >
-                          <svg
-                            className="w-4 h-4"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            onClick={() => handleCopyToMyGym(exercise)}
+                            className="flex-1 px-4 py-2 bg-gradient-to-r from-green-600 to-teal-600 hover:from-green-700 hover:to-teal-700 text-white rounded-lg text-sm font-medium transition"
                           >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                            />
-                          </svg>
-                        </button>
+                            Copy to My Gym
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
