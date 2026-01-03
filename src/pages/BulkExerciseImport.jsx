@@ -1,9 +1,16 @@
-import { useState, useEffect } from 'react';
-import { collection, addDoc, getDocs, query, where, Timestamp, doc, updateDoc, deleteDoc, or } from 'firebase/firestore';
-import { db } from '../config/firebase';
-import { useAuth } from '../contexts/AuthContext';
-import { isSuperAdmin } from '../utils/authUtils';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from "react";
+import {
+  collection,
+  addDoc,
+  getDocs,
+  query,
+  where,
+  Timestamp,
+} from "firebase/firestore";
+import { db } from "../config/firebase";
+import { useAuth } from "../hooks/useAuth";
+import { isSuperAdmin } from "../utils/authUtils";
+import { useNavigate } from "react-router-dom";
 
 const BulkExerciseImport = () => {
   const { user } = useAuth();
@@ -11,7 +18,7 @@ const BulkExerciseImport = () => {
   const [selectedFile, setSelectedFile] = useState(null);
   const [exercises, setExercises] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [selectedGym, setSelectedGym] = useState('');
+  const [selectedGym, setSelectedGym] = useState("");
   const [gyms, setGyms] = useState([]);
   const [importing, setImporting] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
@@ -26,7 +33,7 @@ const BulkExerciseImport = () => {
 
   useEffect(() => {
     if (!user || !isSuperAdmin(user)) {
-      navigate('/');
+      navigate("/");
       return;
     }
     fetchGyms();
@@ -41,14 +48,14 @@ const BulkExerciseImport = () => {
 
   const fetchGyms = async () => {
     try {
-      const gymsSnapshot = await getDocs(collection(db, 'gyms'));
-      const gymsData = gymsSnapshot.docs.map(doc => ({
+      const gymsSnapshot = await getDocs(collection(db, "gyms"));
+      const gymsData = gymsSnapshot.docs.map((doc) => ({
         id: doc.id,
-        ...doc.data()
+        ...doc.data(),
       }));
       setGyms(gymsData);
     } catch (error) {
-      console.error('Error fetching gyms:', error);
+      console.error("Error fetching gyms:", error);
     }
   };
 
@@ -95,7 +102,7 @@ const BulkExerciseImport = () => {
       const exercisesSnapshot = await getDocs(exercisesQuery);
       const exercisesData = exercisesSnapshot.docs.map(doc => ({
         id: doc.id,
-        ...doc.data()
+        ...doc.data(),
       }));
       setExistingExercises(exercisesData);
     } catch (error) {
@@ -105,18 +112,18 @@ const BulkExerciseImport = () => {
 
   const handleFileChange = (e) => {
     const file = e.target.files[0];
-    if (file && file.type === 'application/json') {
+    if (file && file.type === "application/json") {
       setSelectedFile(file);
       setErrors([]);
       setSuccessCount(0);
     } else {
-      alert('Please select a valid JSON file');
+      alert("Please select a valid JSON file");
     }
   };
 
   const parseAndPreview = async () => {
     if (!selectedFile) {
-      alert('Please select a JSON file');
+      alert("Please select a JSON file");
       return;
     }
 
@@ -139,25 +146,27 @@ const BulkExerciseImport = () => {
           ...exercise,
           index,
           validationErrors,
-          isValid: validationErrors.length === 0
+          isValid: validationErrors.length === 0,
         };
       });
 
       setExercises(validatedExercises);
       setPreviewMode(true);
     } catch (error) {
-      alert('Error parsing JSON file: ' + error.message);
+      alert("Error parsing JSON file: " + error.message);
     }
   };
 
   const validateExercise = (exercise, index) => {
     const errors = [];
 
-    if (!exercise.name || typeof exercise.name !== 'string') {
-      errors.push(`Exercise ${index + 1}: Name is required and must be a string`);
+    if (!exercise.name || typeof exercise.name !== "string") {
+      errors.push(
+        `Exercise ${index + 1}: Name is required and must be a string`
+      );
     }
 
-    if (!exercise.categoryName || typeof exercise.categoryName !== 'string') {
+    if (!exercise.categoryName || typeof exercise.categoryName !== "string") {
       errors.push(`Exercise ${index + 1}: categoryName is required`);
     } else {
       // Check if category exists - trim whitespace and do case-insensitive comparison
@@ -169,8 +178,15 @@ const BulkExerciseImport = () => {
       }
     }
 
-    if (!exercise.difficulty || !['beginner', 'intermediate', 'advanced'].includes(exercise.difficulty)) {
-      errors.push(`Exercise ${index + 1}: Difficulty must be beginner, intermediate, or advanced`);
+    if (
+      !exercise.difficulty ||
+      !["beginner", "intermediate", "advanced"].includes(exercise.difficulty)
+    ) {
+      errors.push(
+        `Exercise ${
+          index + 1
+        }: Difficulty must be beginner, intermediate, or advanced`
+      );
     }
 
     if (!Array.isArray(exercise.steps) || exercise.steps.length === 0) {
@@ -197,10 +213,10 @@ const BulkExerciseImport = () => {
       return;
     }
 
-    const validExercises = exercises.filter(ex => ex.isValid);
+    const validExercises = exercises.filter((ex) => ex.isValid);
 
     if (validExercises.length === 0) {
-      alert('No valid exercises to import');
+      alert("No valid exercises to import");
       return;
     }
 
@@ -228,19 +244,19 @@ const BulkExerciseImport = () => {
           categoryName: exercise.categoryName.trim(),
           gymId: isCommon ? 'common' : selectedGym,
           difficulty: exercise.difficulty,
-          equipment: exercise.equipment || '',
-          repsCount: exercise.repsCount || '',
-          sets: exercise.sets || '',
-          duration: exercise.duration || '',
+          equipment: exercise.equipment || "",
+          repsCount: exercise.repsCount || "",
+          sets: exercise.sets || "",
+          duration: exercise.duration || "",
           steps: exercise.steps || [],
           targetedSections: exercise.targetedSections || [],
-          notes: exercise.notes || '',
+          notes: exercise.notes || "",
           photoURLs: exercise.photoURLs || [],
           videoURLs: exercise.videoURLs || [],
-          createdAt: Timestamp.now()
+          createdAt: Timestamp.now(),
         };
 
-        await addDoc(collection(db, 'exercises'), exerciseData);
+        await addDoc(collection(db, "exercises"), exerciseData);
         successfulImports++;
       } catch (error) {
         importErrors.push(`Exercise "${exercise.name}": ${error.message}`);
@@ -258,7 +274,9 @@ const BulkExerciseImport = () => {
       resetForm();
       fetchExistingExercises();
     } else {
-      alert(`Imported ${successfulImports} out of ${validExercises.length} exercises. Check errors below.`);
+      alert(
+        `Imported ${successfulImports} out of ${validExercises.length} exercises. Check errors below.`
+      );
     }
   };
 
@@ -313,29 +331,30 @@ const BulkExerciseImport = () => {
           "Grip barbell slightly wider than shoulder width",
           "Lower bar to mid-chest with controlled motion",
           "Press bar up until arms are fully extended",
-          "Keep core tight and shoulder blades retracted throughout"
+          "Keep core tight and shoulder blades retracted throughout",
         ],
         targetedSections: [
           "Chest (Pectorals)",
           "Shoulders (Anterior Deltoids)",
-          "Triceps"
+          "Triceps",
         ],
-        notes: "Most effective compound exercise for chest development. Maintain proper form to avoid shoulder injury.",
+        notes:
+          "Most effective compound exercise for chest development. Maintain proper form to avoid shoulder injury.",
         photoURLs: [
           "https://example.com/bench-press-1.jpg",
-          "https://example.com/bench-press-2.jpg"
+          "https://example.com/bench-press-2.jpg",
         ],
-        videoURLs: [
-          "https://www.youtube.com/watch?v=example1"
-        ]
-      }
+        videoURLs: ["https://www.youtube.com/watch?v=example1"],
+      },
     ];
 
-    const blob = new Blob([JSON.stringify(sample, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify(sample, null, 2)], {
+      type: "application/json",
+    });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
-    a.download = 'exercise-sample.json';
+    a.download = "exercise-sample.json";
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -400,7 +419,7 @@ const BulkExerciseImport = () => {
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-3xl font-bold">Bulk Exercise Import</h1>
           <button
-            onClick={() => navigate('/super-admin')}
+            onClick={() => navigate("/super-admin")}
             className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition"
           >
             Back to Dashboard

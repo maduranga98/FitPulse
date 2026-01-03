@@ -1,10 +1,15 @@
-const functions = require("firebase-functions");
-const admin = require("firebase-admin");
-const vision = require("@google-cloud/vision");
+/* eslint-disable no-unused-vars */
+import * as functions from "firebase-functions";
+import admin from "firebase-admin";
+import { ImageAnnotatorClient } from "@google-cloud/vision";
 
 admin.initializeApp();
 
-exports.recognizeFace = functions.storage
+// ========================================
+// 🔍 FACE RECOGNITION WITH MULTI-PHOTO SUPPORT (v1 Compatible)
+// ========================================
+
+export const recognizeFace = functions.storage
   .object()
   .onFinalize(async (object) => {
     const filePath = object.name;
@@ -12,13 +17,13 @@ exports.recognizeFace = functions.storage
 
     console.log("📸 New image uploaded:", filePath);
 
-    if (!filePath.startsWith("temp-captures/")) {
+    if (!filePath || !filePath.startsWith("temp-captures/")) {
       console.log("⏭️  Skipping - not in temp-captures folder");
       return null;
     }
 
     try {
-      const client = new vision.ImageAnnotatorClient();
+      const client = new ImageAnnotatorClient();
       const gcsUri = `gs://${bucketName}/${filePath}`;
 
       console.log("🔍 Detecting face in image...");
@@ -55,53 +60,124 @@ exports.recognizeFace = functions.storage
 
       let bestMatch = null;
       let highestConfidence = 0;
+      let bestMatchDetails = null;
 
       for (const memberDoc of membersSnapshot.docs) {
         const member = memberDoc.data();
 
-        if (!member.facePhotoURL) {
+        // ✅ HANDLE BOTH OLD (single photo) AND NEW (multi-photo) FORMATS
+        const facePhotos =
+          member.facePhotos ||
+          (member.facePhotoURL ? [{ url: member.facePhotoURL }] : []);
+
+        if (!facePhotos || facePhotos.length === 0) {
+          console.log(`  ⚠️  ${member.name}: No face photos registered`);
           continue;
         }
 
-        try {
-          const [compareResult] = await client.faceDetection(
-            member.facePhotoURL
-          );
-          const memberFaces = compareResult.faceAnnotations;
+        // 📸 COMPARE WITH ALL STORED PHOTOS FOR THIS MEMBER
+        const confidences = [];
 
-          if (!memberFaces || memberFaces.length === 0) {
-            console.log(`  ⚠️  ${member.name}: No face in stored photo`);
-            continue;
+        for (let i = 0; i < facePhotos.length; i++) {
+          const facePhoto = facePhotos[i];
+          const photoUrl = facePhoto.url || facePhoto;
+
+          if (!photoUrl) continue;
+
+          try {
+            const [compareResult] = await client.faceDetection(photoUrl);
+            const memberFaces = compareResult.faceAnnotations;
+
+            if (!memberFaces || memberFaces.length === 0) {
+              console.log(`  ⚠️  ${member.name}: No face in photo ${i + 1}`);
+              continue;
+            }
+
+            const memberFace = memberFaces[0];
+            const similarity = compareAdvancedFaces(detectedFace, memberFace);
+
+            confidences.push({
+              photoIndex: i,
+              angle: facePhoto.angle || "unknown",
+              confidence: similarity,
+            });
+
+            console.log(
+              `    Photo ${i + 1} (${facePhoto.angle || "single"}): ${(
+                similarity * 100
+              ).toFixed(1)}%`
+            );
+          } catch (error) {
+            console.error(
+              `  ❌ Error comparing with ${member.name} photo ${i + 1}:`,
+              error.message
+            );
           }
+        }
 
-          const memberFace = memberFaces[0];
-          const similarity = compareAdvancedFaces(detectedFace, memberFace);
+        if (confidences.length === 0) {
+          console.log(`  ⚠️  ${member.name}: No valid comparisons`);
+          continue;
+        }
 
-          console.log(
-            `  Comparing with ${member.name}: ${(similarity * 100).toFixed(1)}%`
+        // 🎯 SMART MATCHING STRATEGY
+        const bestPhotoMatch = Math.max(
+          ...confidences.map((c) => c.confidence)
+        );
+
+        let avgTopTwo = bestPhotoMatch;
+        if (confidences.length >= 2) {
+          const sorted = [...confidences].sort(
+            (a, b) => b.confidence - a.confidence
           );
+          avgTopTwo = (sorted[0].confidence + sorted[1].confidence) / 2;
+        }
 
-          if (similarity > highestConfidence && similarity > 0.6) {
-            highestConfidence = similarity;
-            bestMatch = {
-              id: memberDoc.id,
-              ...member,
-            };
-          }
-        } catch (error) {
-          console.error(
-            `  ❌ Error comparing with ${member.name}:`,
-            error.message
+        let weightedAvg = bestPhotoMatch;
+        if (confidences.length >= 2) {
+          const sorted = [...confidences].sort(
+            (a, b) => b.confidence - a.confidence
           );
+          weightedAvg = sorted[0].confidence * 0.5 + sorted[1].confidence * 0.4;
+        }
+
+        const finalConfidence = Math.max(
+          bestPhotoMatch,
+          avgTopTwo,
+          weightedAvg
+        );
+
+        console.log(`  📊 ${member.name} final scores:`);
+
+        console.log(`    Best single: ${(bestPhotoMatch * 100).toFixed(1)}%`);
+        if (confidences.length >= 2) {
+          console.log(`    Avg top 2: ${(avgTopTwo * 100).toFixed(1)}%`);
+          console.log(`    Weighted: ${(weightedAvg * 100).toFixed(1)}%`);
+        }
+        console.log(`    ✨ FINAL: ${(finalConfidence * 100).toFixed(1)}%`);
+
+        if (finalConfidence > highestConfidence && finalConfidence > 0.5) {
+          highestConfidence = finalConfidence;
+          bestMatch = {
+            id: memberDoc.id,
+            ...member,
+          };
+          bestMatchDetails = {
+            allConfidences: confidences,
+            bestPhotoMatch: bestPhotoMatch,
+            avgTopTwo: avgTopTwo,
+            weightedAvg: weightedAvg,
+            photosCompared: confidences.length,
+            strategy: "multi-strategy-max",
+          };
         }
       }
 
       if (bestMatch) {
-        console.log(
-          `✅ MATCH FOUND: ${bestMatch.name} (${(
-            highestConfidence * 100
-          ).toFixed(1)}% confidence)`
-        );
+        console.log(`✅ MATCH FOUND: ${bestMatch.name}`);
+        console.log(`   Confidence: ${(highestConfidence * 100).toFixed(1)}%`);
+        console.log(`   Photos compared: ${bestMatchDetails.photosCompared}`);
+        console.log(`   Strategy: ${bestMatchDetails.strategy}`);
 
         const today = new Date().toISOString().split("T")[0];
         const existingAttendance = await db
@@ -123,7 +199,21 @@ exports.recognizeFace = functions.storage
             date: today,
             confidence: highestConfidence * 100,
             status: "verified",
-            recognitionMethod: "cloud-vision-improved",
+            recognitionMethod:
+              bestMatchDetails.photosCompared > 1
+                ? "cloud-vision-multi-photo"
+                : "cloud-vision-single",
+            matchDetails: {
+              photosCompared: bestMatchDetails.photosCompared,
+              bestSingleMatch: bestMatchDetails.bestPhotoMatch * 100,
+              avgTopTwo: bestMatchDetails.avgTopTwo * 100,
+              weightedAvg: bestMatchDetails.weightedAvg * 100,
+              strategy: bestMatchDetails.strategy,
+              allConfidences: bestMatchDetails.allConfidences.map((c) => ({
+                angle: c.angle,
+                confidence: (c.confidence * 100).toFixed(1),
+              })),
+            },
           });
 
           console.log("✅ Attendance marked successfully!");
@@ -133,6 +223,7 @@ exports.recognizeFace = functions.storage
         console.log(
           `   Highest confidence was: ${(highestConfidence * 100).toFixed(1)}%`
         );
+        console.log(`   Threshold: 60.0%`);
       }
 
       await admin.storage().bucket(bucketName).file(filePath).delete();
@@ -144,6 +235,9 @@ exports.recognizeFace = functions.storage
     return null;
   });
 
+// ========================================
+// 🔧 ADVANCED FACE COMPARISON ALGORITHM
+// ========================================
 function compareAdvancedFaces(face1, face2) {
   let totalScore = 0;
   let totalWeight = 0;
@@ -284,19 +378,114 @@ function compareLandmarks(landmarks1, landmarks2) {
   return enhancedSimilarity;
 }
 
-exports.processFaceRegistration = functions.firestore
+// ========================================
+// 📝 PROCESS FACE REGISTRATION (Multi-Photo)
+// ========================================
+export const processFaceRegistration = functions.firestore
+  .document("members/{memberId}")
+  .onUpdate(async (change, context) => {
+    const newData = change.after.data();
+    const oldData = change.before.data();
+
+    if (!newData.facePhotos || oldData.facePhotos) {
+      return null;
+    }
+
+    console.log(
+      "📸 Processing multi-photo face registration for:",
+      newData.name
+    );
+
+    try {
+      const client = new ImageAnnotatorClient();
+      const processedPhotos = [];
+
+      for (let i = 0; i < newData.facePhotos.length; i++) {
+        const photo = newData.facePhotos[i];
+
+        console.log(
+          `  Processing photo ${i + 1}/${newData.facePhotos.length} (${
+            photo.angle
+          })`
+        );
+
+        const [result] = await client.faceDetection(photo.url);
+        const faces = result.faceAnnotations;
+
+        if (!faces || faces.length === 0) {
+          console.log(`  ⚠️  No face detected in photo ${i + 1}`);
+          processedPhotos.push({
+            ...photo,
+            processed: false,
+            error: "No face detected",
+          });
+          continue;
+        }
+
+        const faceData = faces[0];
+
+        processedPhotos.push({
+          ...photo,
+          processed: true,
+          detectionConfidence: faceData.detectionConfidence,
+          landmarksCount: faceData.landmarks ? faceData.landmarks.length : 0,
+          rollAngle: faceData.rollAngle,
+          panAngle: faceData.panAngle,
+          tiltAngle: faceData.tiltAngle,
+          processedAt: new Date().toISOString(),
+        });
+
+        console.log(
+          `  ✅ Photo ${i + 1} processed - Confidence: ${(
+            faceData.detectionConfidence * 100
+          ).toFixed(1)}%`
+        );
+      }
+
+      const successfulPhotos = processedPhotos.filter(
+        (p) => p.processed
+      ).length;
+
+      await change.after.ref.update({
+        facePhotos: processedPhotos,
+        facePhotosProcessed: successfulPhotos,
+        facePhotosFailed: processedPhotos.length - successfulPhotos,
+        faceEnrolledAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      console.log(
+        `✅ Face registration completed: ${successfulPhotos}/${processedPhotos.length} photos successful`
+      );
+    } catch (error) {
+      console.error("❌ Error processing face registration:", error);
+
+      await change.after.ref.update({
+        faceRegistrationError: error.message,
+      });
+    }
+
+    return null;
+  });
+
+// ========================================
+// 🔄 BACKWARDS COMPATIBILITY - OLD SINGLE PHOTO
+// ========================================
+export const processSingleFaceRegistration = functions.firestore
   .document("members/{memberId}")
   .onCreate(async (snap, context) => {
     const member = snap.data();
 
-    if (!member.facePhotoURL || !member.faceRegistered) {
+    if (member.facePhotos || !member.facePhotoURL || !member.faceRegistered) {
       return null;
     }
 
-    console.log("📸 Processing face registration for:", member.name);
+    console.log(
+      "📸 Processing single-photo face registration for:",
+      member.name
+    );
 
     try {
-      const client = new vision.ImageAnnotatorClient();
+      const client = new ImageAnnotatorClient();
       const [result] = await client.faceDetection(member.facePhotoURL);
       const faces = result.faceAnnotations;
 
@@ -322,7 +511,7 @@ exports.processFaceRegistration = functions.firestore
         faceEnrolledAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
-      console.log("✅ Face registration processed successfully");
+      console.log("✅ Single-photo registration processed successfully");
       console.log(
         `   Detection confidence: ${(
           faceData.detectionConfidence * 100
