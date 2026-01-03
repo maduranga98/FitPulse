@@ -7,6 +7,7 @@ const Exercises = ({ onLogout, onNavigate }) => {
   const currentGymId = user?.gymId;
   const [exercises, setExercises] = useState([]);
   const [commonExercises, setCommonExercises] = useState([]);
+  const [selectedCommonExerciseIds, setSelectedCommonExerciseIds] = useState([]); // IDs of selected common exercises
   const [categories, setCategories] = useState([]);
   const [commonCategories, setCommonCategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState("all");
@@ -46,6 +47,7 @@ const Exercises = ({ onLogout, onNavigate }) => {
   useEffect(() => {
     fetchData();
     fetchCommonData();
+    fetchSelectedCommonExercises();
   }, []);
 
   const fetchData = async () => {
@@ -87,6 +89,26 @@ const Exercises = ({ onLogout, onNavigate }) => {
     } catch (error) {
       console.error("Error fetching data:", error);
       setLoading(false);
+    }
+  };
+
+  // Fetch selected common exercises for this gym
+  const fetchSelectedCommonExercises = async () => {
+    try {
+      const { db } = await import("../config/firebase");
+      const { collection, getDocs, query, where } = await import(
+        "firebase/firestore"
+      );
+
+      const selectionsRef = collection(db, "gym_exercise_selections");
+      const q = query(selectionsRef, where("gymId", "==", currentGymId));
+      const snapshot = await getDocs(q);
+      const selectedIds = snapshot.docs.map((doc) => doc.data().exerciseId);
+
+      console.log("Selected common exercise IDs:", selectedIds);
+      setSelectedCommonExerciseIds(selectedIds);
+    } catch (error) {
+      console.error("Error fetching selected exercises:", error);
     }
   };
 
@@ -450,45 +472,55 @@ const Exercises = ({ onLogout, onNavigate }) => {
     }
   };
 
-  const handleCopyToMyGym = async (commonExercise) => {
-    if (!window.confirm(`Copy "${commonExercise.name}" to your gym exercises?`)) {
-      return;
-    }
-
+  // Toggle selection of a common exercise
+  const handleToggleCommonExercise = async (exerciseId) => {
     try {
       const { db } = await import("../config/firebase");
-      const { collection, addDoc, Timestamp } = await import("firebase/firestore");
+      const { collection, addDoc, deleteDoc, getDocs, query, where, Timestamp } = await import("firebase/firestore");
 
-      // Copy the exercise data with new gymId
-      const exerciseData = {
-        name: commonExercise.name,
-        category: commonExercise.category,
-        categoryName: commonExercise.categoryName,
-        difficulty: commonExercise.difficulty,
-        equipment: commonExercise.equipment,
-        sets: commonExercise.sets,
-        repsCount: commonExercise.repsCount,
-        duration: commonExercise.duration,
-        targetedSections: commonExercise.targetedSections || [],
-        steps: commonExercise.steps || [],
-        notes: commonExercise.notes || "",
-        photoURLs: commonExercise.photoURLs || [],
-        videoURLs: commonExercise.videoURLs || [],
-        gymId: currentGymId,
-        createdAt: Timestamp.now(),
-      };
+      const selectionsRef = collection(db, "gym_exercise_selections");
+      const isSelected = selectedCommonExerciseIds.includes(exerciseId);
 
-      await addDoc(collection(db, "gym_exercises"), exerciseData);
-      alert("Exercise copied to your gym successfully!");
-      fetchData(); // Refresh gym exercises
+      if (isSelected) {
+        // Deselect - remove from selections
+        const q = query(
+          selectionsRef,
+          where("gymId", "==", currentGymId),
+          where("exerciseId", "==", exerciseId)
+        );
+        const snapshot = await getDocs(q);
+        const deletePromises = snapshot.docs.map((doc) => deleteDoc(doc.ref));
+        await Promise.all(deletePromises);
+
+        setSelectedCommonExerciseIds((prev) => prev.filter((id) => id !== exerciseId));
+        console.log("Deselected exercise:", exerciseId);
+      } else {
+        // Select - add to selections
+        await addDoc(selectionsRef, {
+          gymId: currentGymId,
+          exerciseId: exerciseId,
+          selectedAt: Timestamp.now(),
+        });
+
+        setSelectedCommonExerciseIds((prev) => [...prev, exerciseId]);
+        console.log("Selected exercise:", exerciseId);
+      }
     } catch (error) {
-      console.error("Error copying exercise:", error);
-      alert("Failed to copy exercise");
+      console.error("Error toggling exercise selection:", error);
+      alert("Failed to update selection");
     }
   };
 
+  // Get exercises for "My Gym" tab: custom gym exercises + selected common exercises
+  const getMyGymExercises = () => {
+    const selectedCommon = commonExercises.filter((ex) =>
+      selectedCommonExerciseIds.includes(ex.id)
+    );
+    return [...exercises, ...selectedCommon];
+  };
+
   // Get the right data based on active tab
-  const currentExercises = activeTab === "common" ? commonExercises : exercises;
+  const currentExercises = activeTab === "common" ? commonExercises : getMyGymExercises();
   const currentCategories = activeTab === "common" ? commonCategories : categories;
 
   const filteredExercises = currentExercises.filter((exercise) => {
@@ -747,6 +779,11 @@ const Exercises = ({ onLogout, onNavigate }) => {
                               Common
                             </span>
                           )}
+                          {activeTab === "my-gym" && !exercise.gymId && (
+                            <span className="px-2 py-1 bg-purple-600/20 text-purple-600 rounded text-xs font-medium">
+                              From Library
+                            </span>
+                          )}
                         </div>
                       </div>
 
@@ -791,50 +828,69 @@ const Exercises = ({ onLogout, onNavigate }) => {
                           View
                         </button>
                         {activeTab === "my-gym" ? (
-                          <>
-                            <button
-                              onClick={() => handleEditExercise(exercise)}
-                              className="px-4 py-2 bg-green-600/20 hover:bg-green-600/30 text-green-600 rounded-lg text-sm font-medium transition"
-                            >
-                              <svg
-                                className="w-4 h-4"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
+                          // Check if exercise is custom (has gymId) or common (no gymId)
+                          exercise.gymId ? (
+                            // Custom exercise - can edit/delete
+                            <>
+                              <button
+                                onClick={() => handleEditExercise(exercise)}
+                                className="px-4 py-2 bg-green-600/20 hover:bg-green-600/30 text-green-600 rounded-lg text-sm font-medium transition"
                               >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                                />
-                              </svg>
-                            </button>
-                            <button
-                              onClick={() => handleDeleteExercise(exercise.id)}
-                              className="px-4 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-600 rounded-lg text-sm font-medium transition"
-                            >
-                              <svg
-                                className="w-4 h-4"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
+                                <svg
+                                  className="w-4 h-4"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                                  />
+                                </svg>
+                              </button>
+                              <button
+                                onClick={() => handleDeleteExercise(exercise.id)}
+                                className="px-4 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-600 rounded-lg text-sm font-medium transition"
                               >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                            />
-                          </svg>
+                                <svg
+                                  className="w-4 h-4"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                  />
+                                </svg>
+                              </button>
+                            </>
+                          ) : (
+                            // Common exercise (selected) - can only deselect, read-only
+                            <button
+                              onClick={() => handleToggleCommonExercise(exercise.id)}
+                              className="flex-1 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-medium transition"
+                            >
+                              Remove from My Gym
                             </button>
-                          </>
+                          )
                         ) : (
+                          // Common exercises tab - show select/deselect button
                           <button
-                            onClick={() => handleCopyToMyGym(exercise)}
-                            className="flex-1 px-4 py-2 bg-gradient-to-r from-green-600 to-teal-600 hover:from-green-700 hover:to-teal-700 text-white rounded-lg text-sm font-medium transition"
+                            onClick={() => handleToggleCommonExercise(exercise.id)}
+                            className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition ${
+                              selectedCommonExerciseIds.includes(exercise.id)
+                                ? "bg-green-600 hover:bg-green-700 text-white"
+                                : "bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white"
+                            }`}
                           >
-                            Copy to My Gym
+                            {selectedCommonExerciseIds.includes(exercise.id)
+                              ? "✓ Selected"
+                              : "Select for My Gym"}
                           </button>
                         )}
                       </div>
