@@ -83,7 +83,9 @@ const ProgressPhotoCapture = ({ onComplete, onCancel }) => {
       }
     } catch (err) {
       console.error("Camera error:", err);
-      setError("Unable to access camera. Please check permissions or use file upload.");
+      setError(
+        "Unable to access camera. Please check permissions or use file upload."
+      );
     }
   };
 
@@ -181,7 +183,9 @@ const ProgressPhotoCapture = ({ onComplete, onCancel }) => {
 
   const handleComplete = () => {
     // Validate at least one photo
-    const hasPhotos = Object.values(capturedPhotos).some((photo) => photo !== null);
+    const hasPhotos = Object.values(capturedPhotos).some(
+      (photo) => photo !== null
+    );
     if (!hasPhotos) {
       setError("Please capture or upload at least one progress photo");
       return;
@@ -209,7 +213,7 @@ const ProgressPhotoCapture = ({ onComplete, onCancel }) => {
     });
   };
 
-  const allPhotosC aptured =
+  const allPhotosCsaptured =
     capturedPhotos.front && capturedPhotos.side && capturedPhotos.back;
 
   return (
@@ -385,7 +389,9 @@ const ProgressPhotoCapture = ({ onComplete, onCancel }) => {
                           )}
                         </div>
                         <div className="flex-1">
-                          <p className="font-medium text-white">{photo.title}</p>
+                          <p className="font-medium text-white">
+                            {photo.title}
+                          </p>
                           <p className="text-sm text-gray-400">
                             {photo.instruction}
                           </p>
@@ -429,7 +435,9 @@ const ProgressPhotoCapture = ({ onComplete, onCancel }) => {
                       <p className="font-medium text-white mb-1">
                         {photo.title}
                       </p>
-                      <p className="text-sm text-gray-400">{photo.instruction}</p>
+                      <p className="text-sm text-gray-400">
+                        {photo.instruction}
+                      </p>
                     </div>
 
                     {capturedPhotos[photo.key] ? (
@@ -457,7 +465,9 @@ const ProgressPhotoCapture = ({ onComplete, onCancel }) => {
                           className="hidden"
                         />
                         <button
-                          onClick={() => fileInputRefs[photo.key].current?.click()}
+                          onClick={() =>
+                            fileInputRefs[photo.key].current?.click()
+                          }
                           className="w-full h-48 border-2 border-dashed border-gray-500 hover:border-blue-500 rounded-lg flex flex-col items-center justify-center gap-2 transition bg-gray-800 hover:bg-gray-750 text-gray-400 hover:text-blue-400"
                         >
                           <Upload className="w-12 h-12" />
@@ -489,7 +499,10 @@ const ProgressPhotoCapture = ({ onComplete, onCancel }) => {
                     step="0.1"
                     value={measurements.weight}
                     onChange={(e) =>
-                      setMeasurements({ ...measurements, weight: e.target.value })
+                      setMeasurements({
+                        ...measurements,
+                        weight: e.target.value,
+                      })
                     }
                     className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="75.5"
@@ -505,7 +518,10 @@ const ProgressPhotoCapture = ({ onComplete, onCancel }) => {
                     step="0.1"
                     value={measurements.chest}
                     onChange={(e) =>
-                      setMeasurements({ ...measurements, chest: e.target.value })
+                      setMeasurements({
+                        ...measurements,
+                        chest: e.target.value,
+                      })
                     }
                     className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="95.0"
@@ -520,7 +536,10 @@ const ProgressPhotoCapture = ({ onComplete, onCancel }) => {
                     step="0.1"
                     value={measurements.waist}
                     onChange={(e) =>
-                      setMeasurements({ ...measurements, waist: e.target.value })
+                      setMeasurements({
+                        ...measurements,
+                        waist: e.target.value,
+                      })
                     }
                     className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="80.0"
@@ -550,7 +569,10 @@ const ProgressPhotoCapture = ({ onComplete, onCancel }) => {
                     step="0.1"
                     value={measurements.biceps}
                     onChange={(e) =>
-                      setMeasurements({ ...measurements, biceps: e.target.value })
+                      setMeasurements({
+                        ...measurements,
+                        biceps: e.target.value,
+                      })
                     }
                     className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="35.0"
@@ -565,7 +587,10 @@ const ProgressPhotoCapture = ({ onComplete, onCancel }) => {
                     step="0.1"
                     value={measurements.thighs}
                     onChange={(e) =>
-                      setMeasurements({ ...measurements, thighs: e.target.value })
+                      setMeasurements({
+                        ...measurements,
+                        thighs: e.target.value,
+                      })
                     }
                     className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="55.0"
@@ -580,7 +605,10 @@ const ProgressPhotoCapture = ({ onComplete, onCancel }) => {
                     step="0.1"
                     value={measurements.calves}
                     onChange={(e) =>
-                      setMeasurements({ ...measurements, calves: e.target.value })
+                      setMeasurements({
+                        ...measurements,
+                        calves: e.target.value,
+                      })
                     }
                     className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="37.0"
