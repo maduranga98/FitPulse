@@ -23,6 +23,8 @@ import Supplements from "./pages/Supplements";
 import SupplementRequests from "./pages/SupplementRequests";
 import MemberSupplements from "./pages/members/MemberSupplements";
 import MemberGoals from "./pages/members/MemberGoals";
+import MemberClasses from "./pages/members/MemberClasses";
+import ClassManagement from "./pages/ClassManagement";
 import SuperAdminDashboard from "./pages/SuperAdminDashboard";
 import BulkExerciseImport from "./pages/BulkExerciseImport";
 import Analytics from "./pages/Analytics";
@@ -312,6 +314,23 @@ function App() {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/class-management"
+            element={
+              <ProtectedRoute>
+                <RoleRoute
+                  allowedRoles={[
+                    "admin",
+                    "manager",
+                    "gym_admin",
+                    "gym_manager",
+                  ]}
+                >
+                  <ClassManagement />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
 
           {/* Protected Routes - All Authenticated Users */}
           <Route
@@ -435,6 +454,16 @@ function App() {
               <ProtectedRoute>
                 <RoleRoute allowedRoles={["member"]}>
                   <MemberGoals />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/member/classes"
+            element={
+              <ProtectedRoute>
+                <RoleRoute allowedRoles={["member"]}>
+                  <MemberClasses />
                 </RoleRoute>
               </ProtectedRoute>
             }
