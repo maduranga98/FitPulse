@@ -81,6 +81,18 @@ const Sidebar = ({ isOpen, onClose }) => {
       label: "Class Management",
     },
     {
+      path: "/instructor-management",
+      icon: (
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M12 14l9-5-9-5-9 5 9 5z M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z M12 14v7"
+        />
+      ),
+      label: "Instructors",
+    },
+    {
       path: "/equipment-inventory",
       icon: (
         <path
@@ -91,6 +103,18 @@ const Sidebar = ({ isOpen, onClose }) => {
         />
       ),
       label: "Equipment Inventory",
+    },
+    {
+      path: "/meal-plans",
+      icon: (
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M12 6v6m0 0v6m0-6h6m-6 0H6"
+        />
+      ),
+      label: "Meal Plans",
     },
     {
       path: "/complaints",

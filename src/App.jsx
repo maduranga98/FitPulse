@@ -27,6 +27,9 @@ import MemberClasses from "./pages/members/MemberClasses";
 import MemberNutrition from "./pages/members/MemberNutrition";
 import ClassManagement from "./pages/ClassManagement";
 import EquipmentInventory from "./pages/EquipmentInventory";
+import InstructorManagement from "./pages/InstructorManagement";
+import MealPlanManagement from "./pages/MealPlanManagement";
+import MemberMealPlans from "./pages/members/MemberMealPlans";
 import SuperAdminDashboard from "./pages/SuperAdminDashboard";
 import BulkExerciseImport from "./pages/BulkExerciseImport";
 import Analytics from "./pages/Analytics";
@@ -350,6 +353,40 @@ function App() {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/instructor-management"
+            element={
+              <ProtectedRoute>
+                <RoleRoute
+                  allowedRoles={[
+                    "admin",
+                    "manager",
+                    "gym_admin",
+                    "gym_manager",
+                  ]}
+                >
+                  <InstructorManagement />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/meal-plans"
+            element={
+              <ProtectedRoute>
+                <RoleRoute
+                  allowedRoles={[
+                    "admin",
+                    "manager",
+                    "gym_admin",
+                    "gym_manager",
+                  ]}
+                >
+                  <MealPlanManagement />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
 
           {/* Protected Routes - All Authenticated Users */}
           <Route
@@ -493,6 +530,16 @@ function App() {
               <ProtectedRoute>
                 <RoleRoute allowedRoles={["member"]}>
                   <MemberNutrition />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/member/meal-plans"
+            element={
+              <ProtectedRoute>
+                <RoleRoute allowedRoles={["member"]}>
+                  <MemberMealPlans />
                 </RoleRoute>
               </ProtectedRoute>
             }
