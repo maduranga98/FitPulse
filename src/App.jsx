@@ -22,6 +22,7 @@ import AdminPayments from "./pages/AdminPayments";
 import Supplements from "./pages/Supplements";
 import SupplementRequests from "./pages/SupplementRequests";
 import MemberSupplements from "./pages/members/MemberSupplements";
+import MemberGoals from "./pages/members/MemberGoals";
 import SuperAdminDashboard from "./pages/SuperAdminDashboard";
 import BulkExerciseImport from "./pages/BulkExerciseImport";
 import Analytics from "./pages/Analytics";
@@ -424,6 +425,16 @@ function App() {
               <ProtectedRoute>
                 <RoleRoute allowedRoles={["member"]}>
                   <MemberSupplements />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/member/goals"
+            element={
+              <ProtectedRoute>
+                <RoleRoute allowedRoles={["member"]}>
+                  <MemberGoals />
                 </RoleRoute>
               </ProtectedRoute>
             }
