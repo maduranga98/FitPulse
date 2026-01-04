@@ -224,12 +224,12 @@ const Dashboard = () => {
 
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
-        <header className="bg-gray-800 border-b border-gray-700 p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
+        <header className="bg-gray-800 border-b border-gray-700 p-3 sm:p-4">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 sm:gap-4">
               <button
                 onClick={() => setSidebarOpen(true)}
-                className="lg:hidden text-gray-400 hover:text-white"
+                className="lg:hidden p-1 text-gray-400 hover:text-white"
               >
                 <svg
                   className="w-6 h-6"
@@ -245,13 +245,13 @@ const Dashboard = () => {
                   />
                 </svg>
               </button>
-              <h1 className="text-xl sm:text-2xl font-bold text-white">
+              <h1 className="text-lg sm:text-xl md:text-2xl font-bold text-white">
                 Dashboard
               </h1>
             </div>
 
-            <div className="flex items-center gap-4">
-              <div className="hidden sm:block text-right">
+            <div className="flex items-center gap-2 sm:gap-4">
+              <div className="hidden md:block text-right">
                 <p className="text-sm font-medium text-white">{user?.name}</p>
                 <p className="text-xs text-gray-400 capitalize">
                   {user?.role?.replace("_", " ")}
@@ -259,7 +259,7 @@ const Dashboard = () => {
               </div>
               <button
                 onClick={handleLogout}
-                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition"
+                className="px-3 py-2 sm:px-4 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs sm:text-sm font-medium transition active:scale-95"
               >
                 Logout
               </button>
@@ -268,15 +268,15 @@ const Dashboard = () => {
         </header>
 
         {/* Main Content */}
-        <main className="flex-1 overflow-y-auto p-6">
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6">
           {/* Stats Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-6 sm:mb-8">
             {/* Total Members */}
-            <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="w-12 h-12 bg-blue-600/20 rounded-lg flex items-center justify-center">
+            <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 sm:p-6">
+              <div className="flex items-center justify-between mb-3 sm:mb-4">
+                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-600/20 rounded-lg flex items-center justify-center">
                   <svg
-                    className="w-6 h-6 text-blue-600"
+                    className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -290,18 +290,18 @@ const Dashboard = () => {
                   </svg>
                 </div>
               </div>
-              <p className="text-gray-400 text-sm mb-1">Total Members</p>
-              <p className="text-3xl font-bold text-white">
+              <p className="text-gray-400 text-xs sm:text-sm mb-1">Total Members</p>
+              <p className="text-2xl sm:text-3xl font-bold text-white">
                 {stats.totalMembers}
               </p>
             </div>
 
             {/* Active Members */}
-            <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="w-12 h-12 bg-green-600/20 rounded-lg flex items-center justify-center">
+            <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 sm:p-6">
+              <div className="flex items-center justify-between mb-3 sm:mb-4">
+                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-green-600/20 rounded-lg flex items-center justify-center">
                   <svg
-                    className="w-6 h-6 text-green-600"
+                    className="w-5 h-5 sm:w-6 sm:h-6 text-green-600"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -315,18 +315,18 @@ const Dashboard = () => {
                   </svg>
                 </div>
               </div>
-              <p className="text-gray-400 text-sm mb-1">Active Members</p>
-              <p className="text-3xl font-bold text-white">
+              <p className="text-gray-400 text-xs sm:text-sm mb-1">Active Members</p>
+              <p className="text-2xl sm:text-3xl font-bold text-white">
                 {stats.activeMembers}
               </p>
             </div>
 
             {/* Total Revenue */}
-            <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="w-12 h-12 bg-purple-600/20 rounded-lg flex items-center justify-center">
+            <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 sm:p-6">
+              <div className="flex items-center justify-between mb-3 sm:mb-4">
+                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-purple-600/20 rounded-lg flex items-center justify-center">
                   <svg
-                    className="w-6 h-6 text-purple-600"
+                    className="w-5 h-5 sm:w-6 sm:h-6 text-purple-600"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -340,18 +340,18 @@ const Dashboard = () => {
                   </svg>
                 </div>
               </div>
-              <p className="text-gray-400 text-sm mb-1">Total Revenue</p>
-              <p className="text-3xl font-bold text-white">
+              <p className="text-gray-400 text-xs sm:text-sm mb-1">Total Revenue</p>
+              <p className="text-xl sm:text-2xl md:text-3xl font-bold text-white">
                 Rs. {stats.totalRevenue.toLocaleString()}
               </p>
             </div>
 
             {/* Pending Payments */}
-            <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="w-12 h-12 bg-yellow-600/20 rounded-lg flex items-center justify-center">
+            <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 sm:p-6">
+              <div className="flex items-center justify-between mb-3 sm:mb-4">
+                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-yellow-600/20 rounded-lg flex items-center justify-center">
                   <svg
-                    className="w-6 h-6 text-yellow-600"
+                    className="w-5 h-5 sm:w-6 sm:h-6 text-yellow-600"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -365,19 +365,19 @@ const Dashboard = () => {
                   </svg>
                 </div>
               </div>
-              <p className="text-gray-400 text-sm mb-1">Pending Payments</p>
-              <p className="text-3xl font-bold text-white">
+              <p className="text-gray-400 text-xs sm:text-sm mb-1">Pending Payments</p>
+              <p className="text-2xl sm:text-3xl font-bold text-white">
                 {stats.pendingPayments}
               </p>
             </div>
           </div>
 
           {/* Recent Activity Section */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
             {/* Recent Members */}
-            <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-bold text-white">Recent Members</h2>
+            <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 sm:p-6">
+              <div className="flex items-center justify-between mb-4 sm:mb-6">
+                <h2 className="text-lg sm:text-xl font-bold text-white">Recent Members</h2>
                 <Link
                   to="/members"
                   className="text-sm text-blue-600 hover:text-blue-500 transition"
@@ -395,23 +395,23 @@ const Dashboard = () => {
                   {recentMembers.map((member) => (
                     <div
                       key={member.id}
-                      className="flex items-center justify-between p-4 bg-gray-900 rounded-lg"
+                      className="flex items-center justify-between p-3 sm:p-4 bg-gray-900 rounded-lg gap-2"
                     >
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold">
+                      <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+                        <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
                           {member.name.charAt(0).toUpperCase()}
                         </div>
-                        <div>
-                          <p className="text-white font-medium">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-white font-medium text-sm sm:text-base truncate">
                             {member.name}
                           </p>
-                          <p className="text-sm text-gray-400">
+                          <p className="text-xs sm:text-sm text-gray-400 truncate">
                             Joined {formatDate(member.joinDate)}
                           </p>
                         </div>
                       </div>
                       <span
-                        className={`px-3 py-1 rounded-full text-xs font-medium ${
+                        className={`px-2 sm:px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ${
                           member.status === "active"
                             ? "bg-green-600/20 text-green-600"
                             : "bg-gray-600/20 text-gray-400"
@@ -426,9 +426,9 @@ const Dashboard = () => {
             </div>
 
             {/* Recent Payments */}
-            <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-bold text-white">
+            <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 sm:p-6">
+              <div className="flex items-center justify-between mb-4 sm:mb-6">
+                <h2 className="text-lg sm:text-xl font-bold text-white">
                   Recent Payments
                 </h2>
                 <Link
@@ -448,18 +448,18 @@ const Dashboard = () => {
                   {recentPayments.map((payment) => (
                     <div
                       key={payment.id}
-                      className="flex items-center justify-between p-4 bg-gray-900 rounded-lg"
+                      className="flex items-center justify-between p-3 sm:p-4 bg-gray-900 rounded-lg gap-2"
                     >
-                      <div>
-                        <p className="text-white font-medium">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-white font-medium text-sm sm:text-base truncate">
                           {payment.memberName}
                         </p>
-                        <p className="text-sm text-gray-400">
+                        <p className="text-xs sm:text-sm text-gray-400">
                           {formatDate(payment.paidAt)}
                         </p>
                       </div>
-                      <div className="text-right">
-                        <p className="text-white font-bold">
+                      <div className="text-right flex-shrink-0">
+                        <p className="text-white font-bold text-sm sm:text-base">
                           Rs. {payment.amount.toLocaleString()}
                         </p>
                         <span
