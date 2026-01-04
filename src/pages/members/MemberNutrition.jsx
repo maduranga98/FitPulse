@@ -331,7 +331,7 @@ const MemberNutrition = () => {
           </div>
 
           {/* Daily Summary Cards */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 mb-6">
             <div className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-xl p-4 sm:p-6 text-white">
               <div className="flex items-center gap-2 mb-2">
                 <PieChart className="w-5 h-5" />
@@ -385,25 +385,25 @@ const MemberNutrition = () => {
 
           {/* Water Intake */}
           <div className="bg-gray-800 rounded-xl border border-gray-700 p-4 sm:p-6 mb-6">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-4 mb-4">
               <div className="flex items-center gap-2">
                 <Droplet className="w-5 h-5 text-blue-400" />
-                <h3 className="text-lg font-bold text-white">Water Intake</h3>
+                <h3 className="text-base sm:text-lg font-bold text-white">Water Intake</h3>
               </div>
-              <span className="text-2xl font-bold text-blue-400">{waterIntake} glasses</span>
+              <span className="text-xl sm:text-2xl font-bold text-blue-400">{waterIntake} glasses</span>
             </div>
-            <div className="flex gap-2">
+            <div className="grid grid-cols-4 sm:flex gap-2">
               {[1, 2, 3, 4, 5, 6, 7, 8].map((glass) => (
                 <button
                   key={glass}
                   onClick={() => handleUpdateWater(glass)}
-                  className={`flex-1 h-12 rounded-lg transition active:scale-95 ${
+                  className={`h-12 sm:flex-1 rounded-lg transition active:scale-95 ${
                     waterIntake >= glass
                       ? "bg-gradient-to-br from-blue-500 to-blue-600 text-white"
                       : "bg-gray-700 text-gray-400 hover:bg-gray-600"
                   }`}
                 >
-                  <Droplet className="w-5 h-5 mx-auto" />
+                  <Droplet className="w-4 h-4 sm:w-5 sm:h-5 mx-auto" />
                 </button>
               ))}
             </div>
@@ -458,7 +458,7 @@ const MemberNutrition = () => {
                                   <Trash2 className="w-4 h-4" />
                                 </button>
                               </div>
-                              <div className="pt-3 border-t border-gray-700 grid grid-cols-4 gap-2 text-center">
+                              <div className="pt-3 border-t border-gray-700 grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
                                 <div>
                                   <p className="text-xs text-gray-400">Calories</p>
                                   <p className="text-sm font-bold text-white">
@@ -519,9 +519,9 @@ const MemberNutrition = () => {
         {/* Add Meal Modal */}
         {showAddMealModal && (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 overflow-y-auto">
-            <div className="bg-gray-800 rounded-xl max-w-3xl w-full p-6 my-8 max-h-[90vh] overflow-y-auto">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-bold text-white">Log Meal</h2>
+            <div className="bg-gray-800 rounded-xl max-w-3xl w-full p-4 sm:p-6 my-8 max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between mb-4 sm:mb-6">
+                <h2 className="text-xl sm:text-2xl font-bold text-white">Log Meal</h2>
                 <button
                   onClick={() => setShowAddMealModal(false)}
                   className="text-gray-400 hover:text-white transition"
@@ -563,55 +563,55 @@ const MemberNutrition = () => {
 
                   <div className="space-y-3">
                     {mealForm.foods.map((food, index) => (
-                      <div key={index} className="bg-gray-900 rounded-lg p-4 border border-gray-700">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-                          <div className="md:col-span-2">
-                            <input
-                              type="text"
-                              placeholder="Food name"
-                              value={food.name}
-                              onChange={(e) => updateFoodRow(index, "name", e.target.value)}
-                              className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-                              required
-                            />
-                          </div>
+                      <div key={index} className="bg-gray-900 rounded-lg p-3 sm:p-4 border border-gray-700">
+                        <div className="space-y-2 mb-3">
                           <input
-                            type="number"
-                            placeholder="Calories"
-                            value={food.calories || ""}
-                            onChange={(e) => updateFoodRow(index, "calories", e.target.value)}
-                            className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-                            min="0"
-                            step="1"
+                            type="text"
+                            placeholder="Food name"
+                            value={food.name}
+                            onChange={(e) => updateFoodRow(index, "name", e.target.value)}
+                            className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
                             required
                           />
-                          <input
-                            type="number"
-                            placeholder="Protein (g)"
-                            value={food.protein || ""}
-                            onChange={(e) => updateFoodRow(index, "protein", e.target.value)}
-                            className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-                            min="0"
-                            step="0.1"
-                          />
-                          <input
-                            type="number"
-                            placeholder="Carbs (g)"
-                            value={food.carbs || ""}
-                            onChange={(e) => updateFoodRow(index, "carbs", e.target.value)}
-                            className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-                            min="0"
-                            step="0.1"
-                          />
-                          <input
-                            type="number"
-                            placeholder="Fats (g)"
-                            value={food.fats || ""}
-                            onChange={(e) => updateFoodRow(index, "fats", e.target.value)}
-                            className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-                            min="0"
-                            step="0.1"
-                          />
+                          <div className="grid grid-cols-2 gap-2">
+                            <input
+                              type="number"
+                              placeholder="Calories"
+                              value={food.calories || ""}
+                              onChange={(e) => updateFoodRow(index, "calories", e.target.value)}
+                              className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                              min="0"
+                              step="1"
+                              required
+                            />
+                            <input
+                              type="number"
+                              placeholder="Protein (g)"
+                              value={food.protein || ""}
+                              onChange={(e) => updateFoodRow(index, "protein", e.target.value)}
+                              className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                              min="0"
+                              step="0.1"
+                            />
+                            <input
+                              type="number"
+                              placeholder="Carbs (g)"
+                              value={food.carbs || ""}
+                              onChange={(e) => updateFoodRow(index, "carbs", e.target.value)}
+                              className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                              min="0"
+                              step="0.1"
+                            />
+                            <input
+                              type="number"
+                              placeholder="Fats (g)"
+                              value={food.fats || ""}
+                              onChange={(e) => updateFoodRow(index, "fats", e.target.value)}
+                              className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                              min="0"
+                              step="0.1"
+                            />
+                          </div>
                         </div>
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
