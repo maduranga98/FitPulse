@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import MemberLayout from "../../components/MemberLayout";
+import ProgressPhotoCapture from "../../components/ProgressPhotoCapture";
 import {
   LineChart,
   Line,
@@ -13,6 +14,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
+import { Camera, TrendingUp, Calendar, Trash2 } from "lucide-react";
 
 const MemberProgressTracker = () => {
   const { user: currentUser } = useAuth();
@@ -20,10 +22,13 @@ const MemberProgressTracker = () => {
   const [weightLogs, setWeightLogs] = useState([]);
   const [workoutLogs, setWorkoutLogs] = useState([]);
   const [exercises, setExercises] = useState([]);
+  const [progressPhotos, setProgressPhotos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddWeight, setShowAddWeight] = useState(false);
+  const [showPhotoCapture, setShowPhotoCapture] = useState(false);
   const [selectedExercise, setSelectedExercise] = useState(null);
   const [activeTab, setActiveTab] = useState("weight");
+  const [selectedComparison, setSelectedComparison] = useState({ before: null, after: null });
 
   const [weightForm, setWeightForm] = useState({
     weight: "",
@@ -79,9 +84,25 @@ const MemberProgressTracker = () => {
         ...doc.data(),
       }));
 
+      // Fetch progress photos
+      const photosQuery = query(
+        collection(db, "progressPhotos"),
+        where("memberId", "==", currentUser.id),
+        orderBy("date", "desc")
+      );
+      const photosSnapshot = await getDocs(photosQuery);
+      const photosData = photosSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+        date: doc.data().date?.toDate
+          ? doc.data().date.toDate()
+          : new Date(doc.data().date),
+      }));
+
       setWeightLogs(weightData);
       setWorkoutLogs(workoutData);
       setExercises(exercisesData);
+      setProgressPhotos(photosData);
       setLoading(false);
     } catch (error) {
       console.error("Error fetching data:", error);
@@ -118,6 +139,66 @@ const MemberProgressTracker = () => {
     } catch (error) {
       console.error("Error adding weight:", error);
       alert("Failed to log weight. Please try again.");
+    }
+  };
+
+  const handleProgressPhotoSave = async (data) => {
+    try {
+      const { db, storage } = await import("../../config/firebase");
+      const { collection, addDoc, Timestamp } = await import("firebase/firestore");
+      const { ref, uploadBytes, getDownloadURL } = await import("firebase/storage");
+
+      const photoURLs = {};
+
+      // Upload photos to Firebase Storage
+      for (const [photoType, photoData] of Object.entries(data.photos)) {
+        if (photoData) {
+          const timestamp = Date.now();
+          const fileName = `progress-photos/${currentUser.gymId}/${currentUser.id}/${photoType}_${timestamp}.jpg`;
+          const storageReference = ref(storage, fileName);
+
+          await uploadBytes(storageReference, photoData.blob);
+          const downloadURL = await getDownloadURL(storageReference);
+
+          photoURLs[photoType] = downloadURL;
+        }
+      }
+
+      // Save to Firestore
+      await addDoc(collection(db, "progressPhotos"), {
+        memberId: currentUser.id,
+        gymId: currentUser.gymId,
+        photoURLs: photoURLs,
+        measurements: data.measurements,
+        weight: data.measurements.weight,
+        date: Timestamp.now(),
+        createdAt: Timestamp.now(),
+      });
+
+      setShowPhotoCapture(false);
+      fetchData();
+      alert("Progress photos saved successfully! 🎉");
+    } catch (error) {
+      console.error("Error saving progress photos:", error);
+      alert("Failed to save progress photos. Please try again.");
+    }
+  };
+
+  const handleDeletePhoto = async (photoId) => {
+    if (!confirm("Are you sure you want to delete this progress photo?")) {
+      return;
+    }
+
+    try {
+      const { db } = await import("../../config/firebase");
+      const { doc, deleteDoc } = await import("firebase/firestore");
+
+      await deleteDoc(doc(db, "progressPhotos", photoId));
+      fetchData();
+      alert("Progress photo deleted successfully!");
+    } catch (error) {
+      console.error("Error deleting progress photo:", error);
+      alert("Failed to delete progress photo. Please try again.");
     }
   };
 
@@ -367,6 +448,17 @@ const MemberProgressTracker = () => {
                 <span className="sm:hidden">Weight</span>
               </button>
               <button
+                onClick={() => setActiveTab("photos")}
+                className={`flex-1 min-w-[100px] px-4 sm:px-6 py-3 sm:py-4 font-medium transition text-sm sm:text-base whitespace-nowrap ${
+                  activeTab === "photos"
+                    ? "text-blue-500 border-b-2 border-blue-500"
+                    : "text-gray-400 hover:text-gray-300"
+                }`}
+              >
+                <span className="hidden sm:inline">Progress Photos</span>
+                <span className="sm:hidden">Photos</span>
+              </button>
+              <button
                 onClick={() => setActiveTab("exercises")}
                 className={`flex-1 min-w-[100px] px-4 sm:px-6 py-3 sm:py-4 font-medium transition text-sm sm:text-base whitespace-nowrap ${
                   activeTab === "exercises"
@@ -487,6 +579,378 @@ const MemberProgressTracker = () => {
                         className="px-4 sm:px-6 py-2 sm:py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition text-sm sm:text-base active:scale-95"
                       >
                         Log Your First Weight
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Progress Photos Tab */}
+              {activeTab === "photos" && (
+                <div>
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-lg sm:text-xl font-bold text-white">
+                      Progress Photos & Measurements
+                    </h3>
+                    <button
+                      onClick={() => setShowPhotoCapture(true)}
+                      className="px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white rounded-lg font-medium transition text-sm flex items-center gap-2"
+                    >
+                      <Camera className="w-4 h-4" />
+                      Add Progress Photo
+                    </button>
+                  </div>
+
+                  {progressPhotos.length > 0 ? (
+                    <>
+                      {/* Photo Timeline */}
+                      <div className="space-y-6">
+                        {progressPhotos.map((photo) => (
+                          <div
+                            key={photo.id}
+                            className="bg-gray-900 rounded-lg p-4 sm:p-6 border border-gray-700"
+                          >
+                            <div className="flex items-start justify-between mb-4">
+                              <div>
+                                <div className="flex items-center gap-2 mb-2">
+                                  <Calendar className="w-4 h-4 text-blue-400" />
+                                  <p className="text-white font-medium">
+                                    {photo.date.toLocaleDateString("en-US", {
+                                      month: "long",
+                                      day: "numeric",
+                                      year: "numeric",
+                                    })}
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-4 text-sm text-gray-400">
+                                  <span>Weight: {photo.weight} kg</span>
+                                  {photo.measurements?.chest && (
+                                    <span>Chest: {photo.measurements.chest} cm</span>
+                                  )}
+                                  {photo.measurements?.waist && (
+                                    <span>Waist: {photo.measurements.waist} cm</span>
+                                  )}
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => handleDeletePhoto(photo.id)}
+                                className="text-red-400 hover:text-red-300 p-2 hover:bg-red-900/20 rounded transition"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+
+                            {/* Photos Grid */}
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+                              {photo.photoURLs?.front && (
+                                <div>
+                                  <p className="text-xs text-gray-400 mb-2">Front View</p>
+                                  <img
+                                    src={photo.photoURLs.front}
+                                    alt="Front view"
+                                    className="w-full h-64 object-cover rounded-lg border-2 border-gray-700"
+                                  />
+                                </div>
+                              )}
+                              {photo.photoURLs?.side && (
+                                <div>
+                                  <p className="text-xs text-gray-400 mb-2">Side View</p>
+                                  <img
+                                    src={photo.photoURLs.side}
+                                    alt="Side view"
+                                    className="w-full h-64 object-cover rounded-lg border-2 border-gray-700"
+                                  />
+                                </div>
+                              )}
+                              {photo.photoURLs?.back && (
+                                <div>
+                                  <p className="text-xs text-gray-400 mb-2">Back View</p>
+                                  <img
+                                    src={photo.photoURLs.back}
+                                    alt="Back view"
+                                    className="w-full h-64 object-cover rounded-lg border-2 border-gray-700"
+                                  />
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Measurements Detail */}
+                            {photo.measurements && (
+                              <div className="border-t border-gray-700 pt-4">
+                                <p className="text-sm font-medium text-gray-300 mb-3">
+                                  Body Measurements:
+                                </p>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+                                  {photo.measurements.chest && (
+                                    <div className="bg-gray-800 rounded-lg p-2 text-center">
+                                      <p className="text-xs text-gray-400">Chest</p>
+                                      <p className="text-sm font-bold text-white">
+                                        {photo.measurements.chest} cm
+                                      </p>
+                                    </div>
+                                  )}
+                                  {photo.measurements.waist && (
+                                    <div className="bg-gray-800 rounded-lg p-2 text-center">
+                                      <p className="text-xs text-gray-400">Waist</p>
+                                      <p className="text-sm font-bold text-white">
+                                        {photo.measurements.waist} cm
+                                      </p>
+                                    </div>
+                                  )}
+                                  {photo.measurements.hips && (
+                                    <div className="bg-gray-800 rounded-lg p-2 text-center">
+                                      <p className="text-xs text-gray-400">Hips</p>
+                                      <p className="text-sm font-bold text-white">
+                                        {photo.measurements.hips} cm
+                                      </p>
+                                    </div>
+                                  )}
+                                  {photo.measurements.biceps && (
+                                    <div className="bg-gray-800 rounded-lg p-2 text-center">
+                                      <p className="text-xs text-gray-400">Biceps</p>
+                                      <p className="text-sm font-bold text-white">
+                                        {photo.measurements.biceps} cm
+                                      </p>
+                                    </div>
+                                  )}
+                                  {photo.measurements.thighs && (
+                                    <div className="bg-gray-800 rounded-lg p-2 text-center">
+                                      <p className="text-xs text-gray-400">Thighs</p>
+                                      <p className="text-sm font-bold text-white">
+                                        {photo.measurements.thighs} cm
+                                      </p>
+                                    </div>
+                                  )}
+                                  {photo.measurements.calves && (
+                                    <div className="bg-gray-800 rounded-lg p-2 text-center">
+                                      <p className="text-xs text-gray-400">Calves</p>
+                                      <p className="text-sm font-bold text-white">
+                                        {photo.measurements.calves} cm
+                                      </p>
+                                    </div>
+                                  )}
+                                </div>
+                                {photo.measurements.notes && (
+                                  <p className="text-sm text-gray-400 mt-3">
+                                    <span className="font-medium text-gray-300">Notes:</span>{" "}
+                                    {photo.measurements.notes}
+                                  </p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Before/After Comparison */}
+                      {progressPhotos.length >= 2 && (
+                        <div className="mt-8 bg-gradient-to-br from-purple-900/30 to-blue-900/30 rounded-xl border border-purple-500/30 p-6">
+                          <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                            <TrendingUp className="w-5 h-5 text-purple-400" />
+                            Before & After Comparison
+                          </h3>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                              <label className="block text-sm font-medium text-gray-300 mb-2">
+                                Before
+                              </label>
+                              <select
+                                value={selectedComparison.before || ""}
+                                onChange={(e) =>
+                                  setSelectedComparison({
+                                    ...selectedComparison,
+                                    before: e.target.value,
+                                  })
+                                }
+                                className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500 mb-3"
+                              >
+                                <option value="">Select a photo...</option>
+                                {progressPhotos.map((photo) => (
+                                  <option key={photo.id} value={photo.id}>
+                                    {photo.date.toLocaleDateString()} - {photo.weight} kg
+                                  </option>
+                                ))}
+                              </select>
+                              {selectedComparison.before && (
+                                <div>
+                                  {(() => {
+                                    const beforePhoto = progressPhotos.find(
+                                      (p) => p.id === selectedComparison.before
+                                    );
+                                    return (
+                                      <div className="grid grid-cols-3 gap-2">
+                                        {beforePhoto?.photoURLs?.front && (
+                                          <img
+                                            src={beforePhoto.photoURLs.front}
+                                            alt="Before - Front"
+                                            className="w-full h-40 object-cover rounded"
+                                          />
+                                        )}
+                                        {beforePhoto?.photoURLs?.side && (
+                                          <img
+                                            src={beforePhoto.photoURLs.side}
+                                            alt="Before - Side"
+                                            className="w-full h-40 object-cover rounded"
+                                          />
+                                        )}
+                                        {beforePhoto?.photoURLs?.back && (
+                                          <img
+                                            src={beforePhoto.photoURLs.back}
+                                            alt="Before - Back"
+                                            className="w-full h-40 object-cover rounded"
+                                          />
+                                        )}
+                                      </div>
+                                    );
+                                  })()}
+                                </div>
+                              )}
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-300 mb-2">
+                                After
+                              </label>
+                              <select
+                                value={selectedComparison.after || ""}
+                                onChange={(e) =>
+                                  setSelectedComparison({
+                                    ...selectedComparison,
+                                    after: e.target.value,
+                                  })
+                                }
+                                className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500 mb-3"
+                              >
+                                <option value="">Select a photo...</option>
+                                {progressPhotos.map((photo) => (
+                                  <option key={photo.id} value={photo.id}>
+                                    {photo.date.toLocaleDateString()} - {photo.weight} kg
+                                  </option>
+                                ))}
+                              </select>
+                              {selectedComparison.after && (
+                                <div>
+                                  {(() => {
+                                    const afterPhoto = progressPhotos.find(
+                                      (p) => p.id === selectedComparison.after
+                                    );
+                                    return (
+                                      <div className="grid grid-cols-3 gap-2">
+                                        {afterPhoto?.photoURLs?.front && (
+                                          <img
+                                            src={afterPhoto.photoURLs.front}
+                                            alt="After - Front"
+                                            className="w-full h-40 object-cover rounded"
+                                          />
+                                        )}
+                                        {afterPhoto?.photoURLs?.side && (
+                                          <img
+                                            src={afterPhoto.photoURLs.side}
+                                            alt="After - Side"
+                                            className="w-full h-40 object-cover rounded"
+                                          />
+                                        )}
+                                        {afterPhoto?.photoURLs?.back && (
+                                          <img
+                                            src={afterPhoto.photoURLs.back}
+                                            alt="After - Back"
+                                            className="w-full h-40 object-cover rounded"
+                                          />
+                                        )}
+                                      </div>
+                                    );
+                                  })()}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          {selectedComparison.before && selectedComparison.after && (
+                            <div className="mt-4 bg-gray-800/50 rounded-lg p-4">
+                              {(() => {
+                                const beforePhoto = progressPhotos.find(
+                                  (p) => p.id === selectedComparison.before
+                                );
+                                const afterPhoto = progressPhotos.find(
+                                  (p) => p.id === selectedComparison.after
+                                );
+                                const weightChange = (
+                                  afterPhoto.weight - beforePhoto.weight
+                                ).toFixed(1);
+                                const daysDiff = Math.floor(
+                                  (afterPhoto.date - beforePhoto.date) / (1000 * 60 * 60 * 24)
+                                );
+
+                                return (
+                                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
+                                    <div>
+                                      <p className="text-xs text-gray-400">Weight Change</p>
+                                      <p
+                                        className={`text-lg font-bold ${
+                                          weightChange > 0
+                                            ? "text-orange-400"
+                                            : weightChange < 0
+                                            ? "text-green-400"
+                                            : "text-gray-400"
+                                        }`}
+                                      >
+                                        {weightChange > 0 ? "+" : ""}
+                                        {weightChange} kg
+                                      </p>
+                                    </div>
+                                    <div>
+                                      <p className="text-xs text-gray-400">Time Period</p>
+                                      <p className="text-lg font-bold text-white">
+                                        {daysDiff} days
+                                      </p>
+                                    </div>
+                                    {beforePhoto.measurements?.waist &&
+                                      afterPhoto.measurements?.waist && (
+                                        <div>
+                                          <p className="text-xs text-gray-400">Waist Change</p>
+                                          <p className="text-lg font-bold text-blue-400">
+                                            {(
+                                              afterPhoto.measurements.waist -
+                                              beforePhoto.measurements.waist
+                                            ).toFixed(1)}{" "}
+                                            cm
+                                          </p>
+                                        </div>
+                                      )}
+                                    {beforePhoto.measurements?.chest &&
+                                      afterPhoto.measurements?.chest && (
+                                        <div>
+                                          <p className="text-xs text-gray-400">Chest Change</p>
+                                          <p className="text-lg font-bold text-purple-400">
+                                            {(
+                                              afterPhoto.measurements.chest -
+                                              beforePhoto.measurements.chest
+                                            ).toFixed(1)}{" "}
+                                            cm
+                                          </p>
+                                        </div>
+                                      )}
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="text-center py-12">
+                      <div className="text-6xl mb-4">📸</div>
+                      <h3 className="text-xl font-bold text-white mb-2">
+                        No Progress Photos Yet
+                      </h3>
+                      <p className="text-gray-400 mb-6">
+                        Start tracking your transformation with progress photos and measurements!
+                      </p>
+                      <button
+                        onClick={() => setShowPhotoCapture(true)}
+                        className="px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white rounded-lg font-medium transition flex items-center justify-center gap-2 mx-auto"
+                      >
+                        <Camera className="w-5 h-5" />
+                        Add Your First Progress Photo
                       </button>
                     </div>
                   )}
@@ -751,6 +1215,14 @@ const MemberProgressTracker = () => {
             </div>
           </div>
         </div>
+
+        {/* Progress Photo Capture Modal */}
+        {showPhotoCapture && (
+          <ProgressPhotoCapture
+            onComplete={handleProgressPhotoSave}
+            onCancel={() => setShowPhotoCapture(false)}
+          />
+        )}
 
         {/* Add Weight Modal */}
         {showAddWeight && (
