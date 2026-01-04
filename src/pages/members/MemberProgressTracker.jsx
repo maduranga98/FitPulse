@@ -14,7 +14,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
-import { Camera, TrendingUp, Calendar, Trash2 } from "lucide-react";
+import { Camera, TrendingUp, Calendar, Trash2, Download, Trophy } from "lucide-react";
 
 const MemberProgressTracker = () => {
   const { user: currentUser } = useAuth();
@@ -202,6 +202,57 @@ const MemberProgressTracker = () => {
     }
   };
 
+  const exportWorkoutsToCSV = () => {
+    if (workoutLogs.length === 0) {
+      alert("No workout data to export");
+      return;
+    }
+
+    // CSV Header
+    let csv = "Date,Day,Exercise,Sets,Reps,Weight (kg),Completion Rate,PRs,Notes\n";
+
+    // Add workout data
+    workoutLogs.forEach((workout) => {
+      const date = workout.completedAt.toLocaleDateString();
+      const day = workout.day || "N/A";
+      const completionRate = workout.completionRate || 0;
+      const totalPRs = workout.totalPRs || 0;
+      const notes = (workout.notes || "").replace(/,/g, ";").replace(/\n/g, " ");
+
+      workout.exercises?.forEach((exercise) => {
+        const sets = exercise.sets?.length || 0;
+        const avgReps =
+          sets > 0
+            ? Math.round(
+                exercise.sets.reduce((sum, s) => sum + (s.actualReps || 0), 0) / sets
+              )
+            : 0;
+        const avgWeight =
+          sets > 0
+            ? (
+                exercise.sets.reduce((sum, s) => sum + (s.weight || 0), 0) / sets
+              ).toFixed(1)
+            : 0;
+        const exercisePRs = exercise.personalRecords || 0;
+
+        csv += `${date},${day},"${exercise.exerciseName || "Unknown"}",${sets},${avgReps},${avgWeight},${completionRate}%,${exercisePRs},"${notes}"\n`;
+      });
+    });
+
+    // Create download link
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `FitPulse_Workout_History_${new Date().toISOString().split("T")[0]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+
+    alert("Workout history exported successfully! 📊");
+  };
+
   const getWeightChartData = () => {
     return weightLogs.map((log) => ({
       date: log.date.toLocaleDateString("en-US", {
@@ -300,6 +351,65 @@ const MemberProgressTracker = () => {
       .filter(Boolean);
   };
 
+  const getPersonalRecords = () => {
+    const records = {};
+
+    workoutLogs.forEach((workout) => {
+      workout.exercises?.forEach((exercise) => {
+        const exerciseId = exercise.exerciseId;
+        if (!exerciseId) return;
+
+        if (!records[exerciseId]) {
+          records[exerciseId] = {
+            exerciseId,
+            exerciseName: exercise.exerciseName || "Unknown",
+            maxWeight: { value: 0, reps: 0, date: null },
+            maxReps: { value: 0, weight: 0, date: null },
+            maxVolume: { value: 0, weight: 0, reps: 0, date: null },
+          };
+        }
+
+        exercise.sets?.forEach((set) => {
+          const weight = parseFloat(set.weight) || 0;
+          const reps = parseInt(set.actualReps) || 0;
+          const volume = weight * reps;
+
+          // Track max weight
+          if (weight > records[exerciseId].maxWeight.value) {
+            records[exerciseId].maxWeight = {
+              value: weight,
+              reps: reps,
+              date: workout.completedAt,
+            };
+          }
+
+          // Track max reps
+          if (reps > records[exerciseId].maxReps.value) {
+            records[exerciseId].maxReps = {
+              value: reps,
+              weight: weight,
+              date: workout.completedAt,
+            };
+          }
+
+          // Track max volume
+          if (volume > records[exerciseId].maxVolume.value) {
+            records[exerciseId].maxVolume = {
+              value: volume,
+              weight: weight,
+              reps: reps,
+              date: workout.completedAt,
+            };
+          }
+        });
+      });
+    });
+
+    return Object.values(records).sort((a, b) =>
+      a.exerciseName.localeCompare(b.exerciseName)
+    );
+  };
+
   const getStats = () => {
     const totalWorkouts = workoutLogs.length;
     const totalExercises = workoutLogs.reduce(
@@ -355,26 +465,36 @@ const MemberProgressTracker = () => {
                   Track your fitness journey
                 </p>
               </div>
-              <button
-                onClick={() => setShowAddWeight(true)}
-                className="w-full sm:w-auto px-5 sm:px-6 py-3 bg-white text-purple-600 rounded-lg font-medium hover:bg-gray-100 transition flex items-center justify-center gap-2 active:scale-95"
-              >
-                <svg
-                  className="w-5 h-5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
+              <div className="flex gap-2 w-full sm:w-auto">
+                <button
+                  onClick={exportWorkoutsToCSV}
+                  className="flex-1 sm:flex-none px-4 sm:px-5 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition flex items-center justify-center gap-2 active:scale-95"
+                  title="Export workout history"
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 4v16m8-8H4"
-                  />
-                </svg>
-                <span className="hidden sm:inline">Log Weight</span>
-                <span className="sm:hidden">Add Weight</span>
-              </button>
+                  <Download className="w-5 h-5" />
+                  <span className="hidden sm:inline">Export</span>
+                </button>
+                <button
+                  onClick={() => setShowAddWeight(true)}
+                  className="flex-1 sm:flex-none px-4 sm:px-5 py-3 bg-white text-purple-600 rounded-lg font-medium hover:bg-gray-100 transition flex items-center justify-center gap-2 active:scale-95"
+                >
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 4v16m8-8H4"
+                    />
+                  </svg>
+                  <span className="hidden sm:inline">Log Weight</span>
+                  <span className="sm:hidden">Add</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -479,6 +599,17 @@ const MemberProgressTracker = () => {
               >
                 <span className="hidden sm:inline">Workout Frequency</span>
                 <span className="sm:hidden">Frequency</span>
+              </button>
+              <button
+                onClick={() => setActiveTab("prs")}
+                className={`flex-1 min-w-[100px] px-4 sm:px-6 py-3 sm:py-4 font-medium transition text-sm sm:text-base whitespace-nowrap ${
+                  activeTab === "prs"
+                    ? "text-blue-500 border-b-2 border-blue-500"
+                    : "text-gray-400 hover:text-gray-300"
+                }`}
+              >
+                <span className="hidden sm:inline">Personal Records</span>
+                <span className="sm:hidden">PRs</span>
               </button>
             </div>
 
@@ -1207,6 +1338,152 @@ const MemberProgressTracker = () => {
                       </h3>
                       <p className="text-sm sm:text-base text-gray-400 mb-6">
                         Start working out to see your frequency data!
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Personal Records Tab */}
+              {activeTab === "prs" && (
+                <div>
+                  {getPersonalRecords().length > 0 ? (
+                    <>
+                      <div className="mb-6">
+                        <h3 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
+                          <Trophy className="w-6 h-6 text-yellow-400" />
+                          Your Personal Records
+                        </h3>
+                        <p className="text-sm text-gray-400 mt-2">
+                          Track your all-time best performances for each exercise
+                        </p>
+                      </div>
+
+                      <div className="space-y-6">
+                        {getPersonalRecords().map((record) => (
+                          <div
+                            key={record.exerciseId}
+                            className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl border border-gray-700 p-4 sm:p-6 hover:border-yellow-500/50 transition"
+                          >
+                            <h4 className="text-lg sm:text-xl font-bold text-white mb-4 flex items-center gap-2">
+                              <span className="text-yellow-400">🏆</span>
+                              {record.exerciseName}
+                            </h4>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                              {/* Max Weight */}
+                              <div className="bg-gradient-to-br from-red-900/30 to-red-800/20 rounded-lg border border-red-500/30 p-4">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                                  <p className="text-xs font-medium text-red-300 uppercase tracking-wide">
+                                    Max Weight
+                                  </p>
+                                </div>
+                                <p className="text-2xl sm:text-3xl font-bold text-white mb-1">
+                                  {record.maxWeight.value} kg
+                                </p>
+                                <p className="text-xs sm:text-sm text-gray-400">
+                                  {record.maxWeight.reps} reps
+                                </p>
+                                {record.maxWeight.date && (
+                                  <p className="text-xs text-gray-500 mt-2">
+                                    {record.maxWeight.date.toLocaleDateString("en-US", {
+                                      month: "short",
+                                      day: "numeric",
+                                      year: "numeric",
+                                    })}
+                                  </p>
+                                )}
+                              </div>
+
+                              {/* Max Reps */}
+                              <div className="bg-gradient-to-br from-blue-900/30 to-blue-800/20 rounded-lg border border-blue-500/30 p-4">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                                  <p className="text-xs font-medium text-blue-300 uppercase tracking-wide">
+                                    Max Reps
+                                  </p>
+                                </div>
+                                <p className="text-2xl sm:text-3xl font-bold text-white mb-1">
+                                  {record.maxReps.value} reps
+                                </p>
+                                <p className="text-xs sm:text-sm text-gray-400">
+                                  @ {record.maxReps.weight} kg
+                                </p>
+                                {record.maxReps.date && (
+                                  <p className="text-xs text-gray-500 mt-2">
+                                    {record.maxReps.date.toLocaleDateString("en-US", {
+                                      month: "short",
+                                      day: "numeric",
+                                      year: "numeric",
+                                    })}
+                                  </p>
+                                )}
+                              </div>
+
+                              {/* Max Volume */}
+                              <div className="bg-gradient-to-br from-purple-900/30 to-purple-800/20 rounded-lg border border-purple-500/30 p-4">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
+                                  <p className="text-xs font-medium text-purple-300 uppercase tracking-wide">
+                                    Max Volume
+                                  </p>
+                                </div>
+                                <p className="text-2xl sm:text-3xl font-bold text-white mb-1">
+                                  {record.maxVolume.value.toFixed(0)} kg
+                                </p>
+                                <p className="text-xs sm:text-sm text-gray-400">
+                                  {record.maxVolume.weight} kg × {record.maxVolume.reps} reps
+                                </p>
+                                {record.maxVolume.date && (
+                                  <p className="text-xs text-gray-500 mt-2">
+                                    {record.maxVolume.date.toLocaleDateString("en-US", {
+                                      month: "short",
+                                      day: "numeric",
+                                      year: "numeric",
+                                    })}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* PR Summary */}
+                      <div className="mt-8 bg-gradient-to-br from-yellow-900/20 to-orange-900/20 rounded-xl border border-yellow-500/30 p-6">
+                        <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                          <Trophy className="w-5 h-5 text-yellow-400" />
+                          PR Statistics
+                        </h3>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div className="bg-gray-900/50 rounded-lg p-4 text-center">
+                            <p className="text-3xl font-bold text-yellow-400 mb-1">
+                              {getPersonalRecords().length}
+                            </p>
+                            <p className="text-sm text-gray-400">
+                              Exercises with PRs
+                            </p>
+                          </div>
+                          <div className="bg-gray-900/50 rounded-lg p-4 text-center">
+                            <p className="text-3xl font-bold text-yellow-400 mb-1">
+                              {getPersonalRecords().length * 3}
+                            </p>
+                            <p className="text-sm text-gray-400">
+                              Total Personal Records
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-center py-12">
+                      <div className="text-6xl mb-4">🏆</div>
+                      <h3 className="text-xl font-bold text-white mb-2">
+                        No Personal Records Yet
+                      </h3>
+                      <p className="text-gray-400 mb-6">
+                        Complete workouts to start tracking your personal records!
                       </p>
                     </div>
                   )}
