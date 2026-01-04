@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { useNavigate, useLocation } from "react-router-dom";
 import MemberLayout from "../../components/MemberLayout";
+import { Trophy, RefreshCw, Download } from "lucide-react";
 
 const MemberWorkoutSession = () => {
   const { user: currentUser } = useAuth();
@@ -16,6 +17,9 @@ const MemberWorkoutSession = () => {
   const [workoutNotes, setWorkoutNotes] = useState("");
   const [loading, setLoading] = useState(true);
   const [showSuccessAnimation, setShowSuccessAnimation] = useState(false);
+  const [personalRecords, setPersonalRecords] = useState({});
+  const [showExerciseSwap, setShowExerciseSwap] = useState(false);
+  const [previousWorkouts, setPreviousWorkouts] = useState([]);
 
   useEffect(() => {
     if (!workout || !day || !scheduleId) {
@@ -28,7 +32,7 @@ const MemberWorkoutSession = () => {
   const fetchExercises = async () => {
     try {
       const { db } = await import("../../config/firebase");
-      const { collection, getDocs } = await import("firebase/firestore");
+      const { collection, getDocs, query, where, orderBy, limit } = await import("firebase/firestore");
 
       const exercisesSnapshot = await getDocs(collection(db, "exercises"));
       const exercisesData = exercisesSnapshot.docs.map((doc) => ({
@@ -37,6 +41,52 @@ const MemberWorkoutSession = () => {
       }));
 
       setExercises(exercisesData);
+
+      // Fetch previous workout logs to calculate PRs
+      const workoutLogsQuery = query(
+        collection(db, "workoutLogs"),
+        where("memberId", "==", currentUser.id),
+        orderBy("completedAt", "desc"),
+        limit(50)
+      );
+      const workoutLogsSnapshot = await getDocs(workoutLogsQuery);
+      const workoutLogsData = workoutLogsSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      setPreviousWorkouts(workoutLogsData);
+
+      // Calculate personal records for each exercise
+      const prs = {};
+      workout.exercises.forEach((exercise) => {
+        const exerciseHistory = [];
+        workoutLogsData.forEach((log) => {
+          const exerciseInLog = log.exercises?.find(
+            (e) => e.exerciseId === exercise.exerciseId
+          );
+          if (exerciseInLog) {
+            exerciseInLog.sets?.forEach((set) => {
+              const volume = (set.weight || 0) * (set.actualReps || 0);
+              exerciseHistory.push({
+                weight: set.weight || 0,
+                reps: set.actualReps || 0,
+                volume: volume,
+              });
+            });
+          }
+        });
+
+        if (exerciseHistory.length > 0) {
+          prs[exercise.exerciseId] = {
+            maxWeight: Math.max(...exerciseHistory.map((h) => h.weight)),
+            maxVolume: Math.max(...exerciseHistory.map((h) => h.volume)),
+            maxReps: Math.max(...exerciseHistory.map((h) => h.reps)),
+          };
+        }
+      });
+
+      setPersonalRecords(prs);
 
       // Initialize exercise logs
       const initialLogs = workout.exercises.map((exercise) => ({
@@ -47,6 +97,7 @@ const MemberWorkoutSession = () => {
           weight: 0,
           rest: set.rest,
           completed: false,
+          isPR: false,
         })),
       }));
 
@@ -71,12 +122,64 @@ const MemberWorkoutSession = () => {
     });
   };
 
+  const checkIfPR = (exerciseId, weight, reps) => {
+    const pr = personalRecords[exerciseId];
+    if (!pr) return true; // First time doing this exercise
+
+    const currentVolume = weight * reps;
+    return (
+      weight > pr.maxWeight ||
+      currentVolume > pr.maxVolume ||
+      (weight === pr.maxWeight && reps > pr.maxReps)
+    );
+  };
+
   const markSetComplete = (exerciseIndex, setIndex) => {
     setExerciseLogs((prev) => {
       const updated = [...prev];
+      const set = updated[exerciseIndex].sets[setIndex];
+      const exerciseId = updated[exerciseIndex].exerciseId;
+
+      // Check if this is a PR
+      const isPR = checkIfPR(exerciseId, parseFloat(set.weight) || 0, parseInt(set.actualReps) || 0);
+
       updated[exerciseIndex].sets[setIndex].completed = true;
+      updated[exerciseIndex].sets[setIndex].isPR = isPR;
+
+      // Show celebration for PR
+      if (isPR) {
+        setTimeout(() => {
+          alert("🎉 New Personal Record! Amazing work!");
+        }, 100);
+      }
+
       return updated;
     });
+  };
+
+  const handleSwapExercise = (newExerciseId) => {
+    // Update the current exercise in the workout
+    const updatedExercises = [...workout.exercises];
+    updatedExercises[currentExerciseIndex] = {
+      ...updatedExercises[currentExerciseIndex],
+      exerciseId: newExerciseId,
+    };
+
+    // Update exercise logs
+    const updatedLogs = [...exerciseLogs];
+    updatedLogs[currentExerciseIndex] = {
+      ...updatedLogs[currentExerciseIndex],
+      exerciseId: newExerciseId,
+      sets: updatedLogs[currentExerciseIndex].sets.map((set) => ({
+        ...set,
+        completed: false,
+        actualReps: set.plannedReps,
+        weight: 0,
+      })),
+    };
+
+    setExerciseLogs(updatedLogs);
+    setShowExerciseSwap(false);
   };
 
   const getCurrentExercise = () => {
@@ -121,6 +224,27 @@ const MemberWorkoutSession = () => {
       const { db } = await import("../../config/firebase");
       const { collection, addDoc, Timestamp } = await import("firebase/firestore");
 
+      // Calculate completion rate
+      let totalPlannedSets = 0;
+      let completedSets = 0;
+      let totalPRs = 0;
+
+      exerciseLogs.forEach((log) => {
+        log.sets.forEach((set) => {
+          totalPlannedSets++;
+          if (set.completed) {
+            completedSets++;
+          }
+          if (set.isPR) {
+            totalPRs++;
+          }
+        });
+      });
+
+      const completionRate = totalPlannedSets > 0
+        ? Math.round((completedSets / totalPlannedSets) * 100)
+        : 0;
+
       // Prepare exercise logs for saving
       const finalLogs = exerciseLogs.map((log, index) => ({
         exerciseId: log.exerciseId,
@@ -130,18 +254,24 @@ const MemberWorkoutSession = () => {
           actualReps: parseInt(set.actualReps) || 0,
           weight: parseFloat(set.weight) || 0,
           rest: set.rest,
+          isPR: set.isPR || false,
         })),
+        personalRecords: log.sets.filter((s) => s.isPR).length,
       }));
 
       // Save workout log
       await addDoc(collection(db, "workoutLogs"), {
         memberId: currentUser.id,
+        gymId: currentUser.gymId,
         scheduleId: scheduleId,
         day: day,
         exercises: finalLogs,
         completedAt: Timestamp.now(),
         duration: 0,
         notes: workoutNotes,
+        completionRate: completionRate,
+        totalPRs: totalPRs,
+        overallFeeling: completionRate >= 90 ? "hard" : completionRate >= 70 ? "moderate" : "easy",
       });
 
       // Show success animation
@@ -252,13 +382,53 @@ const MemberWorkoutSession = () => {
 
         {/* Main Content */}
         <div className="max-w-4xl mx-auto p-4 sm:p-6">
+          {/* Personal Record Info */}
+          {personalRecords[currentExercise.exerciseId] && (
+            <div className="bg-gradient-to-r from-yellow-900/30 to-orange-900/30 rounded-xl p-4 mb-4 border border-yellow-600/30">
+              <div className="flex items-center gap-2 mb-2">
+                <Trophy className="w-5 h-5 text-yellow-400" />
+                <h3 className="font-bold text-yellow-200">Your Personal Records</h3>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="text-center">
+                  <p className="text-xs text-gray-400">Max Weight</p>
+                  <p className="text-lg font-bold text-yellow-300">
+                    {personalRecords[currentExercise.exerciseId].maxWeight} kg
+                  </p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xs text-gray-400">Max Reps</p>
+                  <p className="text-lg font-bold text-yellow-300">
+                    {personalRecords[currentExercise.exerciseId].maxReps}
+                  </p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xs text-gray-400">Max Volume</p>
+                  <p className="text-lg font-bold text-yellow-300">
+                    {personalRecords[currentExercise.exerciseId].maxVolume} kg
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Exercise Info */}
           <div className="bg-gray-800 rounded-xl p-4 sm:p-6 mb-4 border border-gray-700">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg sm:text-xl font-bold text-white">
                 Sets to Complete
               </h2>
-              <span className="text-3xl">💪</span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowExerciseSwap(true)}
+                  className="text-blue-400 hover:text-blue-300 transition flex items-center gap-1 text-sm"
+                  title="Swap exercise"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  <span className="hidden sm:inline">Swap</span>
+                </button>
+                <span className="text-3xl">💪</span>
+              </div>
             </div>
 
             {/* Sets */}
@@ -283,22 +453,30 @@ const MemberWorkoutSession = () => {
                           Target: {set.reps} reps • Rest: {set.rest}
                         </p>
                       </div>
-                      {isCompleted && (
-                        <div className="flex items-center gap-2 text-green-500">
-                          <svg
-                            className="w-6 h-6"
-                            fill="currentColor"
-                            viewBox="0 0 20 20"
-                          >
-                            <path
-                              fillRule="evenodd"
-                              d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                              clipRule="evenodd"
-                            />
-                          </svg>
-                          <span className="font-medium hidden sm:inline">Done</span>
-                        </div>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {setLog.isPR && (
+                          <div className="flex items-center gap-1 bg-yellow-900/30 border border-yellow-600 rounded-lg px-2 py-1">
+                            <Trophy className="w-4 h-4 text-yellow-400" />
+                            <span className="text-xs font-bold text-yellow-300">PR!</span>
+                          </div>
+                        )}
+                        {isCompleted && (
+                          <div className="flex items-center gap-2 text-green-500">
+                            <svg
+                              className="w-6 h-6"
+                              fill="currentColor"
+                              viewBox="0 0 20 20"
+                            >
+                              <path
+                                fillRule="evenodd"
+                                d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                                clipRule="evenodd"
+                              />
+                            </svg>
+                            <span className="font-medium hidden sm:inline">Done</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-3 sm:gap-4 mb-4">
@@ -452,6 +630,70 @@ const MemberWorkoutSession = () => {
               <p className="text-lg sm:text-xl text-gray-300">
                 Workout completed successfully!
               </p>
+            </div>
+          </div>
+        )}
+
+        {/* Exercise Swap Modal */}
+        {showExerciseSwap && (
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+            <div className="bg-gray-800 rounded-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+              <div className="bg-gradient-to-r from-blue-600 to-purple-600 p-6 rounded-t-xl sticky top-0">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+                      <RefreshCw className="w-6 h-6" />
+                      Swap Exercise
+                    </h2>
+                    <p className="text-blue-100 text-sm mt-1">
+                      Replace {getExerciseName(currentExercise.exerciseId)} with another exercise
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setShowExerciseSwap(false)}
+                    className="text-white hover:bg-white/20 rounded-lg p-2 transition"
+                  >
+                    <svg
+                      className="w-6 h-6"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M6 18L18 6M6 6l12 12"
+                      />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-6">
+                <p className="text-gray-300 mb-4">
+                  Select an exercise to replace the current one. Your progress will be reset for this exercise.
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {exercises
+                    .filter((ex) => ex.id !== currentExercise.exerciseId)
+                    .map((exercise) => (
+                      <button
+                        key={exercise.id}
+                        onClick={() => handleSwapExercise(exercise.id)}
+                        className="bg-gray-700 hover:bg-gray-600 border border-gray-600 hover:border-blue-500 rounded-lg p-4 text-left transition"
+                      >
+                        <h3 className="font-bold text-white mb-1">{exercise.name}</h3>
+                        {exercise.category && (
+                          <p className="text-sm text-gray-400 capitalize">
+                            {exercise.category}
+                          </p>
+                        )}
+                      </button>
+                    ))}
+                </div>
+              </div>
             </div>
           </div>
         )}

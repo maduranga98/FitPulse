@@ -53,6 +53,30 @@ const MemberLayout = ({ children }) => {
       label: "My Progress",
     },
     {
+      path: "/member/goals",
+      icon: (
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"
+        />
+      ),
+      label: "My Goals",
+    },
+    {
+      path: "/member/classes",
+      icon: (
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+        />
+      ),
+      label: "Classes",
+    },
+    {
       path: "/member-schedules",
       icon: (
         <path
@@ -75,6 +99,18 @@ const MemberLayout = ({ children }) => {
         />
       ),
       label: "Supplements",
+    },
+    {
+      path: "/member/nutrition",
+      icon: (
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M21 15.546c-.523 0-1.046.151-1.5.454a2.704 2.704 0 01-3 0 2.704 2.704 0 00-3 0 2.704 2.704 0 01-3 0 2.704 2.704 0 00-3 0 2.704 2.704 0 01-3 0 2.701 2.701 0 00-1.5-.454M9 6v2m3-2v2m3-2v2M9 3h.01M12 3h.01M15 3h.01M21 21v-7a2 2 0 00-2-2H5a2 2 0 00-2 2v7h18zm-3-9v-2a2 2 0 00-2-2H8a2 2 0 00-2 2v2h12z"
+        />
+      ),
+      label: "Nutrition",
     },
     {
       path: "/member-settings",
@@ -306,8 +342,8 @@ const MemberLayout = ({ children }) => {
 
         {/* Mobile Bottom Navigation */}
         <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-gray-800 border-t border-gray-700 z-50">
-          <div className="grid grid-cols-3 gap-1 p-2">
-            {navItems.slice(0, 3).map((item) => (
+          <div className="grid grid-cols-4 gap-1 p-2">
+            {navItems.slice(0, 4).map((item) => (
               <button
                 key={item.path}
                 onClick={() => navigate(item.path)}
@@ -331,8 +367,8 @@ const MemberLayout = ({ children }) => {
               </button>
             ))}
           </div>
-          <div className="grid grid-cols-3 gap-1 p-2 pt-0">
-            {navItems.slice(3, 6).map((item) => (
+          <div className="grid grid-cols-4 gap-1 p-2 pt-0">
+            {navItems.slice(4, 8).map((item) => (
               <button
                 key={item.path}
                 onClick={() => navigate(item.path)}

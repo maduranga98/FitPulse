@@ -22,6 +22,11 @@ import AdminPayments from "./pages/AdminPayments";
 import Supplements from "./pages/Supplements";
 import SupplementRequests from "./pages/SupplementRequests";
 import MemberSupplements from "./pages/members/MemberSupplements";
+import MemberGoals from "./pages/members/MemberGoals";
+import MemberClasses from "./pages/members/MemberClasses";
+import MemberNutrition from "./pages/members/MemberNutrition";
+import ClassManagement from "./pages/ClassManagement";
+import EquipmentInventory from "./pages/EquipmentInventory";
 import SuperAdminDashboard from "./pages/SuperAdminDashboard";
 import BulkExerciseImport from "./pages/BulkExerciseImport";
 import Analytics from "./pages/Analytics";
@@ -311,6 +316,40 @@ function App() {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/class-management"
+            element={
+              <ProtectedRoute>
+                <RoleRoute
+                  allowedRoles={[
+                    "admin",
+                    "manager",
+                    "gym_admin",
+                    "gym_manager",
+                  ]}
+                >
+                  <ClassManagement />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/equipment-inventory"
+            element={
+              <ProtectedRoute>
+                <RoleRoute
+                  allowedRoles={[
+                    "admin",
+                    "manager",
+                    "gym_admin",
+                    "gym_manager",
+                  ]}
+                >
+                  <EquipmentInventory />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
 
           {/* Protected Routes - All Authenticated Users */}
           <Route
@@ -424,6 +463,36 @@ function App() {
               <ProtectedRoute>
                 <RoleRoute allowedRoles={["member"]}>
                   <MemberSupplements />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/member/goals"
+            element={
+              <ProtectedRoute>
+                <RoleRoute allowedRoles={["member"]}>
+                  <MemberGoals />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/member/classes"
+            element={
+              <ProtectedRoute>
+                <RoleRoute allowedRoles={["member"]}>
+                  <MemberClasses />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/member/nutrition"
+            element={
+              <ProtectedRoute>
+                <RoleRoute allowedRoles={["member"]}>
+                  <MemberNutrition />
                 </RoleRoute>
               </ProtectedRoute>
             }
