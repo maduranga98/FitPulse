@@ -133,22 +133,11 @@ const Login = () => {
         <div className="w-full max-w-md">
           <div className="bg-gray-800/90 backdrop-blur-xl rounded-2xl border border-gray-700/50 p-8 shadow-2xl">
             <div className="flex items-center justify-center gap-3 mb-8">
-              <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-600/50">
-                <svg
-                  className="w-7 h-7 text-white"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M13 10V3L4 14h7v7l9-11h-7z"
-                  />
-                </svg>
-              </div>
-              <h1 className="text-2xl font-bold text-white">Gym Manager</h1>
+              {/* <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-600/50">
+               
+              </div> */}
+              <img src="/logo.png" alt="PulsedGym Logo" className="w-9 h-9" />
+              <h1 className="text-2xl font-bold text-white">PulsedGym</h1>
             </div>
 
             <h2 className="text-xl font-semibold text-white mb-2 text-center">
