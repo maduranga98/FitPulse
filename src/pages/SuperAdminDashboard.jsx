@@ -215,6 +215,43 @@ const SuperAdminDashboard = () => {
     }
   };
 
+  const handleToggleGymStatus = async (gymId, currentStatus) => {
+    const newStatus = currentStatus === "active" ? "inactive" : "active";
+    const actionText = newStatus === "inactive" ? "deactivate" : "activate";
+
+    if (
+      !confirm(
+        `Are you sure you want to ${actionText} this gym? ${
+          newStatus === "inactive"
+            ? "Gym owners and members will not be able to log in."
+            : "Gym owners and members will be able to log in again."
+        }`
+      )
+    )
+      return;
+
+    try {
+      const { db } = await import("../config/firebase");
+      const { doc, updateDoc } = await import("firebase/firestore");
+
+      await updateDoc(doc(db, "gyms", gymId), {
+        status: newStatus,
+      });
+
+      setSmsStatus({
+        type: "success",
+        message: `Gym ${actionText}d successfully`,
+      });
+      fetchGyms();
+    } catch (error) {
+      console.error("Error toggling gym status:", error);
+      setSmsStatus({
+        type: "error",
+        message: `Failed to ${actionText} gym`,
+      });
+    }
+  };
+
   const handleDeleteGym = async (gymId) => {
     if (
       !confirm("Are you sure? This will delete the gym and all related data.")
@@ -478,18 +515,30 @@ const SuperAdminDashboard = () => {
                   </p>
                 </div>
 
-                <div className="flex gap-2">
+                <div className="flex flex-col gap-2">
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setViewGym(gym)}
+                      className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition"
+                    >
+                      View Details
+                    </button>
+                    <button
+                      onClick={() => handleDeleteGym(gym.id)}
+                      className="px-4 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-600 rounded-lg text-sm font-medium transition"
+                    >
+                      Delete
+                    </button>
+                  </div>
                   <button
-                    onClick={() => setViewGym(gym)}
-                    className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition"
+                    onClick={() => handleToggleGymStatus(gym.id, gym.status)}
+                    className={`w-full px-4 py-2 rounded-lg text-sm font-medium transition ${
+                      gym.status === "active"
+                        ? "bg-orange-600/20 hover:bg-orange-600/30 text-orange-600"
+                        : "bg-green-600/20 hover:bg-green-600/30 text-green-600"
+                    }`}
                   >
-                    View Details
-                  </button>
-                  <button
-                    onClick={() => handleDeleteGym(gym.id)}
-                    className="px-4 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-600 rounded-lg text-sm font-medium transition"
-                  >
-                    Delete
+                    {gym.status === "active" ? "Deactivate Gym" : "Activate Gym"}
                   </button>
                 </div>
               </div>

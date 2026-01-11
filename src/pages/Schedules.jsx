@@ -98,16 +98,29 @@ const Schedules = () => {
         setMembers(membersData);
       }
 
-      const exercisesSnapshot = await getDocs(
-        query(collection(db, "exercises"), where("gymId", "==", currentGymId))
+      // Fetch gym-specific exercises
+      const gymExercisesSnapshot = await getDocs(
+        query(collection(db, "gym_exercises"), where("gymId", "==", currentGymId))
       );
-      const exercisesData = exercisesSnapshot.docs.map((doc) => ({
+      const gymExercisesData = gymExercisesSnapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
       }));
 
+      // Fetch common exercises (not filtered by gymId)
+      const commonExercisesSnapshot = await getDocs(
+        collection(db, "common_exercises")
+      );
+      const commonExercisesData = commonExercisesSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      // Combine both gym exercises and common exercises
+      const allExercises = [...gymExercisesData, ...commonExercisesData];
+
       setSchedules(schedulesData);
-      setExercises(exercisesData);
+      setExercises(allExercises);
       setLoading(false);
     } catch (error) {
       console.error("Error fetching data:", error);

@@ -22,9 +22,11 @@ const MealPlanManagement = () => {
   const [loading, setLoading] = useState(true);
   const [showMealPlanModal, setShowMealPlanModal] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
+  const [showAssignedMembersModal, setShowAssignedMembersModal] = useState(false);
   const [editingMealPlan, setEditingMealPlan] = useState(null);
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [assignedMembers, setAssignedMembers] = useState([]);
 
   const [mealPlanForm, setMealPlanForm] = useState({
     name: "",
@@ -134,6 +136,56 @@ const MealPlanManagement = () => {
     setSelectedPlan(plan);
     setSelectedMembers([]);
     setShowAssignModal(true);
+  };
+
+  const handleViewAssignedMembers = async (plan) => {
+    setSelectedPlan(plan);
+    try {
+      const { db } = await import("../config/firebase");
+      const { collection, query, where, getDocs } = await import("firebase/firestore");
+
+      const assignmentsQuery = query(
+        collection(db, "mealPlanAssignments"),
+        where("mealPlanId", "==", plan.id),
+        where("gymId", "==", currentUser.gymId)
+      );
+
+      const assignmentsSnapshot = await getDocs(assignmentsQuery);
+      const assignments = assignmentsSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      setAssignedMembers(assignments);
+      setShowAssignedMembersModal(true);
+    } catch (error) {
+      console.error("Error fetching assigned members:", error);
+      alert("Failed to fetch assigned members. Please try again.");
+    }
+  };
+
+  const handleUnassignMember = async (assignmentId) => {
+    if (!confirm("Are you sure you want to unassign this member from the meal plan?")) return;
+
+    try {
+      const { db } = await import("../config/firebase");
+      const { doc, deleteDoc } = await import("firebase/firestore");
+
+      await deleteDoc(doc(db, "mealPlanAssignments", assignmentId));
+
+      // Refresh the assigned members list
+      if (selectedPlan) {
+        handleViewAssignedMembers(selectedPlan);
+      }
+
+      // Refresh meal plans to update counts
+      fetchData();
+
+      alert("Member unassigned successfully! ✅");
+    } catch (error) {
+      console.error("Error unassigning member:", error);
+      alert("Failed to unassign member. Please try again.");
+    }
   };
 
   const handleAddMeal = () => {
@@ -393,26 +445,37 @@ const MealPlanManagement = () => {
                   </div>
                 </div>
 
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => handleOpenAssignModal(plan)}
-                    className="flex-1 py-2 px-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition flex items-center justify-center gap-2 text-sm"
-                  >
-                    <UserPlus className="w-4 h-4" />
-                    Assign
-                  </button>
-                  <button
-                    onClick={() => handleOpenMealPlanModal(plan)}
-                    className="py-2 px-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition"
-                  >
-                    <Edit2 className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => handleDeleteMealPlan(plan.id)}
-                    className="py-2 px-3 bg-red-600 hover:bg-red-700 text-white rounded-lg transition"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleOpenAssignModal(plan)}
+                      className="flex-1 py-2 px-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition flex items-center justify-center gap-2 text-sm"
+                    >
+                      <UserPlus className="w-4 h-4" />
+                      Assign
+                    </button>
+                    <button
+                      onClick={() => handleOpenMealPlanModal(plan)}
+                      className="py-2 px-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteMealPlan(plan.id)}
+                      className="py-2 px-3 bg-red-600 hover:bg-red-700 text-white rounded-lg transition"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                  {plan.assignedCount > 0 && (
+                    <button
+                      onClick={() => handleViewAssignedMembers(plan)}
+                      className="w-full py-2 px-3 bg-blue-600/20 hover:bg-blue-600/30 text-blue-600 border border-blue-600/50 rounded-lg transition flex items-center justify-center gap-2 text-sm"
+                    >
+                      <Users className="w-4 h-4" />
+                      View Assigned Members
+                    </button>
+                  )}
                 </div>
               </div>
             ))
@@ -707,6 +770,104 @@ const MealPlanManagement = () => {
                 >
                   <Check className="w-4 h-4" />
                   Assign to {selectedMembers.length} Member(s)
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Assigned Members Modal */}
+        {showAssignedMembersModal && selectedPlan && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div className="bg-gray-800 rounded-2xl border border-gray-700 w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+              <div className="border-b border-gray-700 p-6 flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl font-bold text-white">Assigned Members</h2>
+                  <p className="text-gray-400 text-sm mt-1">
+                    Meal Plan: {selectedPlan.name}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowAssignedMembersModal(false)}
+                  className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition"
+                >
+                  <svg
+                    className="w-6 h-6"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M6 18L18 6M6 6l12 12"
+                    />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="p-6 overflow-y-auto flex-1">
+                {assignedMembers.length === 0 ? (
+                  <div className="text-center py-12">
+                    <p className="text-gray-400">No members assigned yet</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {assignedMembers.map((assignment) => (
+                      <div
+                        key={assignment.id}
+                        className="bg-gray-900 rounded-lg p-4 flex items-center justify-between"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-gradient-to-br from-green-600 to-emerald-600 rounded-full flex items-center justify-center flex-shrink-0">
+                            <span className="text-white font-semibold">
+                              {assignment.memberName?.charAt(0).toUpperCase() || "M"}
+                            </span>
+                          </div>
+                          <div>
+                            <p className="text-white font-medium">
+                              {assignment.memberName || "Unknown Member"}
+                            </p>
+                            <p className="text-xs text-gray-400">
+                              Assigned on{" "}
+                              {assignment.assignedAt?.toDate
+                                ? assignment.assignedAt.toDate().toLocaleDateString()
+                                : "N/A"}
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleUnassignMember(assignment.id)}
+                          className="p-2 bg-red-600/20 hover:bg-red-600/30 text-red-600 rounded-lg transition"
+                          title="Unassign Member"
+                        >
+                          <svg
+                            className="w-5 h-5"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                            />
+                          </svg>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="border-t border-gray-700 p-6">
+                <button
+                  onClick={() => setShowAssignedMembersModal(false)}
+                  className="w-full py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-medium transition"
+                >
+                  Close
                 </button>
               </div>
             </div>
