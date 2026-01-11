@@ -265,7 +265,7 @@ const Sidebar = ({ isOpen, onClose }) => {
         <div className="flex flex-col h-full">
           {/* Logo */}
           <div className="flex items-center gap-3 p-6 border-b border-gray-700 flex-shrink-0">
-            <img src="/logo.svg" alt="PulsedGym Logo" className="w-10 h-10" />
+            <img src="/logo.png" alt="PulsedGym Logo" className="w-10 h-10" />
             <span className="text-xl font-bold text-white">PulsedGym</span>
           </div>
 

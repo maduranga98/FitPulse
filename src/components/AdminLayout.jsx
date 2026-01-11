@@ -14,7 +14,7 @@ const AdminLayout = ({ children }) => {
         {/* Mobile Header */}
         <header className="lg:hidden bg-gray-800 border-b border-gray-700 px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <img src="/logo.svg" alt="PulsedGym Logo" className="w-8 h-8" />
+            <img src="/logo.png" alt="PulsedGym Logo" className="w-8 h-8" />
             <span className="text-lg font-bold text-white">PulsedGym</span>
           </div>
 
