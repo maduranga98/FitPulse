@@ -78,6 +78,7 @@ const MemberComplaints = () => {
         status: "Pending",
         createdAt: Timestamp.now(),
         responses: [],
+        gymId: currentUser.gymId || null,
       };
 
       await addDoc(collection(db, "complaints"), complaintData);

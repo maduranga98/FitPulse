@@ -77,12 +77,29 @@ const Exercises = ({ onLogout, onNavigate }) => {
         orderBy("name", "asc")
       );
       const categoriesSnapshot = await getDocs(categoriesQuery);
-      const categoriesData = categoriesSnapshot.docs.map((doc) => ({
+      const gymCategoriesData = categoriesSnapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
       }));
 
-      // Fetch gym-specific exercises from gym_exercises collection
+      // ✅ NEW: Fetch common categories (no gymId or empty gymId)
+      const allCategoriesSnapshot = await getDocs(
+        collection(db, "exerciseCategories")
+      );
+      const commonCategoriesData = allCategoriesSnapshot.docs
+        .filter((doc) => {
+          const data = doc.data();
+          return !data.gymId || data.gymId === null || data.gymId === "";
+        })
+        .map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+
+      // ✅ NEW: Combine both gym and common categories
+      const allCategories = [...gymCategoriesData, ...commonCategoriesData];
+
+      // Fetch gym exercises (unchanged)
       const gymExercisesRef = collection(db, "gym_exercises");
       const gymExercisesQuery = query(
         gymExercisesRef,
@@ -95,9 +112,15 @@ const Exercises = ({ onLogout, onNavigate }) => {
         ...doc.data(),
       }));
 
-      setCategories(categoriesData);
+      setCategories(allCategories); // ✅ Now contains both gym + common
       setExercises(gymExercisesData);
       setLoading(false);
+
+      console.log("Loaded categories:", {
+        gymCategories: gymCategoriesData.length,
+        commonCategories: commonCategoriesData.length,
+        total: allCategories.length,
+      });
     } catch (error) {
       console.error("Error fetching data:", error);
       setLoading(false);
@@ -736,7 +759,7 @@ const Exercises = ({ onLogout, onNavigate }) => {
             </select>
           </div>
 
-          {/* Categories Overview */}
+          {/* Categories Overview - ✅ FIXED: Only show categories with exercises */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
             <button
               onClick={() => setSelectedCategory("all")}
@@ -752,24 +775,31 @@ const Exercises = ({ onLogout, onNavigate }) => {
                 {currentExercises.length} exercises
               </div>
             </button>
-            {currentCategories.map((cat) => (
-              <button
-                key={cat.id}
-                onClick={() => setSelectedCategory(cat.id)}
-                className={`p-4 rounded-xl border transition ${
-                  selectedCategory === cat.id
-                    ? "bg-blue-600 border-blue-600 text-white"
-                    : "bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600"
-                }`}
-              >
-                <div className="text-2xl mb-2">{cat.icon}</div>
-                <div className="text-sm font-medium truncate">{cat.name}</div>
-                <div className="text-xs mt-1">
-                  {currentExercises.filter((e) => e.category === cat.id).length}{" "}
-                  exercises
-                </div>
-              </button>
-            ))}
+            {currentCategories
+              .filter((cat) =>
+                currentExercises.some((ex) => ex.category === cat.id)
+              ) // ✅ Only show categories with exercises
+              .map((cat) => (
+                <button
+                  key={cat.id}
+                  onClick={() => setSelectedCategory(cat.id)}
+                  className={`p-4 rounded-xl border transition ${
+                    selectedCategory === cat.id
+                      ? "bg-blue-600 border-blue-600 text-white"
+                      : "bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600"
+                  }`}
+                >
+                  <div className="text-2xl mb-2">{cat.icon}</div>
+                  <div className="text-sm font-medium truncate">{cat.name}</div>
+                  <div className="text-xs mt-1">
+                    {
+                      currentExercises.filter((e) => e.category === cat.id)
+                        .length
+                    }{" "}
+                    exercises
+                  </div>
+                </button>
+              ))}
           </div>
 
           {/* Exercises Grid */}
@@ -1008,7 +1038,6 @@ const Exercises = ({ onLogout, onNavigate }) => {
             </div>
 
             <div className="p-6">
-              {/* Form Content Omitted for brevity, assumed same as original */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Basic Info */}
                 <div>
@@ -1714,7 +1743,7 @@ const Exercises = ({ onLogout, onNavigate }) => {
                     className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
                   />
                 </div>
-                {/* Category Dropdown (REPLACED BUTTONS) */}
+                {/* Category Dropdown */}
                 <select
                   value={browseSelectedCategory}
                   onChange={(e) => setBrowseSelectedCategory(e.target.value)}
@@ -1886,7 +1915,7 @@ const Exercises = ({ onLogout, onNavigate }) => {
         </div>
       )}
 
-      {/* View Exercise Modal - MOVED AFTER BROWSE MODAL AND UPDATED Z-INDEX */}
+      {/* View Exercise Modal - ✅ FIXED: Category display by ID */}
       {viewExercise && (
         <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
           <div className="bg-gray-800 rounded-2xl border border-gray-700 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
@@ -1986,17 +2015,20 @@ const Exercises = ({ onLogout, onNavigate }) => {
                   </div>
                 </div>
               )}
-              {/* Details Grid */}
+
+              {/* Details Grid - ✅ FIXED */}
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
                 <div className="bg-gray-900 rounded-lg p-4">
                   <div className="text-gray-400 text-sm mb-1">Category</div>
                   <div className="text-white font-medium">
-                    {
-                      categories.find((c) => c.id === viewExercise.category)
-                        ?.icon
-                    }{" "}
-                    {categories.find((c) => c.id === viewExercise.category)
-                      ?.name || "N/A"}
+                    {(() => {
+                      const category = categories.find(
+                        (c) => c.id === viewExercise.category
+                      );
+                      return category
+                        ? `${category.icon} ${category.name}`
+                        : "N/A";
+                    })()}
                   </div>
                 </div>
                 <div className="bg-gray-900 rounded-lg p-4">
