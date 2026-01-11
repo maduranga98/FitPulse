@@ -14,22 +14,8 @@ const AdminLayout = ({ children }) => {
         {/* Mobile Header */}
         <header className="lg:hidden bg-gray-800 border-b border-gray-700 px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-              <svg
-                className="w-5 h-5 text-white"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M13 10V3L4 14h7v7l9-11h-7z"
-                />
-              </svg>
-            </div>
-            <span className="text-lg font-bold text-white">FitPulse</span>
+            <img src="/logo.svg" alt="PulsedGym Logo" className="w-8 h-8" />
+            <span className="text-lg font-bold text-white">PulsedGym</span>
           </div>
 
           {/* Mobile Menu Button */}

@@ -58,6 +58,22 @@ export const AuthProvider = ({ children }) => {
           return { success: false, error: "Invalid username or password" };
         }
 
+        // Check if gym is active (if user belongs to a gym)
+        if (userData.gymId) {
+          const { doc, getDoc } = await import("firebase/firestore");
+          const gymDoc = await getDoc(doc(db, "gyms", userData.gymId));
+
+          if (gymDoc.exists()) {
+            const gymData = gymDoc.data();
+            if (gymData.status === "inactive") {
+              return {
+                success: false,
+                error: "This gym has been deactivated. Please contact the super admin.",
+              };
+            }
+          }
+        }
+
         // Map old roles to new roles for backward compatibility
         let role = userData.role;
         if (role === "admin") {
@@ -101,6 +117,22 @@ export const AuthProvider = ({ children }) => {
             success: false,
             error: "Your membership is not active. Please contact the gym.",
           };
+        }
+
+        // Check if gym is active (if member belongs to a gym)
+        if (memberData.gymId) {
+          const { doc, getDoc } = await import("firebase/firestore");
+          const gymDoc = await getDoc(doc(db, "gyms", memberData.gymId));
+
+          if (gymDoc.exists()) {
+            const gymData = gymDoc.data();
+            if (gymData.status === "inactive") {
+              return {
+                success: false,
+                error: "This gym has been deactivated. Please contact the gym administrator.",
+              };
+            }
+          }
         }
 
         const memberToStore = {

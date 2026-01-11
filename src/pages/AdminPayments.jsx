@@ -12,6 +12,8 @@ const AdminPayments = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [selectedMember, setSelectedMember] = useState(null);
+  const [selectedPayment, setSelectedPayment] = useState(null);
+  const [isEditMode, setIsEditMode] = useState(false);
   const [paymentForm, setPaymentForm] = useState({
     amount: "",
     month: "",
@@ -21,6 +23,7 @@ const AdminPayments = () => {
   const [submitting, setSubmitting] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
+  const [expandedMember, setExpandedMember] = useState(null);
 
   const isAdmin = user?.role === "gym_admin" || user?.role === "manager";
 
@@ -96,11 +99,26 @@ const AdminPayments = () => {
 
   const handleOpenPaymentModal = (member) => {
     setSelectedMember(member);
+    setSelectedPayment(null);
+    setIsEditMode(false);
     setPaymentForm({
       amount: member.membershipFee || "",
       month: getCurrentMonth(),
       paymentMethod: "Cash",
       notes: "",
+    });
+    setShowPaymentModal(true);
+  };
+
+  const handleOpenEditPaymentModal = (member, payment) => {
+    setSelectedMember(member);
+    setSelectedPayment(payment);
+    setIsEditMode(true);
+    setPaymentForm({
+      amount: payment.amount || "",
+      month: payment.month || "",
+      paymentMethod: payment.paymentMethod || "Cash",
+      notes: payment.notes || "",
     });
     setShowPaymentModal(true);
   };
@@ -111,11 +129,42 @@ const AdminPayments = () => {
 
     try {
       const { db } = await import("../config/firebase");
-      const { collection, addDoc, Timestamp, doc, getDoc } = await import(
-        "firebase/firestore"
-      );
+      const { collection, addDoc, Timestamp, doc, getDoc, updateDoc } =
+        await import("firebase/firestore");
 
-      // Check if payment already exists for this month
+      if (isEditMode && selectedPayment) {
+        // Update existing payment
+        const paymentData = {
+          amount: parseFloat(paymentForm.amount),
+          month: paymentForm.month,
+          paymentMethod: paymentForm.paymentMethod,
+          notes: paymentForm.notes,
+          updatedAt: Timestamp.now(),
+          updatedBy: user?.name || user?.username || user?.email || "Admin",
+        };
+
+        await updateDoc(doc(db, "payments", selectedPayment.id), paymentData);
+
+        // Reset form and close modal
+        setPaymentForm({
+          amount: "",
+          month: getCurrentMonth(),
+          paymentMethod: "Cash",
+          notes: "",
+        });
+
+        setShowPaymentModal(false);
+        setSelectedMember(null);
+        setSelectedPayment(null);
+        setIsEditMode(false);
+        fetchData();
+
+        alert("Payment updated successfully! ✅");
+        setSubmitting(false);
+        return;
+      }
+
+      // Check if payment already exists for this month (only for new payments)
       const alreadyPaid = checkPaymentStatus(
         selectedMember.id,
         paymentForm.month
@@ -198,6 +247,22 @@ const AdminPayments = () => {
       alert("Failed to record payment. Please try again.");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleDeletePayment = async (paymentId) => {
+    if (!confirm("Are you sure you want to delete this payment?")) return;
+
+    try {
+      const { db } = await import("../config/firebase");
+      const { doc, deleteDoc } = await import("firebase/firestore");
+
+      await deleteDoc(doc(db, "payments", paymentId));
+      fetchData();
+      alert("Payment deleted successfully! ✅");
+    } catch (error) {
+      console.error("Error deleting payment:", error);
+      alert("Failed to delete payment. Please try again.");
     }
   };
 
@@ -544,6 +609,21 @@ const AdminPayments = () => {
                         {isPaid ? "Already Paid" : "Record Payment"}
                       </button>
 
+                      {memberPayments.length > 0 && (
+                        <button
+                          onClick={() =>
+                            setExpandedMember(
+                              expandedMember === member.id ? null : member.id
+                            )
+                          }
+                          className="w-full py-2 rounded-lg font-medium transition active:scale-95 bg-blue-600/20 text-blue-600 hover:bg-blue-600/30 border border-blue-600/50"
+                        >
+                          {expandedMember === member.id
+                            ? "Hide Payment History"
+                            : "View Payment History"}
+                        </button>
+                      )}
+
                       <button
                         onClick={() =>
                           handleToggleMemberStatus(member.id, member.status)
@@ -591,6 +671,84 @@ const AdminPayments = () => {
                         )}
                       </button>
                     </div>
+
+                    {/* Payment History */}
+                    {expandedMember === member.id && memberPayments.length > 0 && (
+                      <div className="mt-4 pt-4 border-t border-gray-700">
+                        <h4 className="text-sm font-semibold text-gray-300 mb-3">
+                          Payment History
+                        </h4>
+                        <div className="space-y-2 max-h-64 overflow-y-auto">
+                          {memberPayments.map((payment) => (
+                            <div
+                              key={payment.id}
+                              className="bg-gray-900 rounded-lg p-3 flex items-center justify-between"
+                            >
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="text-white font-medium">
+                                    Rs. {payment.amount}
+                                  </span>
+                                  <span className="text-xs px-2 py-0.5 bg-gray-700 text-gray-300 rounded">
+                                    {payment.paymentMethod}
+                                  </span>
+                                </div>
+                                <div className="text-xs text-gray-400">
+                                  {formatMonth(payment.month)} - {formatDate(payment.paidAt)}
+                                </div>
+                                {payment.notes && (
+                                  <div className="text-xs text-gray-500 mt-1">
+                                    {payment.notes}
+                                  </div>
+                                )}
+                              </div>
+                              <div className="flex gap-1">
+                                <button
+                                  onClick={() =>
+                                    handleOpenEditPaymentModal(member, payment)
+                                  }
+                                  className="p-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-600 rounded-lg transition"
+                                  title="Edit Payment"
+                                >
+                                  <svg
+                                    className="w-4 h-4"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                                    />
+                                  </svg>
+                                </button>
+                                <button
+                                  onClick={() => handleDeletePayment(payment.id)}
+                                  className="p-2 bg-red-600/20 hover:bg-red-600/30 text-red-600 rounded-lg transition"
+                                  title="Delete Payment"
+                                >
+                                  <svg
+                                    className="w-4 h-4"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                    />
+                                  </svg>
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -606,7 +764,7 @@ const AdminPayments = () => {
             <div className="border-b border-gray-700 p-6 flex items-center justify-between">
               <div>
                 <h2 className="text-2xl font-bold text-white">
-                  Record Payment
+                  {isEditMode ? "Edit Payment" : "Record Payment"}
                 </h2>
                 <p className="text-gray-400 text-sm mt-1">
                   {selectedMember.name}
@@ -728,7 +886,13 @@ const AdminPayments = () => {
                   disabled={submitting}
                   className="flex-1 px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-lg font-medium transition active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {submitting ? "Recording..." : "Record Payment"}
+                  {submitting
+                    ? isEditMode
+                      ? "Updating..."
+                      : "Recording..."
+                    : isEditMode
+                    ? "Update Payment"
+                    : "Record Payment"}
                 </button>
               </div>
             </form>

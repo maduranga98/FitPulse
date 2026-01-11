@@ -428,14 +428,15 @@ const ProgressPhotoCapture = ({ onComplete, onCancel }) => {
               <h3 className="font-bold text-white mb-4 text-lg">
                 Upload Progress Photos
               </h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
                 {photoTypes.map((photo) => (
                   <div key={photo.key} className="bg-gray-700 rounded-lg p-4">
                     <div className="text-center mb-3">
+                      <div className="text-3xl mb-2">{photo.icon}</div>
                       <p className="font-medium text-white mb-1">
                         {photo.title}
                       </p>
-                      <p className="text-sm text-gray-400">
+                      <p className="text-xs text-gray-400">
                         {photo.instruction}
                       </p>
                     </div>
@@ -445,7 +446,7 @@ const ProgressPhotoCapture = ({ onComplete, onCancel }) => {
                         <img
                           src={capturedPhotos[photo.key].url}
                           alt={photo.title}
-                          className="w-full h-48 object-cover rounded-lg mb-2"
+                          className="w-full h-56 sm:h-48 lg:h-56 object-cover rounded-lg mb-2"
                         />
                         <button
                           onClick={() => retakePhoto(photo.key)}
@@ -468,11 +469,14 @@ const ProgressPhotoCapture = ({ onComplete, onCancel }) => {
                           onClick={() =>
                             fileInputRefs[photo.key].current?.click()
                           }
-                          className="w-full h-48 border-2 border-dashed border-gray-500 hover:border-blue-500 rounded-lg flex flex-col items-center justify-center gap-2 transition bg-gray-800 hover:bg-gray-750 text-gray-400 hover:text-blue-400"
+                          className="w-full h-56 sm:h-48 lg:h-56 border-2 border-dashed border-gray-500 hover:border-blue-500 rounded-lg flex flex-col items-center justify-center gap-3 transition bg-gray-800 hover:bg-gray-750 text-gray-400 hover:text-blue-400"
                         >
-                          <Upload className="w-12 h-12" />
+                          <Upload className="w-10 h-10 sm:w-12 sm:h-12" />
                           <span className="text-sm font-medium">
                             Click to Upload
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            {photo.title}
                           </span>
                         </button>
                       </div>

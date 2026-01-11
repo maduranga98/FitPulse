@@ -146,22 +146,8 @@ const MemberLayout = ({ children }) => {
       <aside className="hidden lg:flex lg:flex-col lg:w-64 bg-gray-800 border-r border-gray-700 flex-shrink-0">
         {/* Logo */}
         <div className="flex items-center gap-3 p-6 border-b border-gray-700 flex-shrink-0">
-          <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
-            <svg
-              className="w-6 h-6 text-white"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M13 10V3L4 14h7v7l9-11h-7z"
-              />
-            </svg>
-          </div>
-          <span className="text-xl font-bold text-white">FitPulse</span>
+          <img src="/logo.svg" alt="PulsedGym Logo" className="w-10 h-10" />
+          <span className="text-xl font-bold text-white">PulsedGym</span>
         </div>
 
         {/* Navigation */}
@@ -254,22 +240,8 @@ const MemberLayout = ({ children }) => {
 
           {/* Logo */}
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-              <svg
-                className="w-5 h-5 text-white"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M13 10V3L4 14h7v7l9-11h-7z"
-                />
-              </svg>
-            </div>
-            <span className="text-lg font-bold text-white">FitPulse</span>
+            <img src="/logo.svg" alt="PulsedGym Logo" className="w-8 h-8" />
+            <span className="text-lg font-bold text-white">PulsedGym</span>
           </div>
 
           {/* User Avatar */}
@@ -293,22 +265,8 @@ const MemberLayout = ({ children }) => {
                 {/* Header */}
                 <div className="flex items-center justify-between p-4 border-b border-gray-700">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
-                      <svg
-                        className="w-6 h-6 text-white"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M13 10V3L4 14h7v7l9-11h-7z"
-                        />
-                      </svg>
-                    </div>
-                    <span className="text-xl font-bold text-white">FitPulse</span>
+                    <img src="/logo.svg" alt="PulsedGym Logo" className="w-10 h-10" />
+                    <span className="text-xl font-bold text-white">PulsedGym</span>
                   </div>
                   <button
                     onClick={() => setShowMobileMenu(false)}
