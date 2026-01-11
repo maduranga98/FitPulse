@@ -34,11 +34,24 @@ const MemberWorkoutSession = () => {
       const { db } = await import("../../config/firebase");
       const { collection, getDocs, query, where, orderBy, limit } = await import("firebase/firestore");
 
-      const exercisesSnapshot = await getDocs(collection(db, "exercises"));
-      const exercisesData = exercisesSnapshot.docs.map((doc) => ({
+      // Fetch common exercises
+      const commonExercisesSnapshot = await getDocs(collection(db, "common_exercises"));
+      const commonExercisesData = commonExercisesSnapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
       }));
+
+      // Fetch gym-specific exercises
+      const gymExercisesSnapshot = await getDocs(
+        query(collection(db, "gym_exercises"), where("gymId", "==", currentUser.gymId))
+      );
+      const gymExercisesData = gymExercisesSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      // Combine all exercises
+      const exercisesData = [...commonExercisesData, ...gymExercisesData];
 
       setExercises(exercisesData);
 
