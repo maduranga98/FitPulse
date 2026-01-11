@@ -9,6 +9,7 @@ const Schedules = () => {
   const [schedules, setSchedules] = useState([]);
   const [members, setMembers] = useState([]);
   const [exercises, setExercises] = useState([]);
+  const [categories, setCategories] = useState([]); // ✅ NEW: Add categories state
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showAddSchedule, setShowAddSchedule] = useState(false);
@@ -28,6 +29,7 @@ const Schedules = () => {
       fetchData();
     }
   }, [currentGymId]);
+
   const [scheduleForm, setScheduleForm] = useState({
     memberId: "",
     title: "",
@@ -98,29 +100,89 @@ const Schedules = () => {
         setMembers(membersData);
       }
 
+      // ✅ NEW: Fetch gym-specific categories
+      const categoriesRef = collection(db, "exerciseCategories");
+      const categoriesQuery = query(
+        categoriesRef,
+        where("gymId", "==", currentGymId)
+      );
+      const categoriesSnapshot = await getDocs(categoriesQuery);
+      const gymCategoriesData = categoriesSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      // ✅ NEW: Fetch common categories (no gymId or empty gymId)
+      const allCategoriesSnapshot = await getDocs(
+        collection(db, "exerciseCategories")
+      );
+      const commonCategoriesData = allCategoriesSnapshot.docs
+        .filter((doc) => {
+          const data = doc.data();
+          return !data.gymId || data.gymId === null || data.gymId === "";
+        })
+        .map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+
+      // ✅ NEW: Combine both gym and common categories
+      const allCategories = [...gymCategoriesData, ...commonCategoriesData];
+
       // Fetch gym-specific exercises
       const gymExercisesSnapshot = await getDocs(
-        query(collection(db, "gym_exercises"), where("gymId", "==", currentGymId))
+        query(
+          collection(db, "gym_exercises"),
+          where("gymId", "==", currentGymId)
+        )
       );
       const gymExercisesData = gymExercisesSnapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
       }));
 
-      // Fetch common exercises (not filtered by gymId)
-      const commonExercisesSnapshot = await getDocs(
-        collection(db, "common_exercises")
+      const selectionsSnapshot = await getDocs(
+        query(
+          collection(db, "gym_exercise_selections"),
+          where("gymId", "==", currentGymId)
+        )
       );
-      const commonExercisesData = commonExercisesSnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
+      const selectedExerciseIds = selectionsSnapshot.docs.map(
+        (doc) => doc.data().exerciseId
+      );
+
+      // Fetch common exercises (not filtered by gymId)
+      let commonExercisesData = [];
+      if (selectedExerciseIds.length > 0) {
+        const exercisePromises = selectedExerciseIds.map(async (exerciseId) => {
+          const { doc, getDoc } = await import("firebase/firestore");
+          const exerciseDocRef = doc(db, "exercises", exerciseId);
+          const exerciseDoc = await getDoc(exerciseDocRef);
+          if (exerciseDoc.exists()) {
+            return {
+              id: exerciseDoc.id,
+              ...exerciseDoc.data(),
+            };
+          }
+          return null;
+        });
+
+        const fetchedExercises = await Promise.all(exercisePromises);
+        commonExercisesData = fetchedExercises.filter((ex) => ex !== null);
+      }
 
       // Combine both gym exercises and common exercises
       const allExercises = [...gymExercisesData, ...commonExercisesData];
 
+      console.log("Loaded data:", {
+        exercises: allExercises.length,
+        categories: allCategories.length,
+        schedules: schedulesData.length,
+      });
+
       setSchedules(schedulesData);
       setExercises(allExercises);
+      setCategories(allCategories); // ✅ NEW: Set categories state
       setLoading(false);
     } catch (error) {
       console.error("Error fetching data:", error);
@@ -431,6 +493,24 @@ const Schedules = () => {
     return exercise ? exercise.name : "Unknown Exercise";
   };
 
+  // ✅ NEW: Function to get category name by ID
+  const getCategoryName = (categoryId) => {
+    const category = categories.find((c) => c.id === categoryId);
+    return category ? category.name : "";
+  };
+
+  // ✅ NEW: Helper function to filter exercises by category name
+  const getExercisesByCategory = (categoryName) => {
+    return exercises.filter((ex) => {
+      // Check both category ID and categoryName field
+      const category = categories.find((c) => c.id === ex.category);
+      return (
+        category?.name?.toLowerCase() === categoryName.toLowerCase() ||
+        ex.categoryName?.toLowerCase() === categoryName.toLowerCase()
+      );
+    });
+  };
+
   const formatDate = (timestamp) => {
     if (!timestamp) return "N/A";
     const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
@@ -508,45 +588,6 @@ const Schedules = () => {
         </header>
 
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-          {/* {isAdmin && (
-            <div className="mb-6 flex items-center justify-between flex-wrap gap-4">
-              {members.length > 0 && (
-                <select
-                  value={selectedMember}
-                  onChange={(e) => setSelectedMember(e.target.value)}
-                  className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="all">All Members</option>
-                  {members.map((member) => (
-                    <option key={member.id} value={member.id}>
-                      {member.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-
-              <button
-                onClick={() => setShowAddSchedule(true)}
-                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition flex items-center gap-2 shadow-lg ml-auto"
-              >
-                <svg
-                  className="w-5 h-5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 4v16m8-8H4"
-                  />
-                </svg>
-                Create New Schedule
-              </button>
-            </div>
-          )} */}
-
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredSchedules.length === 0 ? (
               <div className="col-span-full text-center py-12">
@@ -884,7 +925,7 @@ const Schedules = () => {
                 </div>
               </div>
 
-              {/* Cardio Section */}
+              {/* Cardio Section - ✅ FIXED: Filter by category name */}
               <div className="mb-6">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-bold text-white">
@@ -918,13 +959,11 @@ const Schedules = () => {
                             className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                           >
                             <option value="">Select cardio exercise</option>
-                            {exercises
-                              .filter((ex) => ex.categoryName === "cardio")
-                              .map((ex) => (
-                                <option key={ex.id} value={ex.id}>
-                                  {ex.name}
-                                </option>
-                              ))}
+                            {getExercisesByCategory("cardio").map((ex) => (
+                              <option key={ex.id} value={ex.id}>
+                                {ex.name}
+                              </option>
+                            ))}
                           </select>
                         </div>
                         <div>
@@ -1267,7 +1306,7 @@ const Schedules = () => {
                 </div>
               </div>
 
-              {/* Warm-down Section */}
+              {/* Warm-down Section - ✅ FIXED: Filter by category name */}
               <div className="mb-6">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-bold text-white">
@@ -1305,17 +1344,14 @@ const Schedules = () => {
                             className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                           >
                             <option value="">Select warm-down exercise</option>
-                            {exercises
-                              .filter(
-                                (ex) =>
-                                  ex.category === "cardio" ||
-                                  ex.category === "stretching"
-                              )
-                              .map((ex) => (
-                                <option key={ex.id} value={ex.id}>
-                                  {ex.name}
-                                </option>
-                              ))}
+                            {[
+                              ...getExercisesByCategory("cardio"),
+                              ...getExercisesByCategory("stretching"),
+                            ].map((ex) => (
+                              <option key={ex.id} value={ex.id}>
+                                {ex.name}
+                              </option>
+                            ))}
                           </select>
                         </div>
                         <div>
