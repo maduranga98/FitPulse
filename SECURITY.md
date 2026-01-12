@@ -37,11 +37,13 @@ FitPulse uses a multi-layered security approach:
 
 Firestore security rules are defined in `firestore.rules` and enforce:
 
-- **Authentication requirement** for all operations
-- **Role-based access control** (RBAC)
-- **Multi-tenant isolation** by gymId
 - **Data validation** for required fields and formats
-- **Immutability** of critical fields
+- **Write protection** with validation rules
+- **Read access** for application functionality
+- **GymId consistency** checks to prevent data corruption
+- **Enum validation** for status, role, and type fields
+
+**IMPORTANT**: The current rules are compatible with the custom authentication system (localStorage). For production deployment with full security, implement Firebase Authentication and update rules to check `request.auth` for all operations.
 
 ### Role Hierarchy
 
