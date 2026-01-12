@@ -1,0 +1,318 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // ============================================
+    // HELPER FUNCTIONS
+    // ============================================
+
+    // Check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Get user role from Firestore
+    function getUserRole() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    // Get user's gymId from Firestore
+    function getUserGymId() {
+      return firestore.exists(/databases/(default)/documents/users/$(request.auth.uid))
+        ? firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.gymId
+        : firestore.get(/databases/(default)/documents/members/$(request.auth.uid)).data.gymId;
+    }
+
+    // Check if user is super admin
+    function isSuperAdmin() {
+      return isAuthenticated() &&
+             firestore.exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
+             getUserRole() == 'super_admin';
+    }
+
+    // Check if user is gym staff (admin or manager)
+    function isGymStaff() {
+      return isAuthenticated() &&
+             firestore.exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
+             getUserRole() in ['gym_admin', 'gym_manager'];
+    }
+
+    // Check if user is a member
+    function isMember() {
+      return isAuthenticated() &&
+             firestore.exists(/databases/(default)/documents/members/$(request.auth.uid));
+    }
+
+    // Check if user can access specific gym
+    function canAccessGym(gymId) {
+      return isSuperAdmin() || getUserGymId() == gymId;
+    }
+
+    // Validate image file type
+    function isValidImage() {
+      return request.resource.contentType.matches('image/(jpeg|jpg|png|gif|webp)');
+    }
+
+    // Validate video file type
+    function isValidVideo() {
+      return request.resource.contentType.matches('video/(mp4|webm|quicktime|x-msvideo|x-matroska)');
+    }
+
+    // Validate image or video file type
+    function isValidMedia() {
+      return isValidImage() || isValidVideo();
+    }
+
+    // Check file size (in bytes)
+    function isWithinSizeLimit(maxSize) {
+      return request.resource.size <= maxSize;
+    }
+
+    // ============================================
+    // EXERCISE MEDIA (Images & Videos)
+    // ============================================
+    // Path: exercises/{gymId}/{exerciseId}/{fileName}
+    match /exercises/{gymId}/{exerciseId}/{fileName} {
+      // Gym staff can upload exercise media for their gym
+      // Max size: 50MB for videos, 5MB for images
+      allow create: if isAuthenticated() &&
+                      canAccessGym(gymId) &&
+                      isGymStaff() &&
+                      isValidMedia() &&
+                      ((isValidImage() && isWithinSizeLimit(5 * 1024 * 1024)) ||
+                       (isValidVideo() && isWithinSizeLimit(50 * 1024 * 1024)));
+
+      // Anyone from the gym can view exercise media
+      allow read: if isAuthenticated() && canAccessGym(gymId);
+
+      // Gym staff can update exercise media in their gym
+      allow update: if isAuthenticated() &&
+                      canAccessGym(gymId) &&
+                      isGymStaff() &&
+                      isValidMedia() &&
+                      ((isValidImage() && isWithinSizeLimit(5 * 1024 * 1024)) ||
+                       (isValidVideo() && isWithinSizeLimit(50 * 1024 * 1024)));
+
+      // Gym staff can delete exercise media in their gym
+      allow delete: if isAuthenticated() &&
+                      canAccessGym(gymId) &&
+                      isGymStaff();
+    }
+
+    // ============================================
+    // MEMBER PROGRESS PHOTOS
+    // ============================================
+    // Path: progress/{gymId}/{memberId}/{fileName}
+    match /progress/{gymId}/{memberId}/{fileName} {
+      // Members can upload their own progress photos, gym staff can upload for any member
+      // Max size: 5MB
+      allow create: if isAuthenticated() &&
+                      canAccessGym(gymId) &&
+                      (request.auth.uid == memberId || isGymStaff()) &&
+                      isValidImage() &&
+                      isWithinSizeLimit(5 * 1024 * 1024);
+
+      // Members can view their own progress photos, gym staff can view all from their gym
+      allow read: if isAuthenticated() &&
+                    canAccessGym(gymId) &&
+                    (request.auth.uid == memberId || isGymStaff());
+
+      // Members can update their own progress photos, gym staff can update any
+      allow update: if isAuthenticated() &&
+                      canAccessGym(gymId) &&
+                      (request.auth.uid == memberId || isGymStaff()) &&
+                      isValidImage() &&
+                      isWithinSizeLimit(5 * 1024 * 1024);
+
+      // Members can delete their own progress photos, gym staff can delete any
+      allow delete: if isAuthenticated() &&
+                      canAccessGym(gymId) &&
+                      (request.auth.uid == memberId || isGymStaff());
+    }
+
+    // ============================================
+    // FACE REGISTRATION PHOTOS
+    // ============================================
+    // Path: faces/{gymId}/{memberId}/{fileName}
+    match /faces/{gymId}/{memberId}/{fileName} {
+      // Gym staff can upload face registration photos
+      // Max size: 5MB
+      allow create: if isAuthenticated() &&
+                      canAccessGym(gymId) &&
+                      isGymStaff() &&
+                      isValidImage() &&
+                      isWithinSizeLimit(5 * 1024 * 1024);
+
+      // Gym staff can view face registration photos from their gym
+      allow read: if isAuthenticated() &&
+                    canAccessGym(gymId) &&
+                    isGymStaff();
+
+      // Gym staff can update face registration photos in their gym
+      allow update: if isAuthenticated() &&
+                      canAccessGym(gymId) &&
+                      isGymStaff() &&
+                      isValidImage() &&
+                      isWithinSizeLimit(5 * 1024 * 1024);
+
+      // Gym staff can delete face registration photos in their gym
+      allow delete: if isAuthenticated() &&
+                      canAccessGym(gymId) &&
+                      isGymStaff();
+    }
+
+    // ============================================
+    // ATTENDANCE CHECK-IN PHOTOS
+    // ============================================
+    // Path: attendance/{gymId}/{date}/{fileName}
+    match /attendance/{gymId}/{date}/{fileName} {
+      // Anyone from the gym can upload attendance check-in photos
+      // Max size: 5MB
+      allow create: if isAuthenticated() &&
+                      canAccessGym(gymId) &&
+                      isValidImage() &&
+                      isWithinSizeLimit(5 * 1024 * 1024);
+
+      // Gym staff can view attendance photos from their gym
+      allow read: if isAuthenticated() &&
+                    canAccessGym(gymId) &&
+                    isGymStaff();
+
+      // Gym staff can update attendance photos in their gym
+      allow update: if isAuthenticated() &&
+                      canAccessGym(gymId) &&
+                      isGymStaff() &&
+                      isValidImage() &&
+                      isWithinSizeLimit(5 * 1024 * 1024);
+
+      // Gym staff can delete attendance photos in their gym
+      allow delete: if isAuthenticated() &&
+                      canAccessGym(gymId) &&
+                      isGymStaff();
+    }
+
+    // ============================================
+    // GYM PROFILE IMAGES
+    // ============================================
+    // Path: gyms/{gymId}/{fileName}
+    match /gyms/{gymId}/{fileName} {
+      // Gym staff can upload gym profile images
+      // Max size: 5MB
+      allow create: if isAuthenticated() &&
+                      canAccessGym(gymId) &&
+                      isGymStaff() &&
+                      isValidImage() &&
+                      isWithinSizeLimit(5 * 1024 * 1024);
+
+      // Anyone from the gym can view gym profile images
+      allow read: if isAuthenticated() && canAccessGym(gymId);
+
+      // Gym staff can update gym profile images
+      allow update: if isAuthenticated() &&
+                      canAccessGym(gymId) &&
+                      isGymStaff() &&
+                      isValidImage() &&
+                      isWithinSizeLimit(5 * 1024 * 1024);
+
+      // Gym staff can delete gym profile images
+      allow delete: if isAuthenticated() &&
+                      canAccessGym(gymId) &&
+                      isGymStaff();
+    }
+
+    // ============================================
+    // MEMBER PROFILE IMAGES
+    // ============================================
+    // Path: members/{gymId}/{memberId}/{fileName}
+    match /members/{gymId}/{memberId}/{fileName} {
+      // Members can upload their own profile images, gym staff can upload for any member
+      // Max size: 5MB
+      allow create: if isAuthenticated() &&
+                      canAccessGym(gymId) &&
+                      (request.auth.uid == memberId || isGymStaff()) &&
+                      isValidImage() &&
+                      isWithinSizeLimit(5 * 1024 * 1024);
+
+      // Anyone from the gym can view member profile images
+      allow read: if isAuthenticated() && canAccessGym(gymId);
+
+      // Members can update their own profile images, gym staff can update any
+      allow update: if isAuthenticated() &&
+                      canAccessGym(gymId) &&
+                      (request.auth.uid == memberId || isGymStaff()) &&
+                      isValidImage() &&
+                      isWithinSizeLimit(5 * 1024 * 1024);
+
+      // Members can delete their own profile images, gym staff can delete any
+      allow delete: if isAuthenticated() &&
+                      canAccessGym(gymId) &&
+                      (request.auth.uid == memberId || isGymStaff());
+    }
+
+    // ============================================
+    // EQUIPMENT IMAGES
+    // ============================================
+    // Path: equipment/{gymId}/{equipmentId}/{fileName}
+    match /equipment/{gymId}/{equipmentId}/{fileName} {
+      // Gym staff can upload equipment images
+      // Max size: 5MB
+      allow create: if isAuthenticated() &&
+                      canAccessGym(gymId) &&
+                      isGymStaff() &&
+                      isValidImage() &&
+                      isWithinSizeLimit(5 * 1024 * 1024);
+
+      // Anyone from the gym can view equipment images
+      allow read: if isAuthenticated() && canAccessGym(gymId);
+
+      // Gym staff can update equipment images
+      allow update: if isAuthenticated() &&
+                      canAccessGym(gymId) &&
+                      isGymStaff() &&
+                      isValidImage() &&
+                      isWithinSizeLimit(5 * 1024 * 1024);
+
+      // Gym staff can delete equipment images
+      allow delete: if isAuthenticated() &&
+                      canAccessGym(gymId) &&
+                      isGymStaff();
+    }
+
+    // ============================================
+    // SUPPLEMENT IMAGES
+    // ============================================
+    // Path: supplements/{gymId}/{supplementId}/{fileName}
+    match /supplements/{gymId}/{supplementId}/{fileName} {
+      // Gym staff can upload supplement images
+      // Max size: 5MB
+      allow create: if isAuthenticated() &&
+                      canAccessGym(gymId) &&
+                      isGymStaff() &&
+                      isValidImage() &&
+                      isWithinSizeLimit(5 * 1024 * 1024);
+
+      // Anyone from the gym can view supplement images
+      allow read: if isAuthenticated() && canAccessGym(gymId);
+
+      // Gym staff can update supplement images
+      allow update: if isAuthenticated() &&
+                      canAccessGym(gymId) &&
+                      isGymStaff() &&
+                      isValidImage() &&
+                      isWithinSizeLimit(5 * 1024 * 1024);
+
+      // Gym staff can delete supplement images
+      allow delete: if isAuthenticated() &&
+                      canAccessGym(gymId) &&
+                      isGymStaff();
+    }
+
+    // ============================================
+    // DEFAULT DENY ALL
+    // ============================================
+    // Deny all other paths by default
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

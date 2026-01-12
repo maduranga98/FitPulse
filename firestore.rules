@@ -1,0 +1,412 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ============================================
+    // HELPER FUNCTIONS
+    // ============================================
+
+    // Check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Get user role from custom claims or from users/members collection
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    // Get user's gymId
+    function getUserGymId() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.gymId
+        : get(/databases/$(database)/documents/members/$(request.auth.uid)).data.gymId;
+    }
+
+    // Check if user is super admin
+    function isSuperAdmin() {
+      return isAuthenticated() &&
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             getUserRole() == 'super_admin';
+    }
+
+    // Check if user is gym admin
+    function isGymAdmin() {
+      return isAuthenticated() &&
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             getUserRole() == 'gym_admin';
+    }
+
+    // Check if user is gym manager
+    function isGymManager() {
+      return isAuthenticated() &&
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             getUserRole() == 'gym_manager';
+    }
+
+    // Check if user is gym staff (admin or manager)
+    function isGymStaff() {
+      return isGymAdmin() || isGymManager();
+    }
+
+    // Check if user is a member
+    function isMember() {
+      return isAuthenticated() &&
+             exists(/databases/$(database)/documents/members/$(request.auth.uid));
+    }
+
+    // Check if resource belongs to user's gym
+    function belongsToUserGym(gymId) {
+      return isAuthenticated() && getUserGymId() == gymId;
+    }
+
+    // Check if user can access specific gym (super admin or belongs to gym)
+    function canAccessGym(gymId) {
+      return isSuperAdmin() || belongsToUserGym(gymId);
+    }
+
+    // Validate required fields are present and not empty
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    // Validate email format
+    function isValidEmail(email) {
+      return email.matches('^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$');
+    }
+
+    // Validate phone format (10+ digits)
+    function isValidPhone(phone) {
+      return phone.matches('^[0-9]{10,15}$');
+    }
+
+    // Check if data is not being modified (for protected fields)
+    function unchangedFields(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    // ============================================
+    // GYMS COLLECTION
+    // ============================================
+    match /gyms/{gymId} {
+      // Only super admin can create gyms
+      allow create: if isSuperAdmin() &&
+                      hasRequiredFields(['name', 'address', 'phone', 'email', 'status']) &&
+                      isValidEmail(request.resource.data.email) &&
+                      isValidPhone(request.resource.data.phone) &&
+                      request.resource.data.status in ['active', 'inactive'];
+
+      // Super admin can read all gyms, gym staff can read their own gym
+      allow read: if isSuperAdmin() || belongsToUserGym(gymId);
+
+      // Super admin can update any gym, gym admin can update their own gym (limited fields)
+      allow update: if isSuperAdmin() ||
+                      (isGymAdmin() && belongsToUserGym(gymId) &&
+                       unchangedFields(['status', 'createdAt']));
+
+      // Only super admin can delete gyms
+      allow delete: if isSuperAdmin();
+    }
+
+    // ============================================
+    // USERS COLLECTION (Gym Admins & Managers)
+    // ============================================
+    match /users/{userId} {
+      // Super admin can create users, gym admin can create managers for their gym
+      allow create: if (isSuperAdmin() ||
+                       (isGymAdmin() &&
+                        request.resource.data.gymId == getUserGymId() &&
+                        request.resource.data.role == 'gym_manager')) &&
+                      hasRequiredFields(['username', 'password', 'name', 'email', 'role', 'gymId']) &&
+                      isValidEmail(request.resource.data.email) &&
+                      request.resource.data.role in ['super_admin', 'gym_admin', 'gym_manager'];
+
+      // Users can read their own data, super admin can read all, gym staff can read users from their gym
+      allow read: if isAuthenticated() &&
+                    (request.auth.uid == userId ||
+                     isSuperAdmin() ||
+                     (isGymStaff() && belongsToUserGym(resource.data.gymId)));
+
+      // Users can update their own profile (except role and gymId), super admin can update anyone
+      // Gym admin can update managers in their gym
+      allow update: if (request.auth.uid == userId && unchangedFields(['role', 'gymId', 'createdAt'])) ||
+                      isSuperAdmin() ||
+                      (isGymAdmin() &&
+                       belongsToUserGym(resource.data.gymId) &&
+                       resource.data.role == 'gym_manager' &&
+                       unchangedFields(['role', 'gymId', 'createdAt']));
+
+      // Only super admin can delete users
+      allow delete: if isSuperAdmin();
+    }
+
+    // ============================================
+    // MEMBERS COLLECTION
+    // ============================================
+    match /members/{memberId} {
+      // Gym staff can create members for their gym
+      allow create: if isGymStaff() &&
+                      request.resource.data.gymId == getUserGymId() &&
+                      hasRequiredFields(['name', 'email', 'phone', 'gymId', 'membershipType', 'status']) &&
+                      isValidEmail(request.resource.data.email) &&
+                      isValidPhone(request.resource.data.phone) &&
+                      request.resource.data.membershipType in ['basic', 'premium', 'platinum'] &&
+                      request.resource.data.status in ['active', 'inactive', 'suspended'];
+
+      // Members can read their own data, gym staff can read members from their gym, super admin can read all
+      allow read: if isAuthenticated() &&
+                    (request.auth.uid == memberId ||
+                     isSuperAdmin() ||
+                     (isGymStaff() && belongsToUserGym(resource.data.gymId)));
+
+      // Members can update their own profile (limited fields), gym staff can update members in their gym
+      allow update: if (request.auth.uid == memberId &&
+                       unchangedFields(['gymId', 'membershipType', 'status', 'createdAt'])) ||
+                      (isGymStaff() && belongsToUserGym(resource.data.gymId)) ||
+                      isSuperAdmin();
+
+      // Only gym staff can delete members from their gym, or super admin
+      allow delete: if (isGymStaff() && belongsToUserGym(resource.data.gymId)) || isSuperAdmin();
+    }
+
+    // ============================================
+    // EXERCISES COLLECTION (Gym-specific)
+    // ============================================
+    match /exercises/{exerciseId} {
+      // Gym staff can create exercises for their gym
+      allow create: if isGymStaff() &&
+                      request.resource.data.gymId == getUserGymId() &&
+                      hasRequiredFields(['name', 'category', 'gymId']);
+
+      // Anyone from the gym can read exercises, super admin can read all
+      allow read: if isSuperAdmin() ||
+                    (isAuthenticated() && belongsToUserGym(resource.data.gymId));
+
+      // Gym staff can update exercises in their gym
+      allow update: if (isGymStaff() && belongsToUserGym(resource.data.gymId)) || isSuperAdmin();
+
+      // Gym staff can delete exercises in their gym
+      allow delete: if (isGymStaff() && belongsToUserGym(resource.data.gymId)) || isSuperAdmin();
+    }
+
+    // ============================================
+    // COMMON EXERCISES COLLECTION (Global Library)
+    // ============================================
+    match /commonExercises/{exerciseId} {
+      // Only super admin can create common exercises
+      allow create: if isSuperAdmin() && hasRequiredFields(['name', 'category']);
+
+      // All authenticated users can read common exercises
+      allow read: if isAuthenticated();
+
+      // Only super admin can update common exercises
+      allow update: if isSuperAdmin();
+
+      // Only super admin can delete common exercises
+      allow delete: if isSuperAdmin();
+    }
+
+    // ============================================
+    // EXERCISE PROGRAMS COLLECTION
+    // ============================================
+    match /exercisePrograms/{programId} {
+      // Gym staff can create programs for their gym
+      allow create: if isGymStaff() &&
+                      request.resource.data.gymId == getUserGymId() &&
+                      hasRequiredFields(['name', 'gymId']);
+
+      // Anyone from the gym can read programs
+      allow read: if isSuperAdmin() ||
+                    (isAuthenticated() && belongsToUserGym(resource.data.gymId));
+
+      // Gym staff can update programs in their gym
+      allow update: if (isGymStaff() && belongsToUserGym(resource.data.gymId)) || isSuperAdmin();
+
+      // Gym staff can delete programs in their gym
+      allow delete: if (isGymStaff() && belongsToUserGym(resource.data.gymId)) || isSuperAdmin();
+    }
+
+    // ============================================
+    // SCHEDULES COLLECTION
+    // ============================================
+    match /schedules/{scheduleId} {
+      // Gym staff can create schedules for their gym
+      allow create: if isGymStaff() &&
+                      request.resource.data.gymId == getUserGymId() &&
+                      hasRequiredFields(['memberId', 'gymId', 'date']);
+
+      // Members can read their own schedules, gym staff can read all schedules in their gym
+      allow read: if isSuperAdmin() ||
+                    (isAuthenticated() && belongsToUserGym(resource.data.gymId) &&
+                     (isMember() ? resource.data.memberId == request.auth.uid : true));
+
+      // Gym staff can update schedules in their gym
+      allow update: if (isGymStaff() && belongsToUserGym(resource.data.gymId)) || isSuperAdmin();
+
+      // Gym staff can delete schedules in their gym
+      allow delete: if (isGymStaff() && belongsToUserGym(resource.data.gymId)) || isSuperAdmin();
+    }
+
+    // ============================================
+    // CLASSES COLLECTION
+    // ============================================
+    match /classes/{classId} {
+      // Gym staff can create classes for their gym
+      allow create: if isGymStaff() &&
+                      request.resource.data.gymId == getUserGymId() &&
+                      hasRequiredFields(['name', 'gymId', 'date', 'time', 'capacity']);
+
+      // Anyone from the gym can read classes
+      allow read: if isSuperAdmin() ||
+                    (isAuthenticated() && belongsToUserGym(resource.data.gymId));
+
+      // Gym staff can update classes in their gym, members can update their enrollment
+      allow update: if (isGymStaff() && belongsToUserGym(resource.data.gymId)) ||
+                      isSuperAdmin() ||
+                      (isMember() && belongsToUserGym(resource.data.gymId));
+
+      // Gym staff can delete classes in their gym
+      allow delete: if (isGymStaff() && belongsToUserGym(resource.data.gymId)) || isSuperAdmin();
+    }
+
+    // ============================================
+    // EQUIPMENT COLLECTION
+    // ============================================
+    match /equipment/{equipmentId} {
+      // Gym staff can create equipment for their gym
+      allow create: if isGymStaff() &&
+                      request.resource.data.gymId == getUserGymId() &&
+                      hasRequiredFields(['name', 'gymId']);
+
+      // Anyone from the gym can read equipment
+      allow read: if isSuperAdmin() ||
+                    (isAuthenticated() && belongsToUserGym(resource.data.gymId));
+
+      // Gym staff can update equipment in their gym
+      allow update: if (isGymStaff() && belongsToUserGym(resource.data.gymId)) || isSuperAdmin();
+
+      // Gym staff can delete equipment in their gym
+      allow delete: if (isGymStaff() && belongsToUserGym(resource.data.gymId)) || isSuperAdmin();
+    }
+
+    // ============================================
+    // PAYMENTS COLLECTION
+    // ============================================
+    match /payments/{paymentId} {
+      // Gym staff can create payments for their gym
+      allow create: if isGymStaff() &&
+                      request.resource.data.gymId == getUserGymId() &&
+                      hasRequiredFields(['memberId', 'amount', 'gymId', 'date', 'status']) &&
+                      request.resource.data.amount > 0 &&
+                      request.resource.data.status in ['pending', 'completed', 'failed'];
+
+      // Members can read their own payments, gym staff can read all payments in their gym
+      allow read: if isSuperAdmin() ||
+                    (isAuthenticated() && belongsToUserGym(resource.data.gymId) &&
+                     (isMember() ? resource.data.memberId == request.auth.uid : true));
+
+      // Gym staff can update payments in their gym
+      allow update: if (isGymStaff() && belongsToUserGym(resource.data.gymId)) || isSuperAdmin();
+
+      // Gym staff can delete payments in their gym
+      allow delete: if (isGymStaff() && belongsToUserGym(resource.data.gymId)) || isSuperAdmin();
+    }
+
+    // ============================================
+    // COMPLAINTS COLLECTION
+    // ============================================
+    match /complaints/{complaintId} {
+      // Members can create complaints for their gym
+      allow create: if isMember() &&
+                      request.resource.data.gymId == getUserGymId() &&
+                      request.resource.data.memberId == request.auth.uid &&
+                      hasRequiredFields(['subject', 'description', 'memberId', 'gymId', 'status']) &&
+                      request.resource.data.status == 'open';
+
+      // Members can read their own complaints, gym staff can read all complaints in their gym
+      allow read: if isSuperAdmin() ||
+                    (isAuthenticated() && belongsToUserGym(resource.data.gymId) &&
+                     (isMember() ? resource.data.memberId == request.auth.uid : true));
+
+      // Gym staff can update complaints in their gym, members can update their own (limited)
+      allow update: if (isGymStaff() && belongsToUserGym(resource.data.gymId)) ||
+                      isSuperAdmin() ||
+                      (isMember() &&
+                       resource.data.memberId == request.auth.uid &&
+                       unchangedFields(['status', 'gymId', 'memberId', 'createdAt']));
+
+      // Gym staff can delete complaints in their gym
+      allow delete: if (isGymStaff() && belongsToUserGym(resource.data.gymId)) || isSuperAdmin();
+    }
+
+    // ============================================
+    // ATTENDANCE COLLECTION
+    // ============================================
+    match /attendance/{attendanceId} {
+      // Gym staff and Cloud Functions can create attendance records
+      allow create: if (isGymStaff() && request.resource.data.gymId == getUserGymId()) ||
+                      isSuperAdmin() ||
+                      request.auth.token.firebase.sign_in_provider == 'custom';
+
+      // Members can read their own attendance, gym staff can read all attendance in their gym
+      allow read: if isSuperAdmin() ||
+                    (isAuthenticated() && belongsToUserGym(resource.data.gymId) &&
+                     (isMember() ? resource.data.memberId == request.auth.uid : true));
+
+      // Gym staff can update attendance in their gym
+      allow update: if (isGymStaff() && belongsToUserGym(resource.data.gymId)) || isSuperAdmin();
+
+      // Gym staff can delete attendance in their gym
+      allow delete: if (isGymStaff() && belongsToUserGym(resource.data.gymId)) || isSuperAdmin();
+    }
+
+    // ============================================
+    // SUPPLEMENTS COLLECTION
+    // ============================================
+    match /supplements/{supplementId} {
+      // Gym staff can create supplements for their gym
+      allow create: if isGymStaff() &&
+                      request.resource.data.gymId == getUserGymId() &&
+                      hasRequiredFields(['name', 'gymId']);
+
+      // Anyone from the gym can read supplements
+      allow read: if isSuperAdmin() ||
+                    (isAuthenticated() && belongsToUserGym(resource.data.gymId));
+
+      // Gym staff can update supplements in their gym
+      allow update: if (isGymStaff() && belongsToUserGym(resource.data.gymId)) || isSuperAdmin();
+
+      // Gym staff can delete supplements in their gym
+      allow delete: if (isGymStaff() && belongsToUserGym(resource.data.gymId)) || isSuperAdmin();
+    }
+
+    // ============================================
+    // MEAL PLANS COLLECTION
+    // ============================================
+    match /mealPlans/{mealPlanId} {
+      // Gym staff can create meal plans for their gym
+      allow create: if isGymStaff() &&
+                      request.resource.data.gymId == getUserGymId() &&
+                      hasRequiredFields(['memberId', 'gymId']);
+
+      // Members can read their own meal plans, gym staff can read all meal plans in their gym
+      allow read: if isSuperAdmin() ||
+                    (isAuthenticated() && belongsToUserGym(resource.data.gymId) &&
+                     (isMember() ? resource.data.memberId == request.auth.uid : true));
+
+      // Gym staff can update meal plans in their gym
+      allow update: if (isGymStaff() && belongsToUserGym(resource.data.gymId)) || isSuperAdmin();
+
+      // Gym staff can delete meal plans in their gym
+      allow delete: if (isGymStaff() && belongsToUserGym(resource.data.gymId)) || isSuperAdmin();
+    }
+
+    // ============================================
+    // DEFAULT DENY ALL
+    // ============================================
+    // Deny all other collections by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
