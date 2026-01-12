@@ -6,6 +6,110 @@ import { ImageAnnotatorClient } from "@google-cloud/vision";
 admin.initializeApp();
 
 // ========================================
+// 🔒 SECURITY HELPER FUNCTIONS
+// ========================================
+
+/**
+ * Validate if gym exists and is active
+ */
+async function validateGymStatus(gymId) {
+  if (!gymId) {
+    console.warn("⚠️ No gymId provided for validation");
+    return false;
+  }
+
+  try {
+    const db = admin.firestore();
+    const gymDoc = await db.collection("gyms").doc(gymId).get();
+
+    if (!gymDoc.exists) {
+      console.warn(`⚠️ Gym ${gymId} does not exist`);
+      return false;
+    }
+
+    const gymData = gymDoc.data();
+    if (gymData.status !== "active") {
+      console.warn(`⚠️ Gym ${gymId} is not active (status: ${gymData.status})`);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error("❌ Error validating gym status:", error);
+    return false;
+  }
+}
+
+/**
+ * Validate member exists, is active, and belongs to specified gym
+ */
+async function validateMemberStatus(memberId, gymId) {
+  if (!memberId || !gymId) {
+    console.warn("⚠️ Missing memberId or gymId for validation");
+    return false;
+  }
+
+  try {
+    const db = admin.firestore();
+    const memberDoc = await db.collection("members").doc(memberId).get();
+
+    if (!memberDoc.exists) {
+      console.warn(`⚠️ Member ${memberId} does not exist`);
+      return false;
+    }
+
+    const memberData = memberDoc.data();
+
+    // Validate member belongs to the gym
+    if (memberData.gymId !== gymId) {
+      console.warn(
+        `⚠️ Member ${memberId} does not belong to gym ${gymId} (actual: ${memberData.gymId})`
+      );
+      return false;
+    }
+
+    // Validate member is active
+    if (memberData.status !== "active") {
+      console.warn(
+        `⚠️ Member ${memberId} is not active (status: ${memberData.status})`
+      );
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error("❌ Error validating member status:", error);
+    return false;
+  }
+}
+
+/**
+ * Rate limiting: Check if too many operations for this entity recently
+ */
+const operationCounts = new Map();
+
+function checkRateLimit(key, maxOperations = 10, timeWindowMs = 60000) {
+  const now = Date.now();
+  const operations = operationCounts.get(key) || [];
+
+  // Remove old operations outside time window
+  const recentOps = operations.filter((time) => now - time < timeWindowMs);
+
+  if (recentOps.length >= maxOperations) {
+    console.warn(
+      `⚠️ Rate limit exceeded for ${key}: ${recentOps.length} operations in ${
+        timeWindowMs / 1000
+      }s`
+    );
+    return false;
+  }
+
+  recentOps.push(now);
+  operationCounts.set(key, recentOps);
+  return true;
+}
+
+// ========================================
 // 🔍 FACE RECOGNITION WITH MULTI-PHOTO SUPPORT (v1 Compatible)
 // ========================================
 
@@ -19,6 +123,17 @@ export const recognizeFace = functions.storage
 
     if (!filePath || !filePath.startsWith("temp-captures/")) {
       console.log("⏭️  Skipping - not in temp-captures folder");
+      return null;
+    }
+
+    // Extract device/user info from filename for rate limiting
+    const filename = filePath.split("/")[1];
+    const deviceId = filename.split("_").slice(0, 2).join("_");
+
+    // Rate limiting: Max 10 recognition attempts per minute per device
+    if (!checkRateLimit(`face_recognition_${deviceId}`, 10, 60000)) {
+      console.warn(`⚠️ Rate limit exceeded for device ${deviceId}`);
+      await admin.storage().bucket(bucketName).file(filePath).delete();
       return null;
     }
 
@@ -39,8 +154,6 @@ export const recognizeFace = functions.storage
       console.log(`✅ Detected ${faces.length} face(s)`);
       const detectedFace = faces[0];
 
-      const filename = filePath.split("/")[1];
-      const deviceId = filename.split("_").slice(0, 2).join("_");
       console.log("📱 Device ID:", deviceId);
 
       console.log("👥 Fetching registered members...");
@@ -178,6 +291,29 @@ export const recognizeFace = functions.storage
         console.log(`   Confidence: ${(highestConfidence * 100).toFixed(1)}%`);
         console.log(`   Photos compared: ${bestMatchDetails.photosCompared}`);
         console.log(`   Strategy: ${bestMatchDetails.strategy}`);
+
+        // Validate gym is active
+        const gymValid = await validateGymStatus(bestMatch.gymId);
+        if (!gymValid) {
+          console.warn(
+            `⚠️ Cannot mark attendance - gym ${bestMatch.gymId} is not active`
+          );
+          await admin.storage().bucket(bucketName).file(filePath).delete();
+          return null;
+        }
+
+        // Validate member status
+        const memberValid = await validateMemberStatus(
+          bestMatch.id,
+          bestMatch.gymId
+        );
+        if (!memberValid) {
+          console.warn(
+            `⚠️ Cannot mark attendance - member ${bestMatch.id} is not active or doesn't belong to gym`
+          );
+          await admin.storage().bucket(bucketName).file(filePath).delete();
+          return null;
+        }
 
         const today = new Date().toISOString().split("T")[0];
         const existingAttendance = await db
@@ -396,6 +532,28 @@ export const processFaceRegistration = functions.firestore
       newData.name
     );
 
+    // Validate gym is active
+    const gymValid = await validateGymStatus(newData.gymId);
+    if (!gymValid) {
+      console.warn(
+        `⚠️ Cannot process face registration - gym ${newData.gymId} is not active`
+      );
+      await change.after.ref.update({
+        faceRegistrationError: "Gym is not active",
+      });
+      return null;
+    }
+
+    // Rate limiting: Max 5 face registrations per member per hour
+    const memberId = context.params.memberId;
+    if (!checkRateLimit(`face_registration_${memberId}`, 5, 3600000)) {
+      console.warn(`⚠️ Rate limit exceeded for member ${memberId}`);
+      await change.after.ref.update({
+        faceRegistrationError: "Too many registration attempts. Please try again later.",
+      });
+      return null;
+    }
+
     try {
       const client = new ImageAnnotatorClient();
       const processedPhotos = [];
@@ -483,6 +641,19 @@ export const processSingleFaceRegistration = functions.firestore
       "📸 Processing single-photo face registration for:",
       member.name
     );
+
+    // Validate gym is active
+    const gymValid = await validateGymStatus(member.gymId);
+    if (!gymValid) {
+      console.warn(
+        `⚠️ Cannot process face registration - gym ${member.gymId} is not active`
+      );
+      await snap.ref.update({
+        faceRegistered: false,
+        faceRegistrationError: "Gym is not active",
+      });
+      return null;
+    }
 
     try {
       const client = new ImageAnnotatorClient();
