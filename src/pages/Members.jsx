@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../hooks/useAuth";
+import { useNotification } from "../contexts/NotificationContext";
 import Sidebar from "../components/Sidebar";
 import MultiAngleFaceCapture from "../components/MultiAngleFaceCapture";
 import { isAdmin, validateGymId } from "../utils/authUtils";
@@ -7,6 +8,7 @@ import { calculateBMI, validateBMIInputs } from "../utils/validationUtils";
 
 const Members = () => {
   const { user } = useAuth();
+  const { showSuccess, showError, showWarning } = useNotification();
   const currentGymId = user?.gymId;
 
   const [members, setMembers] = useState([]);
@@ -114,14 +116,14 @@ const Members = () => {
     e.preventDefault();
 
     if (!userIsAdmin) {
-      alert("You don't have permission to add members");
+      showError("You don't have permission to add members");
       return;
     }
 
     // Validation
     if (!memberForm.mobile && !memberForm.whatsapp) {
-      alert(
-        "❌ At least one phone number (Mobile or WhatsApp) is required for SMS"
+      showError(
+        "At least one phone number (Mobile or WhatsApp) is required for SMS"
       );
       return;
     }
@@ -130,7 +132,7 @@ const Members = () => {
     if (memberForm.weight && memberForm.height) {
       const bmiValidation = validateBMIInputs(memberForm.weight, memberForm.height);
       if (!bmiValidation.isValid) {
-        alert("❌ Invalid measurements:\n" + bmiValidation.errors.join("\n"));
+        showError("Invalid measurements: " + bmiValidation.errors.join(", "));
         return;
       }
     }
@@ -210,7 +212,7 @@ const Members = () => {
           );
         } catch (uploadError) {
           console.error("❌ Face photos upload failed:", uploadError);
-          alert("Failed to upload face photos. Please try again.");
+          showError("Failed to upload face photos. Please try again.");
           setUploadingFacePhoto(false);
           return;
         }
@@ -258,8 +260,8 @@ const Members = () => {
         console.log("✅ SMS sent successfully");
       } catch (smsError) {
         console.error("⚠️ SMS sending failed:", smsError);
-        alert(
-          `⚠️ Member added, but SMS sending failed: ${smsError.message}\n\nManually share credentials with the member.`
+        showWarning(
+          `Member added, but SMS sending failed: ${smsError.message}. Manually share credentials with the member.`
         );
       }
 
@@ -288,13 +290,13 @@ const Members = () => {
       fetchMembers();
     } catch (error) {
       console.error("❌ Error adding member:", error);
-      alert("Failed to add member: " + error.message);
+      showError("Failed to add member: " + error.message);
     }
   };
 
   const handleDeleteMember = async (id) => {
     if (!userIsAdmin) {
-      alert("You don't have permission to delete members");
+      showError("You don't have permission to delete members");
       return;
     }
 
@@ -305,16 +307,17 @@ const Members = () => {
       const { doc, deleteDoc } = await import("firebase/firestore");
 
       await deleteDoc(doc(db, "members", id));
+      showSuccess("Member deleted successfully");
       fetchMembers();
     } catch (error) {
       console.error("Error deleting member:", error);
-      alert("Failed to delete member");
+      showError("Failed to delete member");
     }
   };
 
   const handleUpdateStatus = async (id, newStatus) => {
     if (!userIsAdmin) {
-      alert("You don't have permission to update member status");
+      showError("You don't have permission to update member status");
       return;
     }
 
@@ -326,6 +329,7 @@ const Members = () => {
         status: newStatus,
       });
 
+      showSuccess(`Member status updated to ${newStatus}`);
       fetchMembers();
 
       if (viewMember && viewMember.id === id) {
@@ -333,7 +337,7 @@ const Members = () => {
       }
     } catch (error) {
       console.error("Error updating status:", error);
-      alert("Failed to update status");
+      showError("Failed to update status");
     }
   };
 
@@ -1227,7 +1231,7 @@ const Members = () => {
                           navigator.clipboard.writeText(
                             generatedCredentials.username
                           );
-                          alert("Username copied!");
+                          showSuccess("Username copied!");
                         }}
                         className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm transition"
                       >
@@ -1252,7 +1256,7 @@ const Members = () => {
                           navigator.clipboard.writeText(
                             generatedCredentials.password
                           );
-                          alert("Password copied!");
+                          showSuccess("Password copied!");
                         }}
                         className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm transition"
                       >
@@ -1295,7 +1299,7 @@ const Members = () => {
                   onClick={() => {
                     const text = `Welcome to our Gym!\n\nYour Login Credentials:\nUsername: ${generatedCredentials.username}\nPassword: ${generatedCredentials.password}\n\nPlease keep these credentials safe.`;
                     navigator.clipboard.writeText(text);
-                    alert("Credentials copied to clipboard!");
+                    showSuccess("Credentials copied to clipboard!");
                   }}
                   className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition"
                 >

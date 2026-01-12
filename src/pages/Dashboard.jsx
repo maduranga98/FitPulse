@@ -342,7 +342,7 @@ const Dashboard = () => {
               </div>
               <p className="text-gray-400 text-xs sm:text-sm mb-1">Total Revenue</p>
               <p className="text-xl sm:text-2xl md:text-3xl font-bold text-white">
-                Rs. {stats.totalRevenue.toLocaleString()}
+                {formatCurrency(stats.totalRevenue)}
               </p>
             </div>
 
@@ -460,7 +460,7 @@ const Dashboard = () => {
                       </div>
                       <div className="text-right flex-shrink-0">
                         <p className="text-white font-bold text-sm sm:text-base">
-                          Rs. {payment.amount.toLocaleString()}
+                          {formatCurrency(payment.amount)}
                         </p>
                         <span
                           className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${
