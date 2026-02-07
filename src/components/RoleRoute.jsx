@@ -26,6 +26,8 @@ const RoleRoute = ({ children, allowedRoles }) => {
       return <Navigate to="/super-admin" replace />;
     } else if (user.role === "member") {
       return <Navigate to="/member-dashboard" replace />;
+    } else if (user.role === "trainer") {
+      return <Navigate to="/instructor-dashboard" replace />;
     } else {
       return <Navigate to="/dashboard" replace />;
     }

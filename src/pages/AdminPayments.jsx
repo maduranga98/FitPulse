@@ -25,7 +25,7 @@ const AdminPayments = () => {
   const [filterStatus, setFilterStatus] = useState("all");
   const [expandedMember, setExpandedMember] = useState(null);
 
-  const isAdmin = user?.role === "gym_admin" || user?.role === "manager";
+  const isAdmin = user?.role === "admin" || user?.role === "manager" || user?.role === "gym_admin" || user?.role === "gym_manager";
 
   const paymentMethods = ["Cash", "Card", "Bank Transfer", "Online", "Other"];
 

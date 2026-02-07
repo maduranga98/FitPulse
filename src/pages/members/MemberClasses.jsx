@@ -43,8 +43,10 @@ const MemberClasses = () => {
   const daysOfWeek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    if (currentUser?.id) {
+      fetchData();
+    }
+  }, [currentUser?.id]);
 
   const fetchData = async () => {
     try {

@@ -15,7 +15,7 @@ const MemberDashboard = () => {
     if (currentUser?.id) {
       fetchMemberData();
     }
-  }, [currentUser]);
+  }, [currentUser?.id]);
 
   const fetchMemberData = async () => {
     try {
@@ -327,5 +327,3 @@ const MemberDashboard = () => {
 };
 
 export default MemberDashboard;
-//john4765
-//OwUco0a4

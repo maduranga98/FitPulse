@@ -46,7 +46,7 @@ const InstructorClasses = () => {
     if (currentGymId && user?.id) {
       fetchData();
     }
-  }, [currentGymId, user]);
+  }, [currentGymId, user?.id]);
 
   const fetchData = async () => {
     try {

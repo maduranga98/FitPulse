@@ -6,9 +6,13 @@ const NotFound = () => {
   const { user } = useAuth();
 
   const handleGoHome = () => {
-    if (user?.role === "member") {
+    if (user?.role === "super_admin") {
+      navigate("/super-admin");
+    } else if (user?.role === "member") {
       navigate("/member-dashboard");
-    } else if (user?.role === "admin" || user?.role === "manager") {
+    } else if (user?.role === "trainer") {
+      navigate("/instructor-dashboard");
+    } else if (user?.role === "admin" || user?.role === "manager" || user?.role === "gym_admin" || user?.role === "gym_manager") {
       navigate("/dashboard");
     } else {
       navigate("/login");

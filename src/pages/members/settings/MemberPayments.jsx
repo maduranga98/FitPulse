@@ -12,8 +12,10 @@ const MemberPayments = () => {
   );
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    if (currentUser?.id) {
+      fetchData();
+    }
+  }, [currentUser?.id]);
 
   const fetchData = async () => {
     try {
