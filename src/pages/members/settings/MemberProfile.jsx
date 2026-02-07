@@ -26,8 +26,10 @@ const MemberProfile = () => {
   });
 
   useEffect(() => {
-    fetchMemberData();
-  }, []);
+    if (currentUser?.id) {
+      fetchMemberData();
+    }
+  }, [currentUser?.id]);
 
   useEffect(() => {
     if (editForm.weight && editForm.height) {

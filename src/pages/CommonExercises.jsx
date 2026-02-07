@@ -12,21 +12,21 @@ import {
 } from "firebase/firestore";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { db, storage } from "../config/firebase";
-import Sidebar from "../components/Sidebar";
 import ExerciseDetailModal from "../components/ExerciseDetailModal";
 import { isSuperAdmin } from "../utils/authUtils";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../hooks/useAuth";
 
 const CommonExercises = () => {
   const navigate = useNavigate();
-  const currentUser = JSON.parse(localStorage.getItem("user"));
+  const { user } = useAuth();
 
   // Check super admin access
   useEffect(() => {
-    if (!currentUser || !isSuperAdmin(currentUser)) {
+    if (!user || !isSuperAdmin(user)) {
       navigate("/");
     }
-  }, [currentUser, navigate]);
+  }, [user, navigate]);
 
   const [exercises, setExercises] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -336,11 +336,19 @@ const CommonExercises = () => {
   });
 
   return (
-    <div className="flex min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
-      <Sidebar />
-      <div className="flex-1 p-4 sm:p-8 ml-0 sm:ml-64">
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
+      <div className="p-4 sm:p-8">
         {/* Header */}
         <div className="mb-8">
+          <button
+            onClick={() => navigate("/super-admin")}
+            className="flex items-center gap-2 text-gray-400 hover:text-white mb-4 transition"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            Back to Dashboard
+          </button>
           <h1 className="text-3xl sm:text-4xl font-bold text-white mb-2">
             Common Exercise Library
           </h1>

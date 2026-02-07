@@ -67,7 +67,7 @@ const validatePhoneNumber = (phone) => {
  * Build SMS message for gym registration
  */
 const buildGymRegistrationMessage = (gymName, username, password, appLink) => {
-  return `🎉 Welcome to GymNex!
+  return `🎉 Welcome to PulsedGym!
 
 ${gymName} has been successfully registered.
 
@@ -89,7 +89,7 @@ const buildMemberRegistrationMessage = (
   password,
   appLink
 ) => {
-  return `💪 Welcome to GymNex, ${memberName}!
+  return `💪 Welcome to PulsedGym, ${memberName}!
 
 You have been successfully registered as a member.
 
@@ -118,7 +118,7 @@ const buildPaymentReceiptMessage = (
     month: "long",
   });
 
-  return `💰 Payment Received - GymNex
+  return `💰 Payment Received - PulsedGym
 
 Dear ${memberName},
 

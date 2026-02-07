@@ -27,9 +27,11 @@ const MemberWorkoutTracker = () => {
   ];
 
   useEffect(() => {
-    fetchData();
+    if (currentUser?.id) {
+      fetchData();
+    }
     setRandomQuote();
-  }, []);
+  }, [currentUser?.id]);
 
   const setRandomQuote = () => {
     const random =

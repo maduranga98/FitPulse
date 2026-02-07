@@ -104,8 +104,6 @@ const InstructorManagement = () => {
     try {
       const { db } = await import("../config/firebase");
       const { collection, addDoc, doc, updateDoc, Timestamp } = await import("firebase/firestore");
-      const { auth } = await import("../config/firebase");
-      const { createUserWithEmailAndPassword } = await import("firebase/auth");
 
       const instructorData = {
         name: instructorForm.name,
@@ -128,9 +126,16 @@ const InstructorManagement = () => {
         alert("Instructor updated successfully! ✓");
       } else {
         try {
-          // Create auth user with provided password
+          // Use a secondary Firebase app to avoid changing the current auth session
+          const { initializeApp, deleteApp } = await import("firebase/app");
+          const { getAuth, createUserWithEmailAndPassword } = await import("firebase/auth");
+          const { firebaseConfig } = await import("../config/firebase");
+
+          const secondaryApp = initializeApp(firebaseConfig, "SecondaryApp");
+          const secondaryAuth = getAuth(secondaryApp);
+
           const userCredential = await createUserWithEmailAndPassword(
-            auth,
+            secondaryAuth,
             instructorForm.email,
             instructorForm.password
           );
@@ -143,6 +148,9 @@ const InstructorManagement = () => {
             password: instructorForm.password,
             createdAt: Timestamp.now(),
           });
+
+          // Clean up the secondary app to avoid resource leaks
+          await deleteApp(secondaryApp);
 
           alert(`Instructor created successfully! 🎉\n\nUsername: ${instructorForm.username}\nPassword: ${instructorForm.password}\n\nPlease share these credentials with the instructor.`);
         } catch (authError) {

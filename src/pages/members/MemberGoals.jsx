@@ -117,8 +117,10 @@ const MemberGoals = () => {
   };
 
   useEffect(() => {
-    fetchGoals();
-  }, []);
+    if (currentUser?.id) {
+      fetchGoals();
+    }
+  }, [currentUser?.id]);
 
   const fetchGoals = async () => {
     try {

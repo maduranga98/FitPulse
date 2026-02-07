@@ -31,8 +31,10 @@ const MemberComplaints = () => {
   const priorities = ["Low", "Medium", "High"];
 
   useEffect(() => {
-    fetchComplaints();
-  }, []);
+    if (currentUser?.id) {
+      fetchComplaints();
+    }
+  }, [currentUser?.id]);
 
   const fetchComplaints = async () => {
     try {

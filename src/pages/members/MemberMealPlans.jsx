@@ -11,8 +11,10 @@ const MemberMealPlans = () => {
   const [selectedAssignment, setSelectedAssignment] = useState(null);
 
   useEffect(() => {
-    fetchMealPlans();
-  }, []);
+    if (currentUser?.id) {
+      fetchMealPlans();
+    }
+  }, [currentUser?.id]);
 
   const fetchMealPlans = async () => {
     try {

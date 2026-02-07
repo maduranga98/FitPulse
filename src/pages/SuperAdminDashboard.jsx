@@ -135,12 +135,7 @@ const SuperAdminDashboard = () => {
         createdAt: Timestamp.now(),
       });
 
-      // Step 3: Send SMS with credentials (MUST succeed or entire operation fails)
-      console.log("🔵 ABOUT TO SEND SMS");
-      console.log("Gym Name:", gymForm.name);
-      console.log("Gym Phone:", gymForm.phone);
-      console.log("Username:", gymForm.adminUsername);
-
+      // Step 3: Send SMS with credentials
       try {
         await sendGymRegistrationSMS(
           {
@@ -150,45 +145,29 @@ const SuperAdminDashboard = () => {
           gymForm.adminUsername,
           gymForm.adminPassword
         );
-        console.log("🟢 SMS SENT SUCCESSFULLY!");
+
+        setSmsStatus({
+          type: "success",
+          message: "✓ Gym registered and credentials sent via SMS!",
+        });
       } catch (smsError) {
-        console.error("🔴 SMS SENDING FAILED!");
-        console.error("Error:", smsError.message);
+        // SMS failed - delete the created records and throw error
+        const { deleteDoc: delDoc, doc: docRef, query: q, where: w } = await import("firebase/firestore");
+        await delDoc(docRef(db, "gyms", gymRef.id));
+
+        // Get the user doc to delete it too
+        const usersRef = collection(db, "users");
+        const userQuery = q(
+          usersRef,
+          w("username", "==", gymForm.adminUsername)
+        );
+        const userSnapshot = await getDocs(userQuery);
+        if (!userSnapshot.empty) {
+          await delDoc(docRef(db, "users", userSnapshot.docs[0].id));
+        }
+
         throw smsError;
       }
-      // try {
-      //   await sendGymRegistrationSMS(
-      //     {
-      //       name: gymForm.name,
-      //       phone: gymForm.phone,
-      //     },
-      //     gymForm.adminUsername,
-      //     gymForm.adminPassword
-      //   );
-
-      //   setSmsStatus({
-      //     type: "success",
-      //     message: "✓ Gym registered and credentials sent via SMS!",
-      //   });
-      // } catch (smsError) {
-      //   // SMS failed - delete the created records and throw error
-      //   const { deleteDoc, doc } = await import("firebase/firestore");
-      //   await deleteDoc(doc(db, "gyms", gymRef.id));
-
-      //   // Get the user doc to delete it too
-      //   const usersRef = collection(db, "users");
-      //   const { query: q, where } = await import("firebase/firestore");
-      //   const userQuery = q(
-      //     usersRef,
-      //     where("username", "==", gymForm.adminUsername)
-      //   );
-      //   const userSnapshot = await getDocs(userQuery);
-      //   if (!userSnapshot.empty) {
-      //     await deleteDoc(doc(db, "users", userSnapshot.docs[0].id));
-      //   }
-
-      //   throw smsError;
-      // }
 
       // Reset form and refresh list
       setShowAddGym(false);
@@ -260,12 +239,22 @@ const SuperAdminDashboard = () => {
 
     try {
       const { db } = await import("../config/firebase");
-      const { doc, deleteDoc } = await import("firebase/firestore");
+      const { doc, deleteDoc, collection, query, where, getDocs } = await import("firebase/firestore");
 
+      // Delete associated admin users first
+      const usersRef = collection(db, "users");
+      const usersQuery = query(usersRef, where("gymId", "==", gymId));
+      const usersSnapshot = await getDocs(usersQuery);
+      const deletePromises = usersSnapshot.docs.map((userDoc) =>
+        deleteDoc(doc(db, "users", userDoc.id))
+      );
+      await Promise.all(deletePromises);
+
+      // Delete the gym document
       await deleteDoc(doc(db, "gyms", gymId));
       setSmsStatus({
         type: "success",
-        message: "Gym deleted successfully",
+        message: "Gym and associated users deleted successfully",
       });
       fetchGyms();
     } catch (error) {
@@ -284,9 +273,9 @@ const SuperAdminDashboard = () => {
 
   const filteredGyms = gyms.filter(
     (gym) =>
-      gym.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      gym.location.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      gym.email.toLowerCase().includes(searchTerm.toLowerCase())
+      (gym.name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (gym.location || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (gym.email || "").toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const totalGyms = gyms.length;

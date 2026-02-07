@@ -39,8 +39,10 @@ const MemberNutrition = () => {
   const mealTypes = ["breakfast", "lunch", "dinner", "snack"];
 
   useEffect(() => {
-    fetchData();
-  }, [selectedDate]);
+    if (currentUser?.id) {
+      fetchData();
+    }
+  }, [currentUser?.id, selectedDate]);
 
   const fetchData = async () => {
     try {

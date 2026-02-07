@@ -26,7 +26,7 @@ const Schedules = () => {
   const [assignDueDate, setAssignDueDate] = useState("");
 
   const isAdmin =
-    currentUser?.role === "gym_admin" || currentUser?.role === "manager";
+    currentUser?.role === "admin" || currentUser?.role === "manager" || currentUser?.role === "gym_admin" || currentUser?.role === "gym_manager";
   const isMember = currentUser?.role === "member";
   console.log(currentUser?.role);
 

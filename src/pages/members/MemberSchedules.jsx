@@ -26,8 +26,10 @@ const MemberSchedules = () => {
   ];
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    if (currentUser?.id) {
+      fetchData();
+    }
+  }, [currentUser?.id]);
 
   useEffect(() => {
     if (schedules.length > 0) {
