@@ -57,12 +57,29 @@ const MemberWorkoutTracker = () => {
         ...doc.data(),
       }));
 
-      // Fetch exercises
-      const exercisesSnapshot = await getDocs(collection(db, "exercises"));
-      const exercisesData = exercisesSnapshot.docs.map((doc) => ({
+      // Fetch gym-specific exercises
+      const gymExercisesSnapshot = await getDocs(
+        query(
+          collection(db, "gym_exercises"),
+          where("gymId", "==", currentUser.gymId)
+        )
+      );
+      const gymExercisesData = gymExercisesSnapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
       }));
+
+      // Fetch common exercises
+      const commonExercisesSnapshot = await getDocs(
+        collection(db, "common_exercises")
+      );
+      const commonExercisesData = commonExercisesSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      // Combine both exercise collections
+      const allExercises = [...gymExercisesData, ...commonExercisesData];
 
       // Fetch workout logs
       const logsQuery = query(
@@ -77,7 +94,7 @@ const MemberWorkoutTracker = () => {
       }));
 
       setSchedules(schedulesData);
-      setExercises(exercisesData);
+      setExercises(allExercises);
       setWorkoutLogs(logsData);
 
       if (schedulesData.length > 0) {
