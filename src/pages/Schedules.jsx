@@ -18,6 +18,12 @@ const Schedules = () => {
   const [editingSchedule, setEditingSchedule] = useState(null);
   const [showNotification, setShowNotification] = useState(false);
   const [notificationMessage, setNotificationMessage] = useState("");
+  
+  // Assignment modal states
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [scheduleToAssign, setScheduleToAssign] = useState(null);
+  const [selectedMembersToAssign, setSelectedMembersToAssign] = useState([]);
+  const [assignDueDate, setAssignDueDate] = useState("");
 
   const isAdmin =
     currentUser?.role === "gym_admin" || currentUser?.role === "manager";
@@ -521,6 +527,73 @@ const Schedules = () => {
     });
   };
 
+  // New: Handle opening assign modal
+  const handleOpenAssignModal = (schedule) => {
+    setScheduleToAssign(schedule);
+    setShowAssignModal(true);
+    setSelectedMembersToAssign([]);
+    setAssignDueDate("");
+  };
+
+  // New: Handle assigning schedule to members
+  const handleAssignSchedule = async () => {
+    if (selectedMembersToAssign.length === 0) {
+      alert("Please select at least one member");
+      return;
+    }
+
+    try {
+      const { db } = await import("../config/firebase");
+      const { collection, addDoc, Timestamp } = await import(
+        "firebase/firestore"
+      );
+
+      const promises = selectedMembersToAssign.map((memberId) => {
+        const member = members.find((m) => m.id === memberId);
+        return addDoc(collection(db, "workout_assignments"), {
+          templateId: scheduleToAssign.id,
+          templateName: scheduleToAssign.title,
+          memberId: memberId,
+          memberName: member.name,
+          assignedBy: currentUser.id,
+          assignedByName: currentUser.name,
+          gymId: currentGymId,
+          assignedAt: Timestamp.now(),
+          dueDate: assignDueDate ? new Date(assignDueDate) : null,
+          status: "assigned",
+          progress: {
+            completedExercises: 0,
+            totalExercises: scheduleToAssign.workouts?.reduce((total, workout) => {
+              return total + (workout.exercises?.length || 0);
+            }, 0) || 0,
+            lastUpdated: Timestamp.now(),
+          },
+        });
+      });
+
+      await Promise.all(promises);
+      showSuccessNotification(
+        `Schedule assigned to ${selectedMembersToAssign.length} member(s) successfully! 🎉`
+      );
+      setShowAssignModal(false);
+      setScheduleToAssign(null);
+      setSelectedMembersToAssign([]);
+      setAssignDueDate("");
+    } catch (error) {
+      console.error("Error assigning schedule:", error);
+      alert(`Error assigning schedule: ${error.message}`);
+    }
+  };
+
+  // New: Toggle member selection for assignment
+  const toggleMemberSelection = (memberId) => {
+    setSelectedMembersToAssign((prev) =>
+      prev.includes(memberId)
+        ? prev.filter((id) => id !== memberId)
+        : [...prev, memberId]
+    );
+  };
+
   if (loading) {
     return (
       <div className="h-screen w-screen bg-gray-900 flex items-center justify-center">
@@ -709,6 +782,26 @@ const Schedules = () => {
                     </button>
                     {isAdmin && (
                       <>
+                        <button
+                          onClick={() => handleOpenAssignModal(schedule)}
+                          className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition flex items-center gap-1"
+                          title="Assign to Members"
+                        >
+                          <svg
+                            className="w-4 h-4"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
+                            />
+                          </svg>
+                          Assign
+                        </button>
                         <button
                           onClick={() => handleEditSchedule(schedule)}
                           className="px-4 py-2 bg-yellow-600/20 hover:bg-yellow-600/30 text-yellow-600 rounded-lg text-sm font-medium transition"
@@ -1692,6 +1785,131 @@ const Schedules = () => {
                 className="w-full px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-medium transition"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Assignment Modal */}
+      {showAssignModal && scheduleToAssign && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-800 rounded-xl max-w-2xl w-full p-6 max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h2 className="text-2xl font-bold text-white">
+                  Assign Schedule to Members
+                </h2>
+                <p className="text-gray-400 mt-1">
+                  {scheduleToAssign.title}
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowAssignModal(false);
+                  setScheduleToAssign(null);
+                  setSelectedMembersToAssign([]);
+                  setAssignDueDate("");
+                }}
+                className="text-gray-400 hover:text-white transition"
+              >
+                <svg
+                  className="w-6 h-6"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+
+            {/* Due Date */}
+            <div className="mb-6">
+              <label className="block text-gray-300 mb-2">
+                Due Date (Optional)
+              </label>
+              <input
+                type="date"
+                value={assignDueDate}
+                onChange={(e) => setAssignDueDate(e.target.value)}
+                className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+
+            {/* Members List */}
+            <div className="mb-6">
+              <h3 className="text-lg font-bold text-white mb-3">
+                Select Members ({selectedMembersToAssign.length} selected)
+              </h3>
+              {members.length === 0 ? (
+                <p className="text-gray-400 text-center py-8">
+                  No members available
+                </p>
+              ) : (
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {members.map((member) => (
+                    <label
+                      key={member.id}
+                      className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition ${
+                        selectedMembersToAssign.includes(member.id)
+                          ? "bg-purple-600/20 border-purple-600"
+                          : "bg-gray-900 border-gray-700 hover:border-gray-600"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedMembersToAssign.includes(member.id)}
+                        onChange={() => toggleMemberSelection(member.id)}
+                        className="w-5 h-5 text-purple-600 bg-gray-700 border-gray-600 rounded focus:ring-purple-500"
+                      />
+                      <div className="flex-1">
+                        <p className="text-white font-medium">{member.name}</p>
+                        <p className="text-gray-400 text-sm">{member.email}</p>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowAssignModal(false);
+                  setScheduleToAssign(null);
+                  setSelectedMembersToAssign([]);
+                  setAssignDueDate("");
+                }}
+                className="flex-1 px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-medium transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAssignSchedule}
+                disabled={selectedMembersToAssign.length === 0}
+                className="flex-1 px-6 py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white rounded-lg font-medium transition flex items-center justify-center gap-2"
+              >
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
+                  />
+                </svg>
+                Assign to {selectedMembersToAssign.length} Member(s)
               </button>
             </div>
           </div>
