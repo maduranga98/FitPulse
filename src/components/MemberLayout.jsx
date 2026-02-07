@@ -1,6 +1,7 @@
 import { useAuth } from "../hooks/useAuth";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useState } from "react";
+import NotificationCenter from "./NotificationCenter";
 
 const MemberLayout = ({ children }) => {
   const { user: currentUser, logout } = useAuth();
@@ -145,9 +146,12 @@ const MemberLayout = ({ children }) => {
       {/* Sidebar - Desktop */}
       <aside className="hidden lg:flex lg:flex-col lg:w-64 bg-gray-800 border-r border-gray-700 flex-shrink-0">
         {/* Logo */}
-        <div className="flex items-center gap-3 p-6 border-b border-gray-700 flex-shrink-0">
-          <img src="/logo.png" alt="PulsedGym Logo" className="w-10 h-10" />
-          <span className="text-xl font-bold text-white">PulsedGym</span>
+        <div className="flex items-center justify-between gap-3 p-6 border-b border-gray-700 flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <img src="/logo.png" alt="PulsedGym Logo" className="w-10 h-10" />
+            <span className="text-xl font-bold text-white">PulsedGym</span>
+          </div>
+          <NotificationCenter userId={currentUser?.id} />
         </div>
 
         {/* Navigation */}
@@ -244,11 +248,15 @@ const MemberLayout = ({ children }) => {
             <span className="text-lg font-bold text-white">PulsedGym</span>
           </div>
 
-          {/* User Avatar */}
-          <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-purple-600 rounded-full flex items-center justify-center">
-            <span className="text-white font-semibold text-xs">
-              {member?.name?.charAt(0) || "M"}
-            </span>
+          {/* Header Actions */}
+          <div className="flex items-center gap-2">
+            <NotificationCenter userId={currentUser?.id} />
+            {/* User Avatar */}
+            <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-purple-600 rounded-full flex items-center justify-center">
+              <span className="text-white font-semibold text-xs">
+                {currentUser?.name?.charAt(0) || "M"}
+              </span>
+            </div>
           </div>
 
           {/* Mobile Slide-out Menu */}

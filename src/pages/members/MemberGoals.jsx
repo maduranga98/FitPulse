@@ -614,8 +614,8 @@ const MemberGoals = () => {
 
         {/* Add Goal Modal */}
         {showAddGoal && (
-          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 overflow-y-auto">
-            <div className="bg-gray-800 rounded-xl max-w-2xl w-full my-8">
+          <div className="fixed inset-0 bg-black/80 flex items-start justify-center z-50 overflow-y-auto">
+            <div className="bg-gray-800 rounded-xl max-w-2xl w-full my-4 sm:my-8 mx-4">
               <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-6 rounded-t-xl">
                 <div className="flex items-center justify-between">
                   <h2 className="text-2xl font-bold text-white flex items-center gap-2">
@@ -806,8 +806,8 @@ const MemberGoals = () => {
 
         {/* Goal Templates Modal */}
         {showTemplates && (
-          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 overflow-y-auto">
-            <div className="bg-gray-800 rounded-xl max-w-4xl w-full my-8">
+          <div className="fixed inset-0 bg-black/80 flex items-start justify-center z-50 overflow-y-auto">
+            <div className="bg-gray-800 rounded-xl max-w-4xl w-full my-4 sm:my-8 mx-4">
               <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-6 rounded-t-xl">
                 <div className="flex items-center justify-between">
                   <h2 className="text-2xl font-bold text-white">Goal Templates</h2>
@@ -855,8 +855,8 @@ const MemberGoals = () => {
 
         {/* Update Progress Modal */}
         {selectedGoal && (
-          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-            <div className="bg-gray-800 rounded-xl max-w-md w-full">
+          <div className="fixed inset-0 bg-black/80 flex items-start justify-center z-50 overflow-y-auto">
+            <div className="bg-gray-800 rounded-xl max-w-md w-full my-4 sm:my-8 mx-4">
               <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-6 rounded-t-xl">
                 <div className="flex items-center justify-between">
                   <h2 className="text-xl font-bold text-white">Update Progress</h2>

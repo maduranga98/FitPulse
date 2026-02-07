@@ -1,6 +1,10 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../hooks/useAuth";
 import AdminLayout from "../components/AdminLayout";
+import ClassDetailsModal from "../components/ClassDetailsModal";
+import AnnouncementModal from "../components/AnnouncementModal";
+import { notificationService } from "../services/notificationService";
+import * as waitlistService from "../services/waitlistService";
 import {
   Calendar,
   Clock,
@@ -12,6 +16,8 @@ import {
   X,
   UserCheck,
   Filter,
+  Info,
+  Bell,
 } from "lucide-react";
 
 const ClassManagement = () => {
@@ -25,6 +31,8 @@ const ClassManagement = () => {
   const [editingClass, setEditingClass] = useState(null);
   const [selectedClass, setSelectedClass] = useState(null);
   const [activeTab, setActiveTab] = useState("classes");
+  const [selectedClassDetails, setSelectedClassDetails] = useState(null);
+  const [announcementClass, setAnnouncementClass] = useState(null);
 
   const [classForm, setClassForm] = useState({
     className: "",
@@ -87,11 +95,19 @@ const ClassManagement = () => {
       }));
 
       // Calculate booking counts for each class
-      const classesWithCounts = classesData.map((classItem) => ({
-        ...classItem,
-        bookingCount: bookingsData.filter(
+      const classesWithCounts = await Promise.all(classesData.map(async (classItem) => {
+        const currentBookings = bookingsData.filter(
           (b) => b.classId === classItem.id && (b.status === "confirmed" || b.status === "attended")
-        ).length,
+        ).length;
+        
+        // Get waitlist count for this class
+        const waitlistCount = await waitlistService.getWaitlistCount(classItem.id);
+        
+        return {
+          ...classItem,
+          currentBookings,
+          waitlistCount,
+        };
       }));
 
       setClasses(classesWithCounts);
@@ -217,6 +233,43 @@ const ClassManagement = () => {
     }
   };
 
+  const handleSendAnnouncement = async (title, message) => {
+    try {
+      const { db } = await import("../config/firebase");
+      const { collection, query, where, getDocs } = await import("firebase/firestore");
+
+      // Get all enrolled members for this class
+      const bookingsQuery = query(
+        collection(db, "classBookings"),
+        where("classId", "==", announcementClass.id),
+        where("status", "in", ["confirmed", "attended"])
+      );
+
+      const bookingsSnapshot = await getDocs(bookingsQuery);
+      const enrolledMemberIds = bookingsSnapshot.docs.map((doc) => doc.data().memberId);
+
+      if (enrolledMemberIds.length === 0) {
+        alert("No enrolled members to notify.");
+        return;
+      }
+
+      // Send announcement to all enrolled members
+      await notificationService.sendCustomAnnouncement(
+        announcementClass.id,
+        announcementClass.className,
+        enrolledMemberIds,
+        title,
+        message
+      );
+
+      alert(`Announcement sent to ${enrolledMemberIds.length} member(s)! 📢`);
+    } catch (error) {
+      console.error("Error sending announcement:", error);
+      throw error;
+    }
+  };
+
+
   const getClassBookings = (classId) => {
     return bookings.filter(
       (b) => b.classId === classId && (b.status === "confirmed" || b.status === "attended")
@@ -323,8 +376,13 @@ const ClassManagement = () => {
                               <div className="flex items-center gap-2 text-sm text-gray-300">
                                 <Users className="w-4 h-4 text-indigo-400" />
                                 <span>
-                                  {classItem.bookingCount}/{classItem.maxCapacity} booked
+                                  {classItem.currentBookings}/{classItem.maxCapacity} booked
                                 </span>
+                                {classItem.waitlistCount > 0 && (
+                                  <span className="ml-2 px-2 py-0.5 bg-yellow-600 text-white text-xs rounded-full">
+                                    +{classItem.waitlistCount} waiting
+                                  </span>
+                                )}
                               </div>
                             </div>
 
@@ -340,6 +398,20 @@ const ClassManagement = () => {
                           </div>
 
                           <div className="flex gap-2">
+                            <button
+                              onClick={() => setSelectedClassDetails(classItem)}
+                              className="p-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition"
+                              title="View details"
+                            >
+                              <Info className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => setAnnouncementClass(classItem)}
+                              className="p-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition"
+                              title="Send notice to enrolled members"
+                            >
+                              <Bell className="w-4 h-4" />
+                            </button>
                             <button
                               onClick={() => {
                                 setSelectedClass(classItem);
@@ -684,6 +756,27 @@ const ClassManagement = () => {
           </div>
         )}
       </div>
+
+      {/* Class Details Modal */}
+      <ClassDetailsModal
+        classData={selectedClassDetails}
+        isOpen={!!selectedClassDetails}
+        onClose={() => setSelectedClassDetails(null)}
+        onBook={() => {}}
+        onCancel={() => {}}
+        currentUser={currentUser}
+        isBooked={false}
+        isFull={false}
+        isOwner={true}
+      />
+
+      {/* Announcement Modal */}
+      <AnnouncementModal
+        classData={announcementClass}
+        isOpen={!!announcementClass}
+        onClose={() => setAnnouncementClass(null)}
+        onSend={handleSendAnnouncement}
+      />
     </AdminLayout>
   );
 };

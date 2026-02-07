@@ -27,6 +27,8 @@ const InstructorManagement = () => {
     name: "",
     email: "",
     phone: "",
+    username: "",
+    password: "",
     specialization: "",
     experience: "",
     certification: "",
@@ -70,6 +72,8 @@ const InstructorManagement = () => {
         name: instructor.name || "",
         email: instructor.email || "",
         phone: instructor.phone || "",
+        username: instructor.username || "",
+        password: "",
         specialization: instructor.specialization || "",
         experience: instructor.experience || "",
         certification: instructor.certification || "",
@@ -82,6 +86,8 @@ const InstructorManagement = () => {
         name: "",
         email: "",
         phone: "",
+        username: "",
+        password: "",
         specialization: "",
         experience: "",
         certification: "",
@@ -121,26 +127,24 @@ const InstructorManagement = () => {
         });
         alert("Instructor updated successfully! ✓");
       } else {
-        // Generate a default password for new instructor
-        const defaultPassword = `instructor${Date.now().toString().slice(-6)}`;
-
         try {
-          // Create auth user
+          // Create auth user with provided password
           const userCredential = await createUserWithEmailAndPassword(
             auth,
             instructorForm.email,
-            defaultPassword
+            instructorForm.password
           );
 
           // Add instructor to users collection
           await addDoc(collection(db, "users"), {
             ...instructorData,
             uid: userCredential.user.uid,
-            username: instructorForm.email.split("@")[0],
+            username: instructorForm.username,
+            password: instructorForm.password,
             createdAt: Timestamp.now(),
           });
 
-          alert(`Instructor created successfully! 🎉\n\nTemporary Password: ${defaultPassword}\n\nPlease share this with the instructor and ask them to change it on first login.`);
+          alert(`Instructor created successfully! 🎉\n\nUsername: ${instructorForm.username}\nPassword: ${instructorForm.password}\n\nPlease share these credentials with the instructor.`);
         } catch (authError) {
           if (authError.code === "auth/email-already-in-use") {
             alert("This email is already registered in the system.");
@@ -423,6 +427,50 @@ const InstructorManagement = () => {
                       placeholder="+1234567890"
                     />
                   </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Username *
+                    </label>
+                    <input
+                      type="text"
+                      value={instructorForm.username}
+                      onChange={(e) =>
+                        setInstructorForm({ ...instructorForm, username: e.target.value })
+                      }
+                      className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="instructor_username"
+                      required
+                      disabled={editingInstructor}
+                    />
+                    {!editingInstructor && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        Instructor will use this username to log in
+                      </p>
+                    )}
+                  </div>
+
+                  {!editingInstructor && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        Password *
+                      </label>
+                      <input
+                        type="password"
+                        value={instructorForm.password}
+                        onChange={(e) =>
+                          setInstructorForm({ ...instructorForm, password: e.target.value })
+                        }
+                        className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="Set instructor password"
+                        required
+                        minLength="6"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Minimum 6 characters. Share this with the instructor.
+                      </p>
+                    </div>
+                  )}
 
                   <div>
                     <label className="block text-sm font-medium text-gray-300 mb-2">

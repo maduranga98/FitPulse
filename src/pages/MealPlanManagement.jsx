@@ -49,6 +49,13 @@ const MealPlanManagement = () => {
 
   const fetchData = async () => {
     try {
+      // Safety check for currentUser and gymId
+      if (!currentUser || !currentUser.gymId) {
+        console.error("Current user or gymId is missing");
+        setLoading(false);
+        return;
+      }
+
       const { db } = await import("../config/firebase");
       const { collection, query, where, getDocs, orderBy } = await import("firebase/firestore");
 
@@ -319,7 +326,7 @@ const MealPlanManagement = () => {
 
   const getFilteredMealPlans = () => {
     return mealPlans.filter((plan) =>
-      plan.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      plan.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       plan.description?.toLowerCase().includes(searchQuery.toLowerCase())
     );
   };
