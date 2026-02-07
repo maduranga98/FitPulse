@@ -18,6 +18,8 @@ const Login = () => {
         navigate("/super-admin", { replace: true });
       } else if (user.role === "member") {
         navigate("/member-dashboard", { replace: true });
+      } else if (user.role === "trainer") {
+        navigate("/instructor-dashboard", { replace: true });
       } else {
         navigate("/dashboard", { replace: true });
       }
@@ -44,6 +46,8 @@ const Login = () => {
           navigate("/super-admin", { replace: true });
         } else if (storedUser.role === "member") {
           navigate("/member-dashboard", { replace: true });
+        } else if (storedUser.role === "trainer") {
+          navigate("/instructor-dashboard", { replace: true });
         } else {
           navigate("/dashboard", { replace: true });
         }

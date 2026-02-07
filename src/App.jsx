@@ -41,6 +41,14 @@ import ScheduleAnalytics from "./pages/ScheduleAnalytics";
 import ComplaintAnalytics from "./pages/ComplaintAnalytics";
 import OperationalAnalytics from "./pages/OperationalAnalytics";
 import ExerciseAnalytics from "./pages/ExerciseAnalytics";
+import InstructorDashboard from "./pages/InstructorDashboard";
+import InstructorExercises from "./pages/instructor/InstructorExercises";
+import InstructorWorkouts from "./pages/instructor/InstructorWorkouts";
+import InstructorMembers from "./pages/instructor/InstructorMembers";
+import InstructorMealPlans from "./pages/instructor/InstructorMealPlans";
+import InstructorMemberAnalytics from "./pages/instructor/InstructorMemberAnalytics";
+import InstructorClasses from "./pages/instructor/InstructorClasses";
+
 
 // Component to handle root redirect based on user role
 function RootRedirect() {
@@ -54,6 +62,8 @@ function RootRedirect() {
     return <Navigate to="/super-admin" replace />;
   } else if (user.role === "member") {
     return <Navigate to="/member-dashboard" replace />;
+  } else if (user.role === "trainer") {
+    return <Navigate to="/instructor-dashboard" replace />;
   } else {
     return <Navigate to="/dashboard" replace />;
   }
@@ -423,6 +433,78 @@ function App() {
             element={
               <ProtectedRoute>
                 <Schedules />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Protected Routes - Trainers/Instructors Only */}
+          <Route
+            path="/instructor-dashboard"
+            element={
+              <ProtectedRoute>
+                <RoleRoute allowedRoles={["trainer"]}>
+                  <InstructorDashboard />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/instructor/exercises"
+            element={
+              <ProtectedRoute>
+                <RoleRoute allowedRoles={["trainer"]}>
+                  <InstructorExercises />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/instructor/workouts"
+            element={
+              <ProtectedRoute>
+                <RoleRoute allowedRoles={["trainer"]}>
+                  <InstructorWorkouts />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/instructor/members"
+            element={
+              <ProtectedRoute>
+                <RoleRoute allowedRoles={["trainer"]}>
+                  <InstructorMembers />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/instructor/meal-plans"
+            element={
+              <ProtectedRoute>
+                <RoleRoute allowedRoles={["trainer"]}>
+                  <InstructorMealPlans />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/instructor/analytics"
+            element={
+              <ProtectedRoute>
+                <RoleRoute allowedRoles={["trainer"]}>
+                  <InstructorMemberAnalytics />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/instructor/classes"
+            element={
+              <ProtectedRoute>
+                <RoleRoute allowedRoles={["trainer"]}>
+                  <InstructorClasses />
+                </RoleRoute>
               </ProtectedRoute>
             }
           />
