@@ -10,6 +10,7 @@ export const ROLES = {
   SUPER_ADMIN: 'super_admin',
   GYM_ADMIN: 'gym_admin',
   GYM_MANAGER: 'gym_manager',
+  TRAINER: 'trainer',
   MEMBER: 'member',
 };
 
@@ -18,8 +19,8 @@ export const ROLES = {
  */
 export const ROLE_GROUPS = {
   ADMIN: [ROLES.GYM_ADMIN, ROLES.GYM_MANAGER],
-  ALL_STAFF: [ROLES.SUPER_ADMIN, ROLES.GYM_ADMIN, ROLES.GYM_MANAGER],
-  ALL_USERS: [ROLES.SUPER_ADMIN, ROLES.GYM_ADMIN, ROLES.GYM_MANAGER, ROLES.MEMBER],
+  ALL_STAFF: [ROLES.SUPER_ADMIN, ROLES.GYM_ADMIN, ROLES.GYM_MANAGER, ROLES.TRAINER],
+  ALL_USERS: [ROLES.SUPER_ADMIN, ROLES.GYM_ADMIN, ROLES.GYM_MANAGER, ROLES.TRAINER, ROLES.MEMBER],
 };
 
 /**
@@ -52,6 +53,15 @@ export const isSuperAdmin = (user) => {
 };
 
 /**
+ * Check if user is a trainer/instructor
+ * @param {Object} user - User object with role property
+ * @returns {boolean}
+ */
+export const isTrainer = (user) => {
+  return hasRole(user, [ROLES.TRAINER]);
+};
+
+/**
  * Check if user is a member
  * @param {Object} user - User object with role property
  * @returns {boolean}
@@ -61,7 +71,7 @@ export const isMember = (user) => {
 };
 
 /**
- * Check if user is any type of staff (super admin, gym admin, or manager)
+ * Check if user is any type of staff (super admin, gym admin, manager, or trainer)
  * @param {Object} user - User object with role property
  * @returns {boolean}
  */
@@ -91,6 +101,7 @@ export const getRoleName = (role) => {
     [ROLES.SUPER_ADMIN]: 'Super Admin',
     [ROLES.GYM_ADMIN]: 'Gym Admin',
     [ROLES.GYM_MANAGER]: 'Gym Manager',
+    [ROLES.TRAINER]: 'Trainer',
     [ROLES.MEMBER]: 'Member',
   };
   return roleNames[role] || role;
@@ -109,6 +120,14 @@ export const validateGymId = (user) => {
 
   // Admin users must have gymId
   if (isAdmin(user) && !user.gymId) {
+    return {
+      isValid: false,
+      error: 'Your account is not associated with a gym. Please contact support.',
+    };
+  }
+
+  // Trainers must have gymId
+  if (isTrainer(user) && !user.gymId) {
     return {
       isValid: false,
       error: 'Your account is not associated with a gym. Please contact support.',
