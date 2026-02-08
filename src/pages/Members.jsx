@@ -265,6 +265,28 @@ const Members = () => {
         );
       }
 
+      // Send WhatsApp notification
+      try {
+        const { sendMemberRegistrationWhatsApp } = await import(
+          "../services/whatsappService"
+        );
+
+        await sendMemberRegistrationWhatsApp(
+          {
+            name: memberForm.name,
+            mobile: memberForm.mobile,
+            whatsapp: memberForm.whatsapp,
+          },
+          username,
+          password
+        );
+
+        console.log("✅ WhatsApp sent successfully");
+      } catch (whatsappError) {
+        console.warn("⚠️ WhatsApp sending failed:", whatsappError);
+        // Don't show warning for WhatsApp - SMS warning is enough
+      }
+
       // Reset form
       setMemberForm({
         name: "",
