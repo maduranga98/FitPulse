@@ -145,29 +145,33 @@ const SuperAdminDashboard = () => {
           gymForm.adminUsername,
           gymForm.adminPassword
         );
-
-        setSmsStatus({
-          type: "success",
-          message: "✓ Gym registered and credentials sent via SMS!",
-        });
       } catch (smsError) {
-        // SMS failed - delete the created records and throw error
-        const { deleteDoc: delDoc, doc: docRef, query: q, where: w } = await import("firebase/firestore");
-        await delDoc(docRef(db, "gyms", gymRef.id));
-
-        // Get the user doc to delete it too
-        const usersRef = collection(db, "users");
-        const userQuery = q(
-          usersRef,
-          w("username", "==", gymForm.adminUsername)
-        );
-        const userSnapshot = await getDocs(userQuery);
-        if (!userSnapshot.empty) {
-          await delDoc(docRef(db, "users", userSnapshot.docs[0].id));
-        }
-
-        throw smsError;
+        console.warn("⚠️ SMS sending failed:", smsError);
+        // Continue — SMS failure shouldn't block registration
       }
+
+      // Step 4: Send WhatsApp with credentials
+      try {
+        const { sendGymRegistrationWhatsApp } = await import(
+          "../services/whatsappService"
+        );
+        await sendGymRegistrationWhatsApp(
+          {
+            name: gymForm.name,
+            phone: gymForm.phone,
+          },
+          gymForm.adminUsername,
+          gymForm.adminPassword
+        );
+      } catch (whatsappError) {
+        console.warn("⚠️ WhatsApp sending failed:", whatsappError);
+        // Continue — WhatsApp failure shouldn't block registration
+      }
+
+      setSmsStatus({
+        type: "success",
+        message: "✓ Gym registered and credentials sent via SMS & WhatsApp!",
+      });
 
       // Reset form and refresh list
       setShowAddGym(false);

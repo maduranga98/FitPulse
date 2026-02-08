@@ -219,8 +219,30 @@ const AdminPayments = () => {
               "✅ Payment receipt SMS sent successfully to:",
               memberData.name
             );
+
+            // ✅ SEND WHATSAPP NOTIFICATION TO MEMBER
+            try {
+              const { sendPaymentReceiptWhatsApp } = await import(
+                "../services/whatsappService"
+              );
+              await sendPaymentReceiptWhatsApp(
+                {
+                  name: memberData.name,
+                  mobile: memberData.mobile,
+                  whatsapp: memberData.whatsapp,
+                },
+                paymentData
+              );
+              console.log(
+                "✅ Payment receipt WhatsApp sent successfully to:",
+                memberData.name
+              );
+            } catch (whatsappError) {
+              console.warn("⚠️ WhatsApp sending failed:", whatsappError);
+              // Don't fail the payment recording if WhatsApp fails
+            }
           } else {
-            console.warn("⚠️ Member has no phone number for SMS");
+            console.warn("⚠️ Member has no phone number for SMS/WhatsApp");
           }
         }
       } catch (smsError) {
@@ -241,7 +263,7 @@ const AdminPayments = () => {
       setSelectedMember(null);
       fetchData();
 
-      alert("Payment recorded successfully! ✅\nSMS receipt sent to member.");
+      alert("Payment recorded successfully! ✅\nReceipt sent via SMS & WhatsApp.");
     } catch (error) {
       console.error("Error recording payment:", error);
       alert("Failed to record payment. Please try again.");

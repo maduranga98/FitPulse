@@ -698,3 +698,131 @@ export const processSingleFaceRegistration = functions.firestore
 
     return null;
   });
+
+// ========================================
+// 📱 WHATSAPP BUSINESS API - CLOUD FUNCTION PROXY
+// ========================================
+
+/**
+ * Send WhatsApp message via Meta Cloud API
+ * This Cloud Function acts as a CORS proxy since the WhatsApp API
+ * doesn't support browser-origin requests.
+ *
+ * Callable from frontend via Firebase SDK:
+ *   const { httpsCallable } = await import("firebase/functions");
+ *   const sendWhatsApp = httpsCallable(functions, "sendWhatsAppMessage");
+ *   await sendWhatsApp({ phoneNumber, message, templateName, templateParams });
+ */
+export const sendWhatsAppMessage = functions.https.onCall(async (data, context) => {
+  const { phoneNumber, message, templateName, templateParams, phoneNumberId, accessToken } = data;
+
+  // Use credentials from call data (frontend .env) or fall back to Firebase config
+  const whatsappConfig = functions.config().whatsapp || {};
+  const PHONE_NUMBER_ID = phoneNumberId || whatsappConfig.phone_number_id;
+  const ACCESS_TOKEN = accessToken || whatsappConfig.access_token;
+
+  if (!PHONE_NUMBER_ID || !ACCESS_TOKEN) {
+    console.error("❌ WhatsApp API not configured.");
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      "WhatsApp API credentials not provided. Set VITE_WHATSAPP_PHONE_NUMBER_ID and VITE_WHATSAPP_ACCESS_TOKEN in .env"
+    );
+  }
+
+  if (!phoneNumber) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "Phone number is required"
+    );
+  }
+
+  // Format phone number: ensure it starts with country code, no + prefix
+  let formattedPhone = phoneNumber.replace(/\D/g, "");
+  if (formattedPhone.startsWith("0")) {
+    formattedPhone = "94" + formattedPhone.slice(1);
+  } else if (formattedPhone.length === 9) {
+    formattedPhone = "94" + formattedPhone;
+  }
+
+  console.log(`📱 Sending WhatsApp to: ${formattedPhone}`);
+
+  // Build request body based on whether using template or text message
+  let requestBody;
+
+  if (templateName) {
+    // Template message (for session-initiating messages)
+    requestBody = {
+      messaging_product: "whatsapp",
+      to: formattedPhone,
+      type: "template",
+      template: {
+        name: templateName,
+        language: { code: "en" },
+        components: templateParams
+          ? [
+              {
+                type: "body",
+                parameters: templateParams.map((p) => ({
+                  type: "text",
+                  text: p,
+                })),
+              },
+            ]
+          : [],
+      },
+    };
+  } else if (message) {
+    // Plain text message (only within 24h session window)
+    requestBody = {
+      messaging_product: "whatsapp",
+      to: formattedPhone,
+      type: "text",
+      text: { body: message },
+    };
+  } else {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "Either message or templateName is required"
+    );
+  }
+
+  try {
+    const apiUrl = `https://graph.facebook.com/v21.0/${PHONE_NUMBER_ID}/messages`;
+
+    const response = await fetch(apiUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${ACCESS_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    const responseData = await response.json();
+
+    if (!response.ok) {
+      console.error("❌ WhatsApp API error:", responseData);
+      throw new functions.https.HttpsError(
+        "internal",
+        responseData.error?.message || `WhatsApp API error: ${response.status}`
+      );
+    }
+
+    console.log("✅ WhatsApp message sent successfully:", responseData);
+
+    return {
+      success: true,
+      messageId: responseData.messages?.[0]?.id || null,
+      timestamp: new Date().toISOString(),
+    };
+  } catch (error) {
+    if (error instanceof functions.https.HttpsError) {
+      throw error;
+    }
+    console.error("❌ WhatsApp send error:", error);
+    throw new functions.https.HttpsError(
+      "internal",
+      error.message || "Failed to send WhatsApp message"
+    );
+  }
+});
