@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node --check:*)",
+      "Bash(npx --no-install vite build:*)",
+      "Bash(npx firebase functions:list:*)",
+      "Bash(npx firebase functions:log --only sendWhatsAppMessage)",
+      "Bash(npx firebase deploy:*)"
+    ]
+  }
+}

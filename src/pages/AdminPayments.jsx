@@ -191,64 +191,43 @@ const AdminPayments = () => {
       // Save payment to database
       await addDoc(collection(db, "payments"), paymentData);
 
-      // ✅ SEND SMS NOTIFICATION TO MEMBER
+      // ✅ SEND WHATSAPP NOTIFICATION TO MEMBER
       try {
-        const { sendPaymentReceiptSMS } = await import(
-          "../services/smsService"
-        );
-
-        // Get full member data including phone numbers
         const memberRef = doc(db, "members", selectedMember.id);
         const memberSnap = await getDoc(memberRef);
 
         if (memberSnap.exists()) {
           const memberData = memberSnap.data();
 
-          // Check if member has phone number
           if (memberData.mobile || memberData.whatsapp) {
-            await sendPaymentReceiptSMS(
+            const { sendPaymentReceiptWhatsApp } = await import(
+              "../services/whatsappService"
+            );
+
+            const gymRef = doc(db, "gyms", currentGymId);
+            const gymSnap = await getDoc(gymRef);
+            const gymName = gymSnap.exists() ? gymSnap.data().name : "Your Gym";
+
+            await sendPaymentReceiptWhatsApp(
               {
                 name: memberData.name,
                 mobile: memberData.mobile,
                 whatsapp: memberData.whatsapp,
               },
-              paymentData
+              paymentData,
+              gymName
             );
-
             console.log(
-              "✅ Payment receipt SMS sent successfully to:",
+              "✅ Payment receipt WhatsApp sent successfully to:",
               memberData.name
             );
-
-            // ✅ SEND WHATSAPP NOTIFICATION TO MEMBER
-            try {
-              const { sendPaymentReceiptWhatsApp } = await import(
-                "../services/whatsappService"
-              );
-              await sendPaymentReceiptWhatsApp(
-                {
-                  name: memberData.name,
-                  mobile: memberData.mobile,
-                  whatsapp: memberData.whatsapp,
-                },
-                paymentData
-              );
-              console.log(
-                "✅ Payment receipt WhatsApp sent successfully to:",
-                memberData.name
-              );
-            } catch (whatsappError) {
-              console.warn("⚠️ WhatsApp sending failed:", whatsappError);
-              // Don't fail the payment recording if WhatsApp fails
-            }
           } else {
-            console.warn("⚠️ Member has no phone number for SMS/WhatsApp");
+            console.warn("⚠️ Member has no phone number for WhatsApp");
           }
         }
-      } catch (smsError) {
-        console.error("⚠️ SMS sending failed:", smsError);
-        // Don't fail the payment recording if SMS fails
-        // Just log it and continue
+      } catch (whatsappError) {
+        console.warn("⚠️ WhatsApp sending failed:", whatsappError);
+        // Don't fail the payment recording if WhatsApp fails
       }
 
       // Reset form and close modal
