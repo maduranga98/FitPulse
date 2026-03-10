@@ -265,26 +265,31 @@ const Members = () => {
         );
       }
 
-      // Send WhatsApp notification
+      // Send Welcome WhatsApp notification
       try {
-        const { sendMemberRegistrationWhatsApp } = await import(
+        const { sendWelcomeMemberWhatsApp } = await import(
           "../services/whatsappService"
         );
 
-        await sendMemberRegistrationWhatsApp(
+        const { doc, getDoc } = await import("firebase/firestore");
+        const { db } = await import("../config/firebase");
+        const gymDoc = await getDoc(doc(db, "gyms", currentGymId));
+        const gymName = gymDoc.exists() ? gymDoc.data().name : "Your Gym";
+
+        await sendWelcomeMemberWhatsApp(
           {
             name: memberForm.name,
             mobile: memberForm.mobile,
             whatsapp: memberForm.whatsapp,
+            id: username,
           },
-          username,
-          password
+          gymName,
+          memberForm.joinDate || new Date().toLocaleDateString()
         );
 
-        console.log("✅ WhatsApp sent successfully");
+        console.log("✅ Welcome WhatsApp sent successfully");
       } catch (whatsappError) {
-        console.warn("⚠️ WhatsApp sending failed:", whatsappError);
-        // Don't show warning for WhatsApp - SMS warning is enough
+        console.warn("⚠️ Welcome WhatsApp sending failed:", whatsappError);
       }
 
       // Reset form

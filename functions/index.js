@@ -1,7 +1,13 @@
 /* eslint-disable no-unused-vars */
+
+// ⚠️ LOAD ENVIRONMENT VARIABLES FIRST!
+import "dotenv/config.js";
+
 import * as functions from "firebase-functions";
 import admin from "firebase-admin";
 import { ImageAnnotatorClient } from "@google-cloud/vision";
+import process from "process";
+import * as metaWhatsAppService from "./services/metaWhatsAppService.js";
 
 admin.initializeApp();
 
@@ -60,18 +66,16 @@ async function validateMemberStatus(memberId, gymId) {
 
     const memberData = memberDoc.data();
 
-    // Validate member belongs to the gym
     if (memberData.gymId !== gymId) {
       console.warn(
-        `⚠️ Member ${memberId} does not belong to gym ${gymId} (actual: ${memberData.gymId})`
+        `⚠️ Member ${memberId} does not belong to gym ${gymId} (actual: ${memberData.gymId})`,
       );
       return false;
     }
 
-    // Validate member is active
     if (memberData.status !== "active") {
       console.warn(
-        `⚠️ Member ${memberId} is not active (status: ${memberData.status})`
+        `⚠️ Member ${memberId} is not active (status: ${memberData.status})`,
       );
       return false;
     }
@@ -92,14 +96,13 @@ function checkRateLimit(key, maxOperations = 10, timeWindowMs = 60000) {
   const now = Date.now();
   const operations = operationCounts.get(key) || [];
 
-  // Remove old operations outside time window
   const recentOps = operations.filter((time) => now - time < timeWindowMs);
 
   if (recentOps.length >= maxOperations) {
     console.warn(
       `⚠️ Rate limit exceeded for ${key}: ${recentOps.length} operations in ${
         timeWindowMs / 1000
-      }s`
+      }s`,
     );
     return false;
   }
@@ -110,7 +113,7 @@ function checkRateLimit(key, maxOperations = 10, timeWindowMs = 60000) {
 }
 
 // ========================================
-// 🔍 FACE RECOGNITION WITH MULTI-PHOTO SUPPORT (v1 Compatible)
+// 🔍 FACE RECOGNITION WITH MULTI-PHOTO SUPPORT
 // ========================================
 
 export const recognizeFace = functions.storage
@@ -126,11 +129,9 @@ export const recognizeFace = functions.storage
       return null;
     }
 
-    // Extract device/user info from filename for rate limiting
     const filename = filePath.split("/")[1];
     const deviceId = filename.split("_").slice(0, 2).join("_");
 
-    // Rate limiting: Max 10 recognition attempts per minute per device
     if (!checkRateLimit(`face_recognition_${deviceId}`, 10, 60000)) {
       console.warn(`⚠️ Rate limit exceeded for device ${deviceId}`);
       await admin.storage().bucket(bucketName).file(filePath).delete();
@@ -155,8 +156,8 @@ export const recognizeFace = functions.storage
       const detectedFace = faces[0];
 
       console.log("📱 Device ID:", deviceId);
-
       console.log("👥 Fetching registered members...");
+
       const db = admin.firestore();
       const membersSnapshot = await db
         .collection("members")
@@ -178,7 +179,6 @@ export const recognizeFace = functions.storage
       for (const memberDoc of membersSnapshot.docs) {
         const member = memberDoc.data();
 
-        // ✅ HANDLE BOTH OLD (single photo) AND NEW (multi-photo) FORMATS
         const facePhotos =
           member.facePhotos ||
           (member.facePhotoURL ? [{ url: member.facePhotoURL }] : []);
@@ -188,7 +188,6 @@ export const recognizeFace = functions.storage
           continue;
         }
 
-        // 📸 COMPARE WITH ALL STORED PHOTOS FOR THIS MEMBER
         const confidences = [];
 
         for (let i = 0; i < facePhotos.length; i++) {
@@ -218,12 +217,12 @@ export const recognizeFace = functions.storage
             console.log(
               `    Photo ${i + 1} (${facePhoto.angle || "single"}): ${(
                 similarity * 100
-              ).toFixed(1)}%`
+              ).toFixed(1)}%`,
             );
           } catch (error) {
             console.error(
               `  ❌ Error comparing with ${member.name} photo ${i + 1}:`,
-              error.message
+              error.message,
             );
           }
         }
@@ -233,15 +232,14 @@ export const recognizeFace = functions.storage
           continue;
         }
 
-        // 🎯 SMART MATCHING STRATEGY
         const bestPhotoMatch = Math.max(
-          ...confidences.map((c) => c.confidence)
+          ...confidences.map((c) => c.confidence),
         );
 
         let avgTopTwo = bestPhotoMatch;
         if (confidences.length >= 2) {
           const sorted = [...confidences].sort(
-            (a, b) => b.confidence - a.confidence
+            (a, b) => b.confidence - a.confidence,
           );
           avgTopTwo = (sorted[0].confidence + sorted[1].confidence) / 2;
         }
@@ -249,7 +247,7 @@ export const recognizeFace = functions.storage
         let weightedAvg = bestPhotoMatch;
         if (confidences.length >= 2) {
           const sorted = [...confidences].sort(
-            (a, b) => b.confidence - a.confidence
+            (a, b) => b.confidence - a.confidence,
           );
           weightedAvg = sorted[0].confidence * 0.5 + sorted[1].confidence * 0.4;
         }
@@ -257,11 +255,10 @@ export const recognizeFace = functions.storage
         const finalConfidence = Math.max(
           bestPhotoMatch,
           avgTopTwo,
-          weightedAvg
+          weightedAvg,
         );
 
         console.log(`  📊 ${member.name} final scores:`);
-
         console.log(`    Best single: ${(bestPhotoMatch * 100).toFixed(1)}%`);
         if (confidences.length >= 2) {
           console.log(`    Avg top 2: ${(avgTopTwo * 100).toFixed(1)}%`);
@@ -269,7 +266,7 @@ export const recognizeFace = functions.storage
         }
         console.log(`    ✨ FINAL: ${(finalConfidence * 100).toFixed(1)}%`);
 
-        if (finalConfidence > highestConfidence && finalConfidence > 0.5) {
+        if (finalConfidence > highestConfidence && finalConfidence > 0.6) {
           highestConfidence = finalConfidence;
           bestMatch = {
             id: memberDoc.id,
@@ -290,26 +287,23 @@ export const recognizeFace = functions.storage
         console.log(`✅ MATCH FOUND: ${bestMatch.name}`);
         console.log(`   Confidence: ${(highestConfidence * 100).toFixed(1)}%`);
         console.log(`   Photos compared: ${bestMatchDetails.photosCompared}`);
-        console.log(`   Strategy: ${bestMatchDetails.strategy}`);
 
-        // Validate gym is active
         const gymValid = await validateGymStatus(bestMatch.gymId);
         if (!gymValid) {
           console.warn(
-            `⚠️ Cannot mark attendance - gym ${bestMatch.gymId} is not active`
+            `⚠️ Cannot mark attendance - gym ${bestMatch.gymId} is not active`,
           );
           await admin.storage().bucket(bucketName).file(filePath).delete();
           return null;
         }
 
-        // Validate member status
         const memberValid = await validateMemberStatus(
           bestMatch.id,
-          bestMatch.gymId
+          bestMatch.gymId,
         );
         if (!memberValid) {
           console.warn(
-            `⚠️ Cannot mark attendance - member ${bestMatch.id} is not active or doesn't belong to gym`
+            `⚠️ Cannot mark attendance - member ${bestMatch.id} is not active`,
           );
           await admin.storage().bucket(bucketName).file(filePath).delete();
           return null;
@@ -357,7 +351,7 @@ export const recognizeFace = functions.storage
       } else {
         console.log("❌ No matching member found (confidence too low)");
         console.log(
-          `   Highest confidence was: ${(highestConfidence * 100).toFixed(1)}%`
+          `   Highest confidence was: ${(highestConfidence * 100).toFixed(1)}%`,
         );
         console.log(`   Threshold: 60.0%`);
       }
@@ -372,8 +366,9 @@ export const recognizeFace = functions.storage
   });
 
 // ========================================
-// 🔧 ADVANCED FACE COMPARISON ALGORITHM
+// 🔧 FACE COMPARISON ALGORITHMS
 // ========================================
+
 function compareAdvancedFaces(face1, face2) {
   let totalScore = 0;
   let totalWeight = 0;
@@ -388,7 +383,7 @@ function compareAdvancedFaces(face1, face2) {
     const boxWeight = 0.15;
     const boxSimilarity = compareBoundingBoxes(
       face1.boundingPoly.vertices,
-      face2.boundingPoly.vertices
+      face2.boundingPoly.vertices,
     );
     totalScore += boxSimilarity * boxWeight;
     totalWeight += boxWeight;
@@ -408,7 +403,7 @@ function compareAdvancedFaces(face1, face2) {
     const landmarkWeight = 0.45;
     const landmarkSimilarity = compareLandmarks(
       face1.landmarks,
-      face2.landmarks
+      face2.landmarks,
     );
     totalScore += landmarkSimilarity * landmarkWeight;
     totalWeight += landmarkWeight;
@@ -515,8 +510,9 @@ function compareLandmarks(landmarks1, landmarks2) {
 }
 
 // ========================================
-// 📝 PROCESS FACE REGISTRATION (Multi-Photo)
+// 📝 FACE REGISTRATION FUNCTIONS
 // ========================================
+
 export const processFaceRegistration = functions.firestore
   .document("members/{memberId}")
   .onUpdate(async (change, context) => {
@@ -529,14 +525,13 @@ export const processFaceRegistration = functions.firestore
 
     console.log(
       "📸 Processing multi-photo face registration for:",
-      newData.name
+      newData.name,
     );
 
-    // Validate gym is active
     const gymValid = await validateGymStatus(newData.gymId);
     if (!gymValid) {
       console.warn(
-        `⚠️ Cannot process face registration - gym ${newData.gymId} is not active`
+        `⚠️ Cannot process face registration - gym ${newData.gymId} is not active`,
       );
       await change.after.ref.update({
         faceRegistrationError: "Gym is not active",
@@ -544,12 +539,12 @@ export const processFaceRegistration = functions.firestore
       return null;
     }
 
-    // Rate limiting: Max 5 face registrations per member per hour
     const memberId = context.params.memberId;
     if (!checkRateLimit(`face_registration_${memberId}`, 5, 3600000)) {
       console.warn(`⚠️ Rate limit exceeded for member ${memberId}`);
       await change.after.ref.update({
-        faceRegistrationError: "Too many registration attempts. Please try again later.",
+        faceRegistrationError:
+          "Too many registration attempts. Please try again later.",
       });
       return null;
     }
@@ -564,7 +559,7 @@ export const processFaceRegistration = functions.firestore
         console.log(
           `  Processing photo ${i + 1}/${newData.facePhotos.length} (${
             photo.angle
-          })`
+          })`,
         );
 
         const [result] = await client.faceDetection(photo.url);
@@ -596,12 +591,12 @@ export const processFaceRegistration = functions.firestore
         console.log(
           `  ✅ Photo ${i + 1} processed - Confidence: ${(
             faceData.detectionConfidence * 100
-          ).toFixed(1)}%`
+          ).toFixed(1)}%`,
         );
       }
 
       const successfulPhotos = processedPhotos.filter(
-        (p) => p.processed
+        (p) => p.processed,
       ).length;
 
       await change.after.ref.update({
@@ -612,7 +607,7 @@ export const processFaceRegistration = functions.firestore
       });
 
       console.log(
-        `✅ Face registration completed: ${successfulPhotos}/${processedPhotos.length} photos successful`
+        `✅ Face registration completed: ${successfulPhotos}/${processedPhotos.length} photos successful`,
       );
     } catch (error) {
       console.error("❌ Error processing face registration:", error);
@@ -625,9 +620,6 @@ export const processFaceRegistration = functions.firestore
     return null;
   });
 
-// ========================================
-// 🔄 BACKWARDS COMPATIBILITY - OLD SINGLE PHOTO
-// ========================================
 export const processSingleFaceRegistration = functions.firestore
   .document("members/{memberId}")
   .onCreate(async (snap, context) => {
@@ -639,14 +631,13 @@ export const processSingleFaceRegistration = functions.firestore
 
     console.log(
       "📸 Processing single-photo face registration for:",
-      member.name
+      member.name,
     );
 
-    // Validate gym is active
     const gymValid = await validateGymStatus(member.gymId);
     if (!gymValid) {
       console.warn(
-        `⚠️ Cannot process face registration - gym ${member.gymId} is not active`
+        `⚠️ Cannot process face registration - gym ${member.gymId} is not active`,
       );
       await snap.ref.update({
         faceRegistered: false,
@@ -686,7 +677,7 @@ export const processSingleFaceRegistration = functions.firestore
       console.log(
         `   Detection confidence: ${(
           faceData.detectionConfidence * 100
-        ).toFixed(1)}%`
+        ).toFixed(1)}%`,
       );
     } catch (error) {
       console.error("❌ Error processing face registration:", error);
@@ -700,129 +691,170 @@ export const processSingleFaceRegistration = functions.firestore
   });
 
 // ========================================
-// 📱 WHATSAPP BUSINESS API - CLOUD FUNCTION PROXY
+// 📱 WHATSAPP FUNCTIONS (SECURE VERSION)
 // ========================================
 
 /**
- * Send WhatsApp message via Meta Cloud API
- * This Cloud Function acts as a CORS proxy since the WhatsApp API
- * doesn't support browser-origin requests.
- *
- * Callable from frontend via Firebase SDK:
- *   const { httpsCallable } = await import("firebase/functions");
- *   const sendWhatsApp = httpsCallable(functions, "sendWhatsAppMessage");
- *   await sendWhatsApp({ phoneNumber, message, templateName, templateParams });
+ * ✅ SECURE: Send WhatsApp message using server-side credentials only
+ * Frontend should NEVER have access to WhatsApp tokens!
  */
-export const sendWhatsAppMessage = functions.https.onCall(async (data, context) => {
-  const { phoneNumber, message, templateName, templateParams, phoneNumberId, accessToken } = data;
+export const sendWhatsAppMessage = functions.https.onCall(
+  async (data, _context) => {
+    try {
+      console.log("📱 WhatsApp message request received");
 
-  // Use credentials from call data (frontend .env) or fall back to Firebase config
-  const whatsappConfig = functions.config().whatsapp || {};
-  const PHONE_NUMBER_ID = phoneNumberId || whatsappConfig.phone_number_id;
-  const ACCESS_TOKEN = accessToken || whatsappConfig.access_token;
+      // Note: This app uses custom auth (not Firebase Auth),
+      // so context.auth is not available. Callable functions
+      // already enforce CORS and request format validation.
 
-  if (!PHONE_NUMBER_ID || !ACCESS_TOKEN) {
-    console.error("❌ WhatsApp API not configured.");
-    throw new functions.https.HttpsError(
-      "failed-precondition",
-      "WhatsApp API credentials not provided. Set VITE_WHATSAPP_PHONE_NUMBER_ID and VITE_WHATSAPP_ACCESS_TOKEN in .env"
-    );
-  }
+      // Check if WhatsApp service is configured
+      if (!metaWhatsAppService.isConfigured()) {
+        throw new functions.https.HttpsError(
+          "failed-precondition",
+          "WhatsApp service is not configured on server",
+        );
+      }
 
-  if (!phoneNumber) {
-    throw new functions.https.HttpsError(
-      "invalid-argument",
-      "Phone number is required"
-    );
-  }
+      const { phone, templateName, params, message } = data;
 
-  // Format phone number: ensure it starts with country code, no + prefix
-  let formattedPhone = phoneNumber.replace(/\D/g, "");
-  if (formattedPhone.startsWith("0")) {
-    formattedPhone = "94" + formattedPhone.slice(1);
-  } else if (formattedPhone.length === 9) {
-    formattedPhone = "94" + formattedPhone;
-  }
+      if (!phone) {
+        throw new functions.https.HttpsError(
+          "invalid-argument",
+          "Phone number is required",
+        );
+      }
 
-  console.log(`📱 Sending WhatsApp to: ${formattedPhone}`);
+      let result;
 
-  // Build request body based on whether using template or text message
-  let requestBody;
+      // Send template message or text message
+      if (templateName && params) {
+        const components = metaWhatsAppService.buildTemplateComponents(
+          templateName,
+          params,
+        );
+        result = await metaWhatsAppService.sendTemplateMessage(
+          phone,
+          templateName,
+          "en",
+          components,
+        );
+      } else if (message) {
+        result = await metaWhatsAppService.sendTextMessage(phone, message);
+      } else {
+        throw new functions.https.HttpsError(
+          "invalid-argument",
+          "Either templateName with params, or message is required",
+        );
+      }
 
-  if (templateName) {
-    // Template message (for session-initiating messages)
-    requestBody = {
-      messaging_product: "whatsapp",
-      to: formattedPhone,
-      type: "template",
-      template: {
-        name: templateName,
-        language: { code: "en" },
-        components: templateParams
-          ? [
-              {
-                type: "body",
-                parameters: templateParams.map((p) => ({
-                  type: "text",
-                  text: p,
-                })),
-              },
-            ]
-          : [],
-      },
-    };
-  } else if (message) {
-    // Plain text message (only within 24h session window)
-    requestBody = {
-      messaging_product: "whatsapp",
-      to: formattedPhone,
-      type: "text",
-      text: { body: message },
-    };
-  } else {
-    throw new functions.https.HttpsError(
-      "invalid-argument",
-      "Either message or templateName is required"
-    );
-  }
+      if (!result.success) {
+        throw new functions.https.HttpsError(
+          "internal",
+          result.error || "Failed to send WhatsApp message",
+        );
+      }
 
-  try {
-    const apiUrl = `https://graph.facebook.com/v21.0/${PHONE_NUMBER_ID}/messages`;
+      console.log("✅ WhatsApp message sent successfully");
 
-    const response = await fetch(apiUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${ACCESS_TOKEN}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(requestBody),
-    });
-
-    const responseData = await response.json();
-
-    if (!response.ok) {
-      console.error("❌ WhatsApp API error:", responseData);
+      return {
+        success: true,
+        messageId: result.messageId,
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error) {
+      if (error instanceof functions.https.HttpsError) {
+        throw error;
+      }
+      console.error("❌ WhatsApp send error:", error);
       throw new functions.https.HttpsError(
         "internal",
-        responseData.error?.message || `WhatsApp API error: ${response.status}`
+        error.message || "Failed to send WhatsApp message",
       );
     }
+  },
+);
 
-    console.log("✅ WhatsApp message sent successfully:", responseData);
+/**
+ * Test WhatsApp function - For testing only
+ */
+export const testWhatsAppMessage = functions.https.onCall(
+  async (data, context) => {
+    try {
+      console.log("🧪 Test WhatsApp message request");
 
-    return {
-      success: true,
-      messageId: responseData.messages?.[0]?.id || null,
-      timestamp: new Date().toISOString(),
-    };
-  } catch (error) {
-    if (error instanceof functions.https.HttpsError) {
-      throw error;
+      if (!metaWhatsAppService.isConfigured()) {
+        throw new functions.https.HttpsError(
+          "failed-precondition",
+          "WhatsApp service is not configured",
+        );
+      }
+
+      const { phone, templateName, params } = data;
+
+      const components = metaWhatsAppService.buildTemplateComponents(
+        templateName,
+        params,
+      );
+
+      const result = await metaWhatsAppService.sendTemplateMessage(
+        phone,
+        templateName,
+        "en",
+        components,
+      );
+
+      return result;
+    } catch (error) {
+      console.error("Test message error:", error);
+      throw new functions.https.HttpsError("internal", error.message);
     }
-    console.error("❌ WhatsApp send error:", error);
-    throw new functions.https.HttpsError(
-      "internal",
-      error.message || "Failed to send WhatsApp message"
-    );
+  },
+);
+
+/**
+ * Webhook endpoint for WhatsApp status updates
+ */
+export const whatsappWebhook = functions.https.onRequest(async (req, res) => {
+  console.log("📞 Webhook received:", req.method);
+
+  // GET - Webhook Verification
+  if (req.method === "GET") {
+    const mode = req.query["hub.mode"];
+    const token = req.query["hub.verify_token"];
+    const challenge = req.query["hub.challenge"];
+
+    // Get verify token from env or Firebase config
+    const verifyToken =
+      process.env.WHATSAPP_VERIFY_TOKEN ||
+      (functions.config().whatsapp && functions.config().whatsapp.verify_token);
+
+    if (mode === "subscribe" && token === verifyToken) {
+      console.log("✅ Webhook verified successfully!");
+      res.status(200).send(challenge);
+      return;
+    } else {
+      console.error("❌ Webhook verification failed!");
+      res.sendStatus(403);
+      return;
+    }
   }
+
+  // POST - Webhook Events
+  if (req.method === "POST") {
+    try {
+      const body = req.body;
+      console.log("📨 Webhook event received");
+
+      // Process webhook events here
+      // (Status updates, incoming messages, etc.)
+
+      res.sendStatus(200);
+    } catch (error) {
+      console.error("Webhook processing error:", error);
+      res.sendStatus(200);
+    }
+    return;
+  }
+
+  res.sendStatus(405);
 });

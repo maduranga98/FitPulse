@@ -150,27 +150,9 @@ const SuperAdminDashboard = () => {
         // Continue — SMS failure shouldn't block registration
       }
 
-      // Step 4: Send WhatsApp with credentials
-      try {
-        const { sendGymRegistrationWhatsApp } = await import(
-          "../services/whatsappService"
-        );
-        await sendGymRegistrationWhatsApp(
-          {
-            name: gymForm.name,
-            phone: gymForm.phone,
-          },
-          gymForm.adminUsername,
-          gymForm.adminPassword
-        );
-      } catch (whatsappError) {
-        console.warn("⚠️ WhatsApp sending failed:", whatsappError);
-        // Continue — WhatsApp failure shouldn't block registration
-      }
-
       setSmsStatus({
         type: "success",
-        message: "✓ Gym registered and credentials sent via SMS & WhatsApp!",
+        message: "✓ Gym registered and credentials sent via SMS!",
       });
 
       // Reset form and refresh list
