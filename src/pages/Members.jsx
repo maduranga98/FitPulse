@@ -43,6 +43,9 @@ const Members = () => {
     level: "beginner",
     status: "active",
     joinDate: new Date().toISOString().split("T")[0],
+    membershipFee: "",
+    packageDuration: 1,
+    nextPaymentDate: "",
     emergencyContact: "",
     emergencyName: "",
     notes: "",
@@ -63,6 +66,16 @@ const Members = () => {
       setBmiInfo(null);
     }
   }, [memberForm.weight, memberForm.height]);
+
+  // Auto-calculate nextPaymentDate when joinDate or packageDuration changes
+  useEffect(() => {
+    if (memberForm.joinDate && memberForm.packageDuration) {
+      const joinDate = new Date(memberForm.joinDate);
+      joinDate.setMonth(joinDate.getMonth() + parseInt(memberForm.packageDuration));
+      const nextDate = joinDate.toISOString().slice(0, 10);
+      setMemberForm((prev) => ({ ...prev, nextPaymentDate: nextDate }));
+    }
+  }, [memberForm.joinDate, memberForm.packageDuration]);
 
   const fetchMembers = async () => {
     if (!currentGymId) {
@@ -224,6 +237,9 @@ const Members = () => {
         gymId: currentGymId,
         username,
         password,
+        membershipFee: memberForm.membershipFee ? parseFloat(memberForm.membershipFee) : 0,
+        packageDuration: parseInt(memberForm.packageDuration) || 1,
+        nextPaymentDate: memberForm.nextPaymentDate || "",
         bmi: bmiInfo?.bmi || null,
         bmiCategory: bmiInfo?.category || null,
         role: "member",
@@ -306,6 +322,9 @@ const Members = () => {
         level: "beginner",
         status: "active",
         joinDate: new Date().toISOString().split("T")[0],
+        membershipFee: "",
+        packageDuration: 1,
+        nextPaymentDate: "",
         emergencyContact: "",
         emergencyName: "",
         notes: "",
@@ -1115,6 +1134,59 @@ const Members = () => {
                   />
                 </div>
 
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Package Fee (Rs.) *
+                  </label>
+                  <input
+                    type="number"
+                    value={memberForm.membershipFee}
+                    onChange={(e) =>
+                      setMemberForm({ ...memberForm, membershipFee: e.target.value })
+                    }
+                    className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Enter package fee"
+                    required
+                    min="0"
+                    step="0.01"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Package Duration *
+                  </label>
+                  <select
+                    value={memberForm.packageDuration}
+                    onChange={(e) =>
+                      setMemberForm({ ...memberForm, packageDuration: parseInt(e.target.value) })
+                    }
+                    className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  >
+                    <option value={1}>1 Month</option>
+                    <option value={2}>2 Months</option>
+                    <option value={3}>3 Months</option>
+                    <option value={6}>6 Months</option>
+                    <option value={12}>12 Months</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Next Payment Date *
+                  </label>
+                  <input
+                    type="date"
+                    value={memberForm.nextPaymentDate}
+                    onChange={(e) =>
+                      setMemberForm({ ...memberForm, nextPaymentDate: e.target.value })
+                    }
+                    className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                </div>
+
                 {/* Emergency Contact */}
                 <div className="md:col-span-2 mt-4">
                   <h3 className="text-lg font-bold text-white mb-4">
@@ -1545,6 +1617,26 @@ const Members = () => {
                       {viewMember.status}
                     </span>
                   </div>
+                  {viewMember.membershipFee != null && (
+                    <div className="bg-gray-900 rounded-lg p-4">
+                      <div className="text-gray-400 text-sm mb-1">Package Fee</div>
+                      <div className="text-white font-medium">Rs. {viewMember.membershipFee}</div>
+                    </div>
+                  )}
+                  {viewMember.packageDuration && (
+                    <div className="bg-gray-900 rounded-lg p-4">
+                      <div className="text-gray-400 text-sm mb-1">Package Duration</div>
+                      <div className="text-white font-medium">{viewMember.packageDuration} Month{viewMember.packageDuration > 1 ? 's' : ''}</div>
+                    </div>
+                  )}
+                  {viewMember.nextPaymentDate && (
+                    <div className="bg-gray-900 rounded-lg p-4 col-span-2">
+                      <div className="text-gray-400 text-sm mb-1">Next Payment Date</div>
+                      <div className="text-white font-medium">
+                        {new Date(viewMember.nextPaymentDate).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 

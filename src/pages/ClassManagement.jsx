@@ -46,6 +46,7 @@ const ClassManagement = () => {
     maxCapacity: 20,
     description: "",
     isActive: true,
+    classPrice: 0,
   });
 
   const daysOfWeek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -135,6 +136,7 @@ const ClassManagement = () => {
         maxCapacity: classItem.maxCapacity,
         description: classItem.description || "",
         isActive: classItem.isActive,
+        classPrice: classItem.classPrice || 0,
       });
     } else {
       setEditingClass(null);
@@ -150,6 +152,7 @@ const ClassManagement = () => {
         maxCapacity: 20,
         description: "",
         isActive: true,
+        classPrice: 0,
       });
     }
     setShowModal(true);
@@ -173,6 +176,7 @@ const ClassManagement = () => {
         description: classForm.description,
         gymId: currentUser.gymId,
         isActive: classForm.isActive,
+        classPrice: parseFloat(classForm.classPrice) || 0,
       };
 
       if (editingClass) {
@@ -355,6 +359,15 @@ const ClassManagement = () => {
                               <h3 className="text-xl font-bold text-white">
                                 {classItem.className}
                               </h3>
+                              {classItem.classPrice > 0 ? (
+                                <span className="px-2 py-1 bg-purple-600/20 text-purple-400 text-xs rounded font-medium">
+                                  Rs. {classItem.classPrice}
+                                </span>
+                              ) : (
+                                <span className="px-2 py-1 bg-green-600/20 text-green-400 text-xs rounded font-medium">
+                                  Free
+                                </span>
+                              )}
                               {!classItem.isActive && (
                                 <span className="px-2 py-1 bg-gray-700 text-gray-400 text-xs rounded">
                                   Inactive
@@ -665,7 +678,7 @@ const ClassManagement = () => {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-300 mb-2">
-                      Duration (min) *
+                      Duration (minutes) *
                     </label>
                     <input
                       type="number"
@@ -717,6 +730,23 @@ const ClassManagement = () => {
                     className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     placeholder="Brief description of the class..."
                     rows="3"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Class Price (Rs.)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={classForm.classPrice}
+                    onChange={(e) =>
+                      setClassForm({ ...classForm, classPrice: e.target.value })
+                    }
+                    className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="0 for free class"
                   />
                 </div>
 
