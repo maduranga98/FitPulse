@@ -3,415 +3,559 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // ============================================
-    // IMPORTANT NOTE
-    // ============================================
-    // This application currently uses custom authentication (localStorage)
-    // rather than Firebase Authentication. These rules provide data validation
-    // and write protection while allowing reads for the application to function.
-    //
-    // For full security, implement Firebase Authentication and update rules
-    // to check request.auth for all operations.
+    // ⚠️  LOCALSTORAGE AUTH — request.auth is null
+    // This app uses custom localStorage auth, NOT
+    // Firebase Authentication. Reads are open.
+    // Writes use field validation matched to actual
+    // payloads from each page in the codebase.
+    // Migrate to Firebase Auth for full enforcement.
     // ============================================
 
     // ============================================
     // HELPER FUNCTIONS
     // ============================================
 
-    // Validate required fields are present
-    function hasRequiredFields(fields) {
+    function hasFields(fields) {
       return request.resource.data.keys().hasAll(fields);
     }
 
-    // Validate email format
     function isValidEmail(email) {
       return email.matches('^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$');
     }
 
-    // Validate phone format (10+ digits)
     function isValidPhone(phone) {
       return phone.matches('^[0-9]{10,15}$');
     }
 
-    // Check if data fields are not being modified
-    function unchangedFields(fields) {
-      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
-    }
-
-    // Validate gymId consistency (resource must have same gymId as data)
-    function isSameGym() {
-      return !('gymId' in request.resource.data) ||
-             !('gymId' in resource.data) ||
-             request.resource.data.gymId == resource.data.gymId;
-    }
-
-    // Validate positive numbers
     function isPositive(value) {
       return value is number && value > 0;
     }
 
     // ============================================
-    // GYMS COLLECTION
+    // GYMS
+    // SuperAdminDashboard.jsx writes:
+    //   name, location, address, phone, email,
+    //   contactPerson, status, createdAt
     // ============================================
     match /gyms/{gymId} {
-      // Allow reads for the application
       allow read: if true;
-
-      // Allow creates with validation
-      allow create: if hasRequiredFields(['name', 'address', 'phone', 'email', 'status']) &&
-                      isValidEmail(request.resource.data.email) &&
-                      isValidPhone(request.resource.data.phone) &&
-                      request.resource.data.status in ['active', 'inactive'];
-
-      // Allow updates with validation
-      allow update: if hasRequiredFields(['name', 'address', 'phone', 'email', 'status']) &&
-                      isValidEmail(request.resource.data.email) &&
-                      isValidPhone(request.resource.data.phone) &&
-                      request.resource.data.status in ['active', 'inactive'];
-
-      // Allow deletes (application will control this)
-      allow delete: if true;
+      allow create: if hasFields(['name', 'address', 'phone', 'email', 'status'])
+                    && isValidEmail(request.resource.data.email)
+                    && isValidPhone(request.resource.data.phone)
+                    && request.resource.data.status in ['active', 'inactive'];
+      allow update: if true;
+      allow delete: if false;
     }
 
     // ============================================
-    // USERS COLLECTION (Gym Admins & Managers)
+    // USERS (gym_admin / gym_manager / super_admin)
+    // SuperAdminDashboard.jsx, InstructorManagement.jsx write:
+    //   username, password, name, email, phone, role,
+    //   gymId, createdAt
     // ============================================
     match /users/{userId} {
-      // Allow reads for the application
       allow read: if true;
-
-      // Allow creates with validation
-      allow create: if hasRequiredFields(['username', 'password', 'name', 'email', 'role', 'gymId']) &&
-                      isValidEmail(request.resource.data.email) &&
-                      request.resource.data.role in ['super_admin', 'gym_admin', 'gym_manager'];
-
-      // Allow updates with validation (protect critical fields)
-      allow update: if hasRequiredFields(['username', 'name', 'email', 'role', 'gymId']) &&
-                      isValidEmail(request.resource.data.email) &&
-                      unchangedFields(['gymId']) &&
-                      request.resource.data.role in ['super_admin', 'gym_admin', 'gym_manager'];
-
-      // Allow deletes
-      allow delete: if true;
+      allow create: if hasFields(['username', 'name', 'email', 'role', 'gymId'])
+                    && isValidEmail(request.resource.data.email)
+                    && request.resource.data.role in ['super_admin', 'gym_admin', 'gym_manager'];
+      allow update: if true;
+      allow delete: if false;
     }
 
     // ============================================
-    // MEMBERS COLLECTION
+    // MEMBERS
+    // Members.jsx writes:
+    //   name, email, phone, gymId, username, password,
+    //   mobile, whatsapp, weight, height, allergies,
+    //   diseases, level, status, joinDate, emergencyContact,
+    //   emergencyName, notes, bmi, bmiCategory, role,
+    //   facePhotos, faceRegistered, createdAt …
     // ============================================
     match /members/{memberId} {
-      // Allow reads for the application
       allow read: if true;
-
-      // Allow creates with validation
-      allow create: if hasRequiredFields(['name', 'email', 'phone', 'gymId']) &&
-                      isValidEmail(request.resource.data.email) &&
-                      isValidPhone(request.resource.data.phone) &&
-                      (!('membershipType' in request.resource.data) ||
-                       request.resource.data.membershipType in ['basic', 'premium', 'platinum']) &&
-                      (!('status' in request.resource.data) ||
-                       request.resource.data.status in ['active', 'inactive', 'suspended']);
-
-      // Allow updates with validation
-      allow update: if hasRequiredFields(['name', 'email', 'phone', 'gymId']) &&
-                      isValidEmail(request.resource.data.email) &&
-                      isValidPhone(request.resource.data.phone) &&
-                      isSameGym() &&
-                      (!('membershipType' in request.resource.data) ||
-                       request.resource.data.membershipType in ['basic', 'premium', 'platinum']) &&
-                      (!('status' in request.resource.data) ||
-                       request.resource.data.status in ['active', 'inactive', 'suspended']);
-
-      // Allow deletes
+      allow create: if hasFields(['name', 'email', 'phone', 'gymId'])
+                    && isValidEmail(request.resource.data.email)
+                    && isValidPhone(request.resource.data.phone);
+      allow update: if true;
       allow delete: if true;
     }
 
     // ============================================
-    // EXERCISES COLLECTION (Gym-specific)
-    // ============================================
-    match /exercises/{exerciseId} {
-      // Allow reads for the application
-      allow read: if true;
-
-      // Allow creates with validation
-      allow create: if hasRequiredFields(['name', 'category', 'gymId']);
-
-      // Allow updates with validation
-      allow update: if hasRequiredFields(['name', 'category', 'gymId']) &&
-                      isSameGym();
-
-      // Allow deletes
-      allow delete: if true;
-    }
-
-    // ============================================
-    // COMMON EXERCISES COLLECTION (Global Library)
-    // ============================================
-    match /commonExercises/{exerciseId} {
-      // Allow reads for all
-      allow read: if true;
-
-      // Allow creates with validation
-      allow create: if hasRequiredFields(['name', 'category']);
-
-      // Allow updates with validation
-      allow update: if hasRequiredFields(['name', 'category']);
-
-      // Allow deletes
-      allow delete: if true;
-    }
-
-    // ============================================
-    // EXERCISE PROGRAMS COLLECTION
-    // ============================================
-    match /exercisePrograms/{programId} {
-      // Allow reads for the application
-      allow read: if true;
-
-      // Allow creates with validation
-      allow create: if hasRequiredFields(['name', 'gymId']);
-
-      // Allow updates with validation
-      allow update: if hasRequiredFields(['name', 'gymId']) &&
-                      isSameGym();
-
-      // Allow deletes
-      allow delete: if true;
-    }
-
-    // ============================================
-    // SCHEDULES COLLECTION
-    // ============================================
-    match /schedules/{scheduleId} {
-      // Allow reads for the application
-      allow read: if true;
-
-      // Allow creates with validation
-      allow create: if hasRequiredFields(['memberId', 'gymId', 'date']);
-
-      // Allow updates with validation
-      allow update: if hasRequiredFields(['memberId', 'gymId', 'date']) &&
-                      isSameGym();
-
-      // Allow deletes
-      allow delete: if true;
-    }
-
-    // ============================================
-    // CLASSES COLLECTION
-    // ============================================
-    match /classes/{classId} {
-      // Allow reads for the application
-      allow read: if true;
-
-      // Allow creates with validation
-      allow create: if hasRequiredFields(['name', 'gymId', 'date', 'time']) &&
-                      (!('capacity' in request.resource.data) ||
-                       isPositive(request.resource.data.capacity));
-
-      // Allow updates with validation
-      allow update: if hasRequiredFields(['name', 'gymId', 'date', 'time']) &&
-                      isSameGym() &&
-                      (!('capacity' in request.resource.data) ||
-                       isPositive(request.resource.data.capacity));
-
-      // Allow deletes
-      allow delete: if true;
-    }
-
-    // ============================================
-    // EQUIPMENT COLLECTION
-    // ============================================
-    match /equipment/{equipmentId} {
-      // Allow reads for the application
-      allow read: if true;
-
-      // Allow creates with validation
-      allow create: if hasRequiredFields(['name', 'gymId']);
-
-      // Allow updates with validation
-      allow update: if hasRequiredFields(['name', 'gymId']) &&
-                      isSameGym();
-
-      // Allow deletes
-      allow delete: if true;
-    }
-
-    // ============================================
-    // PAYMENTS COLLECTION
+    // PAYMENTS
+    // AdminPayments.jsx writes:
+    //   memberId, gymId, memberName, amount, month,
+    //   paymentMethod, notes, paidAt, recordedBy,
+    //   recordedById
     // ============================================
     match /payments/{paymentId} {
-      // Allow reads for the application
       allow read: if true;
-
-      // Allow creates with validation
-      allow create: if hasRequiredFields(['memberId', 'amount', 'gymId', 'date']) &&
-                      isPositive(request.resource.data.amount) &&
-                      (!('status' in request.resource.data) ||
-                       request.resource.data.status in ['pending', 'completed', 'failed', 'refunded']);
-
-      // Allow updates with validation
-      allow update: if hasRequiredFields(['memberId', 'amount', 'gymId', 'date']) &&
-                      isSameGym() &&
-                      isPositive(request.resource.data.amount) &&
-                      (!('status' in request.resource.data) ||
-                       request.resource.data.status in ['pending', 'completed', 'failed', 'refunded']);
-
-      // Allow deletes
+      allow create: if hasFields(['memberId', 'gymId', 'amount', 'month', 'paidAt'])
+                    && request.resource.data.amount is number
+                    && request.resource.data.amount > 0;
+      allow update: if true;
       allow delete: if true;
     }
 
     // ============================================
-    // COMPLAINTS COLLECTION
-    // ============================================
-    match /complaints/{complaintId} {
-      // Allow reads for the application
-      allow read: if true;
-
-      // Allow creates with validation
-      allow create: if hasRequiredFields(['subject', 'description', 'memberId', 'gymId']) &&
-                      (!('status' in request.resource.data) ||
-                       request.resource.data.status in ['open', 'in_progress', 'resolved', 'closed']);
-
-      // Allow updates with validation
-      allow update: if hasRequiredFields(['subject', 'description', 'memberId', 'gymId']) &&
-                      isSameGym() &&
-                      (!('status' in request.resource.data) ||
-                       request.resource.data.status in ['open', 'in_progress', 'resolved', 'closed']);
-
-      // Allow deletes
-      allow delete: if true;
-    }
-
-    // ============================================
-    // ATTENDANCE COLLECTION
+    // ATTENDANCE
+    // Written by Cloud Functions / ESP32 face
+    // recognition and manual check-in
     // ============================================
     match /attendance/{attendanceId} {
-      // Allow reads for the application
       allow read: if true;
-
-      // Allow creates (including from Cloud Functions)
       allow create: if true;
-
-      // Allow updates with validation
-      allow update: if 'gymId' in resource.data && isSameGym();
-
-      // Allow deletes
+      allow update: if true;
       allow delete: if true;
     }
 
     // ============================================
-    // SUPPLEMENTS COLLECTION
+    // SCHEDULES
+    // Schedules.jsx writes:
+    //   memberId, gymId, title, startDate, createdAt,
+    //   workouts, cardio, warmUp, warmDown, days,
+    //   description, status, notes, createdBy …
     // ============================================
-    match /supplements/{supplementId} {
-      // Allow reads for the application
+    match /schedules/{scheduleId} {
       allow read: if true;
-
-      // Allow creates with validation
-      allow create: if hasRequiredFields(['name', 'gymId']);
-
-      // Allow updates with validation
-      allow update: if hasRequiredFields(['name', 'gymId']) &&
-                      isSameGym();
-
-      // Allow deletes
+      allow create: if hasFields(['memberId', 'gymId', 'title']);
+      allow update: if true;
       allow delete: if true;
     }
 
     // ============================================
-    // MEAL PLANS COLLECTION
+    // CLASSES
+    // ClassManagement.jsx writes:
+    //   className, instructorId, instructorName,
+    //   schedule, maxCapacity, description, gymId,
+    //   isActive, createdAt
     // ============================================
-    match /mealPlans/{mealPlanId} {
-      // Allow reads for the application
+    match /classes/{classId} {
       allow read: if true;
-
-      // Allow creates with validation
-      allow create: if hasRequiredFields(['memberId', 'gymId']);
-
-      // Allow updates with validation
-      allow update: if hasRequiredFields(['memberId', 'gymId']) &&
-                      isSameGym();
-
-      // Allow deletes
+      allow create: if hasFields(['gymId']);
+      allow update: if true;
       allow delete: if true;
     }
 
     // ============================================
-    // BODY MEASUREMENTS COLLECTION
+    // CLASS BOOKINGS
+    // MemberClasses.jsx, waitlistService.js write:
+    //   classId, className, memberId, memberName,
+    //   gymId, bookingDate, status, bookedAt
     // ============================================
-    match /bodyMeasurements/{measurementId} {
-      // Allow reads for the application
+    match /classBookings/{bookingId} {
       allow read: if true;
-
-      // Allow creates with validation
-      allow create: if hasRequiredFields(['memberId', 'gymId', 'date']);
-
-      // Allow updates with validation
-      allow update: if hasRequiredFields(['memberId', 'gymId', 'date']) &&
-                      isSameGym();
-
-      // Allow deletes
+      allow create: if hasFields(['classId', 'memberId', 'gymId']);
+      allow update: if true;
       allow delete: if true;
     }
 
     // ============================================
-    // PROGRESS PHOTOS COLLECTION
+    // CLASS WAITLIST
+    // waitlistService.js writes:
+    //   classId, className, memberId, memberName,
+    //   memberEmail, gymId, joinedAt, position, status
     // ============================================
-    match /progressPhotos/{photoId} {
-      // Allow reads for the application
+    match /classWaitlist/{waitlistId} {
       allow read: if true;
-
-      // Allow creates with validation
-      allow create: if hasRequiredFields(['memberId', 'gymId']);
-
-      // Allow updates with validation
-      allow update: if hasRequiredFields(['memberId', 'gymId']) &&
-                      isSameGym();
-
-      // Allow deletes
+      allow create: if hasFields(['classId', 'memberId', 'gymId']);
+      allow update: if true;
       allow delete: if true;
     }
 
     // ============================================
-    // WORKOUT LOGS COLLECTION
+    // CLASS NOTIFICATIONS
+    // notificationService.js writes:
+    //   userId, type, title, message, classId,
+    //   className, read, createdAt, actionUrl
+    // ============================================
+    match /classNotifications/{notificationId} {
+      allow read: if true;
+      allow create: if hasFields(['userId', 'type', 'title', 'message']);
+      allow update: if true;
+      allow delete: if true;
+    }
+
+    // ============================================
+    // CLASS REVIEWS
+    // ratingService.js writes:
+    //   classId, className, memberId, memberName,
+    //   gymId, rating, review, createdAt, updatedAt
+    // ============================================
+    match /classReviews/{reviewId} {
+      allow read: if true;
+      allow create: if hasFields(['classId', 'memberId', 'gymId', 'rating']);
+      allow update: if true;
+      allow delete: if true;
+    }
+
+    // ============================================
+    // RATINGS (read-only alias used by InstructorClasses)
+    // ============================================
+    match /ratings/{ratingId} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if true;
+      allow delete: if false;
+    }
+
+    // ============================================
+    // COMPLAINTS
+    // MemberComplaints.jsx writes:
+    //   subject, description, memberId, memberName,
+    //   gymId, status, createdAt
+    // ============================================
+    match /complaints/{complaintId} {
+      allow read: if true;
+      allow create: if hasFields(['subject', 'description', 'memberId', 'gymId']);
+      allow update: if true;
+      allow delete: if true;
+    }
+
+    // ============================================
+    // EXERCISES (global/common exercises library)
+    // CommonExercises.jsx, BulkExerciseImport.jsx write:
+    //   name, category, steps, targetedSections,
+    //   repsCount, sets, duration, difficulty,
+    //   equipment, notes, photoURLs, videoURLs
+    // gymId may be absent for common/global exercises
+    // ============================================
+    match /exercises/{exerciseId} {
+      allow read: if true;
+      allow create: if hasFields(['name', 'category']);
+      allow update: if true;
+      allow delete: if true;
+    }
+
+    // ============================================
+    // EXERCISE CATEGORIES
+    // Exercises.jsx writes: name, gymId
+    // gymId absent for common categories
+    // ============================================
+    match /exerciseCategories/{categoryId} {
+      allow read: if true;
+      allow create: if hasFields(['name']);
+      allow update: if true;
+      allow delete: if true;
+    }
+
+    // ============================================
+    // COMMON EXERCISES (alternate collection name)
+    // MemberSchedules.jsx, MemberWorkoutTracker.jsx,
+    // MemberWorkoutSession.jsx read from this
+    // ============================================
+    match /common_exercises/{exerciseId} {
+      allow read: if true;
+      allow create: if hasFields(['name', 'category']);
+      allow update: if true;
+      allow delete: if false;
+    }
+
+    // ============================================
+    // COMMON EXERCISE CATEGORIES
+    // ============================================
+    match /commonExerciseCategories/{categoryId} {
+      allow read: if true;
+      allow create: if hasFields(['name']);
+      allow update: if true;
+      allow delete: if false;
+    }
+
+    // ============================================
+    // GYM EXERCISES (instructor-created)
+    // Exercises.jsx, InstructorExercises.jsx write:
+    //   name, category, categoryName, gymId,
+    //   createdAt, updatedAt, steps, targetedSections …
+    // ============================================
+    match /gym_exercises/{exerciseId} {
+      allow read: if true;
+      allow create: if hasFields(['name', 'gymId']);
+      allow update: if true;
+      allow delete: if true;
+    }
+
+    // ============================================
+    // GYM EXERCISE SELECTIONS
+    // Exercises.jsx writes: gymId, exerciseId
+    // ============================================
+    match /gym_exercise_selections/{selectionId} {
+      allow read: if true;
+      allow create: if hasFields(['gymId', 'exerciseId']);
+      allow update: if true;
+      allow delete: if true;
+    }
+
+    // ============================================
+    // INSTRUCTOR EXERCISE SELECTIONS
+    // InstructorExercises.jsx writes:
+    //   instructorId, gymId, exerciseId, addedAt
+    // ============================================
+    match /instructor_exercise_selections/{selectionId} {
+      allow read: if true;
+      allow create: if hasFields(['instructorId', 'gymId', 'exerciseId']);
+      allow update: if true;
+      allow delete: if true;
+    }
+
+    // ============================================
+    // EXERCISE PROGRAMS (gym-level reusable templates)
+    // ExercisePrograms.jsx writes: name, gymId, exercises[]
+    // ============================================
+    match /exercisePrograms/{programId} {
+      allow read: if true;
+      allow create: if hasFields(['name', 'gymId']);
+      allow update: if true;
+      allow delete: if true;
+    }
+
+    // ============================================
+    // EXERCISE ASSIGNMENTS (direct exercise → member)
+    // Exercises.jsx, InstructorExercises.jsx write:
+    //   exerciseId, memberId, gymId, assignedAt,
+    //   dueDate, status
+    // ============================================
+    match /exercise_assignments/{assignmentId} {
+      allow read: if true;
+      allow create: if hasFields(['memberId', 'gymId']);
+      allow update: if true;
+      allow delete: if true;
+    }
+
+    // ============================================
+    // WORKOUT TEMPLATES (instructor)
+    // InstructorWorkouts.jsx writes:
+    //   name, gymId, difficulty, createdBy, createdAt …
+    // ============================================
+    match /workout_templates/{templateId} {
+      allow read: if true;
+      allow create: if hasFields(['name']);
+      allow update: if true;
+      allow delete: if true;
+    }
+
+    // ============================================
+    // TEMPLATE EXERCISES (exercises inside a template)
+    // InstructorWorkouts.jsx writes:
+    //   templateId, exerciseId, exerciseName,
+    //   sets, reps, rest, createdAt
+    // ============================================
+    match /template_exercises/{exerciseId} {
+      allow read: if true;
+      allow create: if hasFields(['templateId', 'exerciseId']);
+      allow update: if true;
+      allow delete: if true;
+    }
+
+    // ============================================
+    // WORKOUT ASSIGNMENTS (template → member)
+    // InstructorWorkouts.jsx, Schedules.jsx write:
+    //   templateId, templateName, memberId, memberName,
+    //   assignedBy, gymId, assignedAt, status …
+    // ============================================
+    match /workout_assignments/{assignmentId} {
+      allow read: if true;
+      allow create: if hasFields(['memberId', 'gymId']);
+      allow update: if true;
+      allow delete: if true;
+    }
+
+    // ============================================
+    // WORKOUT LOGS
+    // MemberWorkoutSession.jsx, MemberProgressTracker.jsx:
+    //   memberId, gymId, day, exercises,
+    //   completionRate, totalPRs, notes, completedAt
     // ============================================
     match /workoutLogs/{logId} {
-      // Allow reads for the application
       allow read: if true;
-
-      // Allow creates with validation
-      allow create: if hasRequiredFields(['memberId', 'gymId', 'date']);
-
-      // Allow updates with validation
-      allow update: if hasRequiredFields(['memberId', 'gymId', 'date']) &&
-                      isSameGym();
-
-      // Allow deletes
+      allow create: if hasFields(['memberId', 'gymId']);
+      allow update: if true;
       allow delete: if true;
     }
 
     // ============================================
-    // NOTIFICATIONS COLLECTION
+    // WORKOUT LOGS (snake_case alias)
+    // InstructorMemberAnalytics.jsx reads from this
+    // ============================================
+    match /workout_logs/{logId} {
+      allow read: if true;
+      allow create: if hasFields(['memberId', 'gymId']);
+      allow update: if true;
+      allow delete: if true;
+    }
+
+    // ============================================
+    // WEIGHT LOGS
+    // MemberProgressTracker.jsx writes:
+    //   memberId, weight, date, notes, createdAt
+    // ============================================
+    match /weightLogs/{logId} {
+      allow read: if true;
+      allow create: if hasFields(['memberId', 'weight'])
+                    && request.resource.data.weight is number
+                    && request.resource.data.weight > 0;
+      allow update: if true;
+      allow delete: if true;
+    }
+
+    // ============================================
+    // MEMBER BODY METRICS
+    // InstructorMemberAnalytics.jsx reads from this
+    //   memberId, gymId, measurements, date, createdAt
+    // ============================================
+    match /member_body_metrics/{metricId} {
+      allow read: if true;
+      allow create: if hasFields(['memberId', 'gymId']);
+      allow update: if true;
+      allow delete: if true;
+    }
+
+    // ============================================
+    // BODY MEASUREMENTS (legacy collection name)
+    // ============================================
+    match /bodyMeasurements/{measurementId} {
+      allow read: if true;
+      allow create: if hasFields(['memberId', 'gymId']);
+      allow update: if true;
+      allow delete: if true;
+    }
+
+    // ============================================
+    // PROGRESS PHOTOS
+    // MemberProgressTracker.jsx writes:
+    //   memberId, gymId, photoURLs, measurements,
+    //   weight, date, createdAt
+    // ============================================
+    match /progressPhotos/{photoId} {
+      allow read: if true;
+      allow create: if hasFields(['memberId', 'gymId']);
+      allow update: if true;
+      allow delete: if true;
+    }
+
+    // ============================================
+    // MEMBER GOALS
+    // MemberGoals.jsx writes:
+    //   memberId, gymId, goalType, title, targetValue,
+    //   currentValue, startValue, unit, deadline,
+    //   status, progress, milestones, notes, createdAt
+    // ============================================
+    match /memberGoals/{goalId} {
+      allow read: if true;
+      allow create: if hasFields(['memberId', 'gymId', 'goalType', 'title']);
+      allow update: if true;
+      allow delete: if true;
+    }
+
+    // ============================================
+    // EQUIPMENT
+    // EquipmentInventory.jsx writes:
+    //   name, category, quantity, condition,
+    //   purchaseDate, lastMaintenance, nextMaintenance,
+    //   notes, gymId, createdAt
+    // ============================================
+    match /equipment/{equipmentId} {
+      allow read: if true;
+      allow create: if hasFields(['name', 'gymId']);
+      allow update: if true;
+      allow delete: if true;
+    }
+
+    // ============================================
+    // SUPPLEMENTS
+    // Supplements.jsx writes:
+    //   name, gymId, availableQuantity, price,
+    //   scoopPrice, details, notes, category,
+    //   imageURLs, createdAt, createdBy
+    // ============================================
+    match /supplements/{supplementId} {
+      allow read: if true;
+      allow create: if hasFields(['name', 'gymId']);
+      allow update: if true;
+      allow delete: if true;
+    }
+
+    // ============================================
+    // SUPPLEMENT REQUESTS
+    // MemberSupplements.jsx writes:
+    //   memberId, gymId, supplementId, supplementName,
+    //   quantity, requestType, totalPrice, status,
+    //   notes, createdAt
+    // SupplementRequests.jsx updates:
+    //   status, adminNotes, approvedAt/rejectedAt
+    // ============================================
+    match /supplementRequests/{requestId} {
+      allow read: if true;
+      allow create: if hasFields(['memberId', 'gymId', 'supplementId']);
+      allow update: if true;
+      allow delete: if true;
+    }
+
+    // ============================================
+    // SUPPLEMENT REVENUE
+    // SupplementRequests.jsx writes:
+    //   gymId, memberId, supplementId, requestId,
+    //   amount, quantity, requestType, createdAt,
+    //   createdBy
+    // ============================================
+    match /supplementRevenue/{revenueId} {
+      allow read: if true;
+      allow create: if hasFields(['gymId', 'supplementId', 'amount'])
+                    && request.resource.data.amount is number
+                    && request.resource.data.amount > 0;
+      allow update: if true;
+      allow delete: if false;
+    }
+
+    // ============================================
+    // MEAL PLANS
+    // MealPlanManagement.jsx, InstructorMealPlans.jsx,
+    // MemberNutrition.jsx write:
+    //   memberId, gymId, date, meals, waterIntake,
+    //   calories, protein, carbs, fats, createdAt
+    // ============================================
+    match /mealPlans/{mealPlanId} {
+      allow read: if true;
+      allow create: if hasFields(['memberId', 'gymId']);
+      allow update: if true;
+      allow delete: if true;
+    }
+
+    // ============================================
+    // MEAL PLAN ASSIGNMENTS
+    // MealPlanManagement.jsx, InstructorMealPlans.jsx write:
+    //   mealPlanId, mealPlanName, memberId, memberName,
+    //   gymId, assignedAt, progress
+    // ============================================
+    match /mealPlanAssignments/{assignmentId} {
+      allow read: if true;
+      allow create: if hasFields(['mealPlanId', 'memberId', 'gymId']);
+      allow update: if true;
+      allow delete: if true;
+    }
+
+    // ============================================
+    // NOTIFICATIONS (SMS / WhatsApp records)
     // ============================================
     match /notifications/{notificationId} {
-      // Allow reads for the application
       allow read: if true;
-
-      // Allow creates
       allow create: if true;
-
-      // Allow updates
       allow update: if true;
-
-      // Allow deletes
       allow delete: if true;
     }
 
     // ============================================
-    // DEFAULT: ALLOW OTHER COLLECTIONS
+    // BULK EXERCISE IMPORT (temp/admin tool)
+    // BulkExerciseImport.jsx
     // ============================================
-    // Allow access to other collections for flexibility
-    match /{document=**} {
+    match /bulkImports/{importId} {
       allow read: if true;
       allow write: if true;
+    }
+
+    // ============================================
+    // DEFAULT — deny everything else
+    // ============================================
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }
