@@ -42,10 +42,11 @@ const AdminPayments = () => {
         "firebase/firestore"
       );
 
-      // Fetch members
+      // Fetch members (active only)
       const membersQuery = query(
         collection(db, "members"),
         where("gymId", "==", currentGymId),
+        where("status", "==", "active"),
         orderBy("name", "asc")
       );
       const membersSnapshot = await getDocs(membersQuery);
@@ -230,6 +231,22 @@ const AdminPayments = () => {
         // Don't fail the payment recording if WhatsApp fails
       }
 
+      // Auto-update nextPaymentDate after successful payment
+      try {
+        const memberRef = doc(db, "members", selectedMember.id);
+        const memberSnap = await getDoc(memberRef);
+        const memberData = memberSnap.data();
+        const currentNextDate = memberData.nextPaymentDate
+          ? new Date(memberData.nextPaymentDate)
+          : new Date();
+        const duration = memberData.packageDuration || 1;
+        currentNextDate.setMonth(currentNextDate.getMonth() + duration);
+        const newNextPaymentDate = currentNextDate.toISOString().slice(0, 10);
+        await updateDoc(memberRef, { nextPaymentDate: newNextPaymentDate });
+      } catch (updateError) {
+        console.warn("⚠️ Failed to update next payment date:", updateError);
+      }
+
       // Reset form and close modal
       setPaymentForm({
         amount: "",
@@ -264,28 +281,6 @@ const AdminPayments = () => {
     } catch (error) {
       console.error("Error deleting payment:", error);
       alert("Failed to delete payment. Please try again.");
-    }
-  };
-
-  const handleToggleMemberStatus = async (memberId, currentStatus) => {
-    const newStatus = currentStatus === "active" ? "inactive" : "active";
-    const confirmMessage = `Are you sure you want to mark this member as ${newStatus}?`;
-
-    if (!confirm(confirmMessage)) return;
-
-    try {
-      const { db } = await import("../config/firebase");
-      const { doc, updateDoc } = await import("firebase/firestore");
-
-      await updateDoc(doc(db, "members", memberId), {
-        status: newStatus,
-      });
-
-      fetchData();
-      alert(`Member marked as ${newStatus} successfully! ✅`);
-    } catch (error) {
-      console.error("Error updating member status:", error);
-      alert("Failed to update member status. Please try again.");
     }
   };
 
@@ -562,11 +557,19 @@ const AdminPayments = () => {
 
                     <div className="space-y-2 mb-4">
                       <div className="flex justify-between text-sm">
-                        <span className="text-gray-400">Membership Fee:</span>
+                        <span className="text-gray-400">Package Fee:</span>
                         <span className="text-white font-medium">
                           Rs. {member.membershipFee || "N/A"}
                         </span>
                       </div>
+                      {member.packageDuration && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-400">Package Duration:</span>
+                          <span className="text-white font-medium">
+                            {member.packageDuration} Month{member.packageDuration > 1 ? 's' : ''}
+                          </span>
+                        </div>
+                      )}
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-400">Payment Status:</span>
                         <span
@@ -577,18 +580,21 @@ const AdminPayments = () => {
                           {isPaid ? "Paid" : "Unpaid"}
                         </span>
                       </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-400">Member Status:</span>
-                        <span
-                          className={`font-medium ${
-                            member.status === "active"
-                              ? "text-green-600"
-                              : "text-orange-600"
-                          }`}
-                        >
-                          {member.status === "active" ? "Active" : "Inactive"}
-                        </span>
-                      </div>
+                      {member.nextPaymentDate && (() => {
+                        const nextDate = new Date(member.nextPaymentDate);
+                        const today = new Date();
+                        today.setHours(0,0,0,0);
+                        const diffDays = Math.ceil((nextDate - today) / (1000 * 60 * 60 * 24));
+                        const colorClass = diffDays < 0 ? "text-red-600" : diffDays <= 7 ? "text-yellow-500" : "text-green-600";
+                        return (
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-400">Next Payment Due:</span>
+                            <span className={`font-medium ${colorClass}`}>
+                              {nextDate.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}
+                            </span>
+                          </div>
+                        );
+                      })()}
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-400">Total Payments:</span>
                         <span className="text-white font-medium">
@@ -625,52 +631,6 @@ const AdminPayments = () => {
                         </button>
                       )}
 
-                      <button
-                        onClick={() =>
-                          handleToggleMemberStatus(member.id, member.status)
-                        }
-                        className={`w-full py-2 rounded-lg font-medium transition active:scale-95 flex items-center justify-center gap-2 ${
-                          member.status === "active"
-                            ? "bg-orange-600/20 text-orange-600 hover:bg-orange-600/30 border border-orange-600/50"
-                            : "bg-green-600/20 text-green-600 hover:bg-green-600/30 border border-green-600/50"
-                        }`}
-                      >
-                        {member.status === "active" ? (
-                          <>
-                            <svg
-                              className="w-4 h-4"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"
-                              />
-                            </svg>
-                            Mark as Inactive
-                          </>
-                        ) : (
-                          <>
-                            <svg
-                              className="w-4 h-4"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                              />
-                            </svg>
-                            Mark as Active
-                          </>
-                        )}
-                      </button>
                     </div>
 
                     {/* Payment History */}
@@ -770,6 +730,18 @@ const AdminPayments = () => {
                 <p className="text-gray-400 text-sm mt-1">
                   {selectedMember.name}
                 </p>
+                {selectedMember.membershipFee && (
+                  <div className="flex items-center gap-3 mt-2">
+                    <span className="text-sm px-2 py-1 bg-purple-600/20 text-purple-400 rounded">
+                      Rs. {selectedMember.membershipFee}
+                    </span>
+                    {selectedMember.packageDuration && (
+                      <span className="text-sm px-2 py-1 bg-blue-600/20 text-blue-400 rounded">
+                        {selectedMember.packageDuration} Month{selectedMember.packageDuration > 1 ? 's' : ''} plan
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
               <button
                 onClick={() => {

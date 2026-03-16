@@ -28,6 +28,7 @@ import MemberGoals from "./pages/members/MemberGoals";
 import MemberClasses from "./pages/members/MemberClasses";
 import MemberNutrition from "./pages/members/MemberNutrition";
 import ClassManagement from "./pages/ClassManagement";
+import PaymentAnalytics from "./pages/PaymentAnalytics";
 import EquipmentInventory from "./pages/EquipmentInventory";
 import InstructorManagement from "./pages/InstructorManagement";
 import MealPlanManagement from "./pages/MealPlanManagement";
@@ -295,6 +296,23 @@ function App() {
                   ]}
                 >
                   <AdminPayments />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/payment-analytics"
+            element={
+              <ProtectedRoute>
+                <RoleRoute
+                  allowedRoles={[
+                    "admin",
+                    "manager",
+                    "gym_admin",
+                    "gym_manager",
+                  ]}
+                >
+                  <PaymentAnalytics />
                 </RoleRoute>
               </ProtectedRoute>
             }
