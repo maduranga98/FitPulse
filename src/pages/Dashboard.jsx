@@ -112,6 +112,31 @@ const Dashboard = () => {
         }
       });
 
+      // Also count members with overdue nextPaymentDate as pending payments
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const currentMonth = today.toISOString().slice(0, 7); // e.g. "2026-03"
+      const paidMemberIds = new Set();
+      paymentsSnapshot.forEach((doc) => {
+        const payment = doc.data();
+        if (payment.month === currentMonth && (payment.status === "completed" || !payment.status)) {
+          paidMemberIds.add(payment.memberId);
+        }
+      });
+
+      membersSnapshot.forEach((doc) => {
+        const member = doc.data();
+        if (member.status !== "active") return;
+        if (paidMemberIds.has(doc.id)) return;
+        // Check if nextPaymentDate has passed
+        if (member.nextPaymentDate) {
+          const nextDate = new Date(member.nextPaymentDate);
+          if (nextDate <= today) {
+            pendingPayments++;
+          }
+        }
+      });
+
       // Fetch recent payments with gymId filter
       const recentPaymentsQuery = query(
         paymentsRef,
