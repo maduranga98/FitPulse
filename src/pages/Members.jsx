@@ -5,6 +5,7 @@ import Sidebar from "../components/Sidebar";
 import MultiAngleFaceCapture from "../components/MultiAngleFaceCapture";
 import { isAdmin, validateGymId } from "../utils/authUtils";
 import { calculateBMI, validateBMIInputs } from "../utils/validationUtils";
+import { QRCodeSVG } from "qrcode.react";
 
 const Members = () => {
   const { user } = useAuth();
@@ -19,6 +20,8 @@ const Members = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterLevel, setFilterLevel] = useState("all");
+  const [showQRModal, setShowQRModal] = useState(false);
+  const [pendingRegistrations, setPendingRegistrations] = useState([]);
 
   // Multi-angle face capture states
   const [showMultiAngleCaptureModal, setShowMultiAngleCaptureModal] =
@@ -56,6 +59,7 @@ const Members = () => {
 
   useEffect(() => {
     fetchMembers();
+    fetchPendingRegistrations();
   }, [currentGymId]);
 
   useEffect(() => {
@@ -106,6 +110,83 @@ const Members = () => {
     } catch (error) {
       console.error("Error fetching members:", error);
       setLoading(false);
+    }
+  };
+
+  const fetchPendingRegistrations = async () => {
+    if (!currentGymId) return;
+    try {
+      const { db } = await import("../config/firebase");
+      const { collection, getDocs, query, where, orderBy } = await import(
+        "firebase/firestore"
+      );
+      const regRef = collection(db, "self_registrations");
+      const regQuery = query(
+        regRef,
+        where("gymId", "==", currentGymId),
+        where("status", "==", "pending_approval"),
+        orderBy("submittedAt", "desc")
+      );
+      const snapshot = await getDocs(regQuery);
+      setPendingRegistrations(
+        snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+      );
+    } catch (error) {
+      console.error("Error fetching pending registrations:", error);
+    }
+  };
+
+  const handleApproveRegistration = (registration) => {
+    // Pre-fill the add member form with self-registration data
+    setMemberForm({
+      name: registration.name || "",
+      age: registration.age || "",
+      mobile: registration.mobile || "",
+      whatsapp: registration.whatsapp || "",
+      email: registration.email || "",
+      weight: registration.weight || "",
+      height: registration.height || "",
+      allergies: registration.allergies || "",
+      diseases: registration.diseases || "",
+      level: "beginner",
+      status: "active",
+      joinDate: new Date().toISOString().split("T")[0],
+      membershipFee: "",
+      packageDuration: 1,
+      nextPaymentDate: "",
+      emergencyContact: registration.emergencyContact || "",
+      emergencyName: registration.emergencyName || "",
+      notes: `Self-registered`,
+    });
+    setShowAddMember(true);
+
+    // Mark as processed
+    (async () => {
+      try {
+        const { db } = await import("../config/firebase");
+        const { doc, updateDoc } = await import("firebase/firestore");
+        await updateDoc(doc(db, "self_registrations", registration.id), {
+          status: "approved",
+        });
+        fetchPendingRegistrations();
+      } catch (err) {
+        console.error("Error updating registration status:", err);
+      }
+    })();
+  };
+
+  const handleDismissRegistration = async (registrationId) => {
+    try {
+      const { db } = await import("../config/firebase");
+      const { doc, updateDoc } = await import("firebase/firestore");
+      await updateDoc(doc(db, "self_registrations", registrationId), {
+        status: "dismissed",
+      });
+      showSuccess("Registration dismissed");
+      fetchPendingRegistrations();
+    } catch (err) {
+      console.error("Error dismissing registration:", err);
+      showError("Failed to dismiss registration");
     }
   };
 
@@ -481,26 +562,48 @@ const Members = () => {
               </h1>
             </div>
             {userIsAdmin && (
-              <button
-                onClick={() => setShowAddMember(true)}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition flex items-center gap-2"
-              >
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowQRModal(true)}
+                  className="px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition flex items-center gap-2"
+                  title="Share QR for self-registration"
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 4v16m8-8H4"
-                  />
-                </svg>
-                <span className="hidden sm:inline">Add Member</span>
-                <span className="sm:hidden">Add</span>
-              </button>
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"
+                    />
+                  </svg>
+                  <span className="hidden sm:inline">Share QR</span>
+                </button>
+                <button
+                  onClick={() => setShowAddMember(true)}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition flex items-center gap-2"
+                >
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 4v16m8-8H4"
+                    />
+                  </svg>
+                  <span className="hidden sm:inline">Add Member</span>
+                  <span className="sm:hidden">Add</span>
+                </button>
+              </div>
             )}
           </div>
         </header>
@@ -543,6 +646,54 @@ const Members = () => {
               </div>
             </div>
           </div>
+
+          {/* Pending Self-Registrations */}
+          {pendingRegistrations.length > 0 && (
+            <div className="mb-6 bg-gray-800 border border-purple-600/30 rounded-xl p-4 sm:p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-2 h-2 bg-purple-500 rounded-full animate-pulse" />
+                <h3 className="text-white font-semibold text-sm">
+                  Pending Self-Registrations ({pendingRegistrations.length})
+                </h3>
+              </div>
+              <div className="space-y-3">
+                {pendingRegistrations.map((reg) => (
+                  <div
+                    key={reg.id}
+                    className="flex items-center justify-between bg-gray-900 rounded-lg p-3 gap-3"
+                  >
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <div className="w-9 h-9 bg-purple-600/20 rounded-full flex items-center justify-center text-purple-400 font-bold text-sm flex-shrink-0">
+                        {reg.name?.charAt(0)?.toUpperCase() || "?"}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-white font-medium text-sm truncate">
+                          {reg.name}
+                        </p>
+                        <p className="text-xs text-gray-400 truncate">
+                          {reg.mobile || reg.whatsapp || reg.email || "No contact"}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <button
+                        onClick={() => handleApproveRegistration(reg)}
+                        className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-medium transition"
+                      >
+                        Approve
+                      </button>
+                      <button
+                        onClick={() => handleDismissRegistration(reg.id)}
+                        className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-xs font-medium transition"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Filters */}
           <div className="mb-6 flex flex-col sm:flex-row gap-4">
@@ -1731,6 +1882,86 @@ const Members = () => {
             setShowMultiAngleCaptureModal(false);
           }}
         />
+      )}
+
+      {/* QR Code Self-Registration Modal */}
+      {showQRModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 bg-black/60"
+            onClick={() => setShowQRModal(false)}
+          />
+          <div className="relative bg-gray-800 border border-gray-700 rounded-xl p-6 w-full max-w-sm text-center">
+            <button
+              onClick={() => setShowQRModal(false)}
+              className="absolute top-3 right-3 p-1 text-gray-400 hover:text-white"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+
+            <h3 className="text-lg font-bold text-white mb-1">
+              Member Self-Registration
+            </h3>
+            <p className="text-sm text-gray-400 mb-5">
+              Share this QR code with new members. They can scan it to fill in their own details.
+            </p>
+
+            <div className="bg-white rounded-xl p-4 inline-block mb-4">
+              <QRCodeSVG
+                value={`${window.location.origin}/register/${currentGymId}?gym=${encodeURIComponent(user?.gymName || user?.name || "PulsedGym")}`}
+                size={200}
+                level="M"
+              />
+            </div>
+
+            <div className="space-y-3">
+              <button
+                onClick={() => {
+                  const url = `${window.location.origin}/register/${currentGymId}?gym=${encodeURIComponent(user?.gymName || user?.name || "PulsedGym")}`;
+                  navigator.clipboard.writeText(url);
+                  showSuccess("Registration link copied to clipboard!");
+                }}
+                className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition flex items-center justify-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                </svg>
+                Copy Registration Link
+              </button>
+
+              {navigator.share && (
+                <button
+                  onClick={async () => {
+                    const url = `${window.location.origin}/register/${currentGymId}?gym=${encodeURIComponent(user?.gymName || user?.name || "PulsedGym")}`;
+                    try {
+                      await navigator.share({
+                        title: "Join Our Gym",
+                        text: "Register as a member by filling in your details:",
+                        url,
+                      });
+                    } catch (err) {
+                      if (err.name !== "AbortError") {
+                        console.error("Share failed:", err);
+                      }
+                    }
+                  }}
+                  className="w-full py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition flex items-center justify-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                  </svg>
+                  Share Link
+                </button>
+              )}
+            </div>
+
+            <p className="text-xs text-gray-500 mt-4">
+              Submitted registrations will appear in a pending list for your approval.
+            </p>
+          </div>
+        </div>
       )}
     </div>
   );

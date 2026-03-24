@@ -49,6 +49,7 @@ import InstructorMembers from "./pages/instructor/InstructorMembers";
 import InstructorMealPlans from "./pages/instructor/InstructorMealPlans";
 import InstructorMemberAnalytics from "./pages/instructor/InstructorMemberAnalytics";
 import InstructorClasses from "./pages/instructor/InstructorClasses";
+import SelfRegister from "./pages/SelfRegister";
 
 
 // Component to handle root redirect based on user role
@@ -79,6 +80,7 @@ function App() {
           <Routes>
           {/* Public Routes */}
           <Route path="/login" element={<Login />} />
+          <Route path="/register/:gymId" element={<SelfRegister />} />
 
           {/* Super Admin Routes */}
           <Route

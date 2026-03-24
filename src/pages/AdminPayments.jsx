@@ -184,6 +184,7 @@ const AdminPayments = () => {
         month: paymentForm.month,
         paymentMethod: paymentForm.paymentMethod,
         notes: paymentForm.notes,
+        status: "completed",
         paidAt: Timestamp.now(),
         recordedBy: user?.name || user?.username || user?.email || "Admin",
         recordedById: user?.id || user?.uid || "",

@@ -82,9 +82,11 @@ const Dashboard = () => {
 
       paymentsSnapshot.forEach((doc) => {
         const payment = doc.data();
-        if (payment.status === "completed") {
+        if (payment.status === "completed" || !payment.status) {
+          // Treat payments without status as completed (legacy data)
           totalRevenue += payment.amount || 0;
-        } else if (payment.status === "pending") {
+        }
+        if (payment.status === "pending") {
           pendingPayments++;
         }
       });
