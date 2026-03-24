@@ -552,6 +552,24 @@ service cloud.firestore {
     }
 
     // ============================================
+    // SELF REGISTRATIONS (public QR code flow)
+    // SelfRegister.jsx writes:
+    //   name, mobile, whatsapp, email, gymId,
+    //   weight, height, allergies, diseases,
+    //   emergencyContact, emergencyName,
+    //   status, source, createdAt, submittedAt
+    // Members.jsx reads & updates status
+    // ============================================
+    match /self_registrations/{registrationId} {
+      allow read: if true;
+      allow create: if hasFields(['name', 'gymId', 'status'])
+                    && request.resource.data.status == 'pending_approval'
+                    && request.resource.data.source == 'self_registration';
+      allow update: if true;
+      allow delete: if false;
+    }
+
+    // ============================================
     // DEFAULT — deny everything else
     // ============================================
     match /{document=**} {
