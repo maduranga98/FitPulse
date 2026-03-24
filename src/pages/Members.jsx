@@ -6,11 +6,13 @@ import MultiAngleFaceCapture from "../components/MultiAngleFaceCapture";
 import { isAdmin, validateGymId } from "../utils/authUtils";
 import { calculateBMI, validateBMIInputs } from "../utils/validationUtils";
 import { QRCodeSVG } from "qrcode.react";
+import { useGymSettings } from "../contexts/GymSettingsContext";
 
 const Members = () => {
   const { user } = useAuth();
   const { showSuccess, showError, showWarning } = useNotification();
   const currentGymId = user?.gymId;
+  const { settings } = useGymSettings();
 
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -338,55 +340,59 @@ const Members = () => {
 
       setGeneratedCredentials({ username, password, name: memberForm.name });
 
-      // Send SMS notification
-      try {
-        const { sendMemberRegistrationSMS } = await import(
-          "../services/smsService"
-        );
+      // Send SMS notification (if enabled)
+      if (settings.notifications.sms !== false) {
+        try {
+          const { sendMemberRegistrationSMS } = await import(
+            "../services/smsService"
+          );
 
-        await sendMemberRegistrationSMS(
-          {
-            name: memberForm.name,
-            mobile: memberForm.mobile,
-            whatsapp: memberForm.whatsapp,
-          },
-          username,
-          password
-        );
+          await sendMemberRegistrationSMS(
+            {
+              name: memberForm.name,
+              mobile: memberForm.mobile,
+              whatsapp: memberForm.whatsapp,
+            },
+            username,
+            password
+          );
 
-        console.log("✅ SMS sent successfully");
-      } catch (smsError) {
-        console.error("⚠️ SMS sending failed:", smsError);
-        showWarning(
-          `Member added, but SMS sending failed: ${smsError.message}. Manually share credentials with the member.`
-        );
+          console.log("✅ SMS sent successfully");
+        } catch (smsError) {
+          console.error("⚠️ SMS sending failed:", smsError);
+          showWarning(
+            `Member added, but SMS sending failed: ${smsError.message}. Manually share credentials with the member.`
+          );
+        }
       }
 
-      // Send Welcome WhatsApp notification
-      try {
-        const { sendWelcomeMemberWhatsApp } = await import(
-          "../services/whatsappService"
-        );
+      // Send Welcome WhatsApp notification (if enabled)
+      if (settings.notifications.whatsapp !== false) {
+        try {
+          const { sendWelcomeMemberWhatsApp } = await import(
+            "../services/whatsappService"
+          );
 
-        const { doc, getDoc } = await import("firebase/firestore");
-        const { db } = await import("../config/firebase");
-        const gymDoc = await getDoc(doc(db, "gyms", currentGymId));
-        const gymName = gymDoc.exists() ? gymDoc.data().name : "Your Gym";
+          const { doc, getDoc } = await import("firebase/firestore");
+          const { db } = await import("../config/firebase");
+          const gymDoc = await getDoc(doc(db, "gyms", currentGymId));
+          const gymName = gymDoc.exists() ? gymDoc.data().name : "Your Gym";
 
-        await sendWelcomeMemberWhatsApp(
-          {
-            name: memberForm.name,
-            mobile: memberForm.mobile,
-            whatsapp: memberForm.whatsapp,
-            id: username,
-          },
-          gymName,
-          memberForm.joinDate || new Date().toLocaleDateString()
-        );
+          await sendWelcomeMemberWhatsApp(
+            {
+              name: memberForm.name,
+              mobile: memberForm.mobile,
+              whatsapp: memberForm.whatsapp,
+              id: username,
+            },
+            gymName,
+            memberForm.joinDate || new Date().toLocaleDateString()
+          );
 
-        console.log("✅ Welcome WhatsApp sent successfully");
-      } catch (whatsappError) {
-        console.warn("⚠️ Welcome WhatsApp sending failed:", whatsappError);
+          console.log("✅ Welcome WhatsApp sent successfully");
+        } catch (whatsappError) {
+          console.warn("⚠️ Welcome WhatsApp sending failed:", whatsappError);
+        }
       }
 
       // Reset form

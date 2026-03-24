@@ -2,10 +2,12 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../hooks/useAuth";
 import Sidebar from "../components/Sidebar";
 import { where } from "firebase/firestore";
+import { useGymSettings } from "../contexts/GymSettingsContext";
 
 const AdminPayments = () => {
   const { user } = useAuth();
   const currentGymId = user?.gymId;
+  const { settings } = useGymSettings();
   const [members, setMembers] = useState([]);
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -193,43 +195,45 @@ const AdminPayments = () => {
       // Save payment to database
       await addDoc(collection(db, "payments"), paymentData);
 
-      // ✅ SEND WHATSAPP NOTIFICATION TO MEMBER
-      try {
-        const memberRef = doc(db, "members", selectedMember.id);
-        const memberSnap = await getDoc(memberRef);
+      // ✅ SEND WHATSAPP NOTIFICATION TO MEMBER (if enabled)
+      if (settings.notifications.whatsapp !== false) {
+        try {
+          const memberRef = doc(db, "members", selectedMember.id);
+          const memberSnap = await getDoc(memberRef);
 
-        if (memberSnap.exists()) {
-          const memberData = memberSnap.data();
+          if (memberSnap.exists()) {
+            const memberData = memberSnap.data();
 
-          if (memberData.mobile || memberData.whatsapp) {
-            const { sendPaymentReceiptWhatsApp } = await import(
-              "../services/whatsappService"
-            );
+            if (memberData.mobile || memberData.whatsapp) {
+              const { sendPaymentReceiptWhatsApp } = await import(
+                "../services/whatsappService"
+              );
 
-            const gymRef = doc(db, "gyms", currentGymId);
-            const gymSnap = await getDoc(gymRef);
-            const gymName = gymSnap.exists() ? gymSnap.data().name : "Your Gym";
+              const gymRef = doc(db, "gyms", currentGymId);
+              const gymSnap = await getDoc(gymRef);
+              const gymName = gymSnap.exists() ? gymSnap.data().name : "Your Gym";
 
-            await sendPaymentReceiptWhatsApp(
-              {
-                name: memberData.name,
-                mobile: memberData.mobile,
-                whatsapp: memberData.whatsapp,
-              },
-              paymentData,
-              gymName
-            );
-            console.log(
-              "✅ Payment receipt WhatsApp sent successfully to:",
-              memberData.name
-            );
-          } else {
-            console.warn("⚠️ Member has no phone number for WhatsApp");
+              await sendPaymentReceiptWhatsApp(
+                {
+                  name: memberData.name,
+                  mobile: memberData.mobile,
+                  whatsapp: memberData.whatsapp,
+                },
+                paymentData,
+                gymName
+              );
+              console.log(
+                "✅ Payment receipt WhatsApp sent successfully to:",
+                memberData.name
+              );
+            } else {
+              console.warn("⚠️ Member has no phone number for WhatsApp");
+            }
           }
+        } catch (whatsappError) {
+          console.warn("⚠️ WhatsApp sending failed:", whatsappError);
+          // Don't fail the payment recording if WhatsApp fails
         }
-      } catch (whatsappError) {
-        console.warn("⚠️ WhatsApp sending failed:", whatsappError);
-        // Don't fail the payment recording if WhatsApp fails
       }
 
       // Auto-update nextPaymentDate after successful payment

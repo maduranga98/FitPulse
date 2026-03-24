@@ -1,6 +1,7 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { isAdmin, isMember } from "../utils/authUtils";
+import { useGymSettings } from "../contexts/GymSettingsContext";
 
 const Sidebar = ({ isOpen, onClose }) => {
   const { user, logout } = useAuth();
@@ -10,6 +11,7 @@ const Sidebar = ({ isOpen, onClose }) => {
   const userIsAdmin = isAdmin(user);
   const userIsMember = isMember(user);
   const isAdminInstructor = userIsAdmin && user?.isInstructor === true;
+  const { settings } = useGymSettings();
 
   const isActiveRoute = (path) => location.pathname === path;
 
@@ -343,12 +345,29 @@ const Sidebar = ({ isOpen, onClose }) => {
     },
   ];
 
-  // Select correct nav items based on role
-  const navItems = userIsMember 
-    ? memberNavItems 
-    : user?.role === "trainer" 
-    ? instructorNavItems 
+  // Feature-gated paths — hidden when the feature is disabled
+  const featureGatedPaths = {
+    supplements: ["/supplements", "/supplement-requests", "/member/supplements"],
+    classes: ["/class-management", "/instructor/classes", "/member/classes"],
+    mealPlans: ["/meal-plans", "/instructor/meal-plans", "/member/meal-plans", "/member/nutrition"],
+  };
+
+  const isPathAllowed = (path) => {
+    for (const [feature, paths] of Object.entries(featureGatedPaths)) {
+      if (paths.includes(path) && settings.features[feature] === false) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const baseItems = userIsMember
+    ? memberNavItems
+    : user?.role === "trainer"
+    ? instructorNavItems
     : adminNavItems;
+
+  const navItems = baseItems.filter((item) => isPathAllowed(item.path));
 
   return (
     <>
@@ -374,7 +393,7 @@ const Sidebar = ({ isOpen, onClose }) => {
           </div>
 
           {/* Quick Action for Admin Instructors */}
-          {isAdminInstructor && (
+          {isAdminInstructor && settings.features.classes !== false && (
             <div className="p-4 border-b border-gray-700">
               <Link
                 to="/class-management"

@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./hooks/useAuth";
 import { NotificationProvider } from "./contexts/NotificationContext";
+import { GymSettingsProvider } from "./contexts/GymSettingsContext";
 import Toast from "./components/Toast";
 import ProtectedRoute from "./components/ProtectedRoute";
 import RoleRoute from "./components/RoleRoute";
@@ -75,6 +76,7 @@ function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <GymSettingsProvider>
         <NotificationProvider>
           <Toast />
           <Routes>
@@ -658,6 +660,7 @@ function App() {
           <Route path="*" element={<NotFound />} />
         </Routes>
         </NotificationProvider>
+        </GymSettingsProvider>
       </AuthProvider>
     </BrowserRouter>
   );
