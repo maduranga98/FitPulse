@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./hooks/useAuth";
 import { NotificationProvider } from "./contexts/NotificationContext";
+import { GymSettingsProvider } from "./contexts/GymSettingsContext";
 import Toast from "./components/Toast";
 import ProtectedRoute from "./components/ProtectedRoute";
 import RoleRoute from "./components/RoleRoute";
@@ -49,6 +50,7 @@ import InstructorMembers from "./pages/instructor/InstructorMembers";
 import InstructorMealPlans from "./pages/instructor/InstructorMealPlans";
 import InstructorMemberAnalytics from "./pages/instructor/InstructorMemberAnalytics";
 import InstructorClasses from "./pages/instructor/InstructorClasses";
+import SelfRegister from "./pages/SelfRegister";
 
 
 // Component to handle root redirect based on user role
@@ -74,11 +76,13 @@ function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <GymSettingsProvider>
         <NotificationProvider>
           <Toast />
           <Routes>
           {/* Public Routes */}
           <Route path="/login" element={<Login />} />
+          <Route path="/register/:gymId" element={<SelfRegister />} />
 
           {/* Super Admin Routes */}
           <Route
@@ -656,6 +660,7 @@ function App() {
           <Route path="*" element={<NotFound />} />
         </Routes>
         </NotificationProvider>
+        </GymSettingsProvider>
       </AuthProvider>
     </BrowserRouter>
   );

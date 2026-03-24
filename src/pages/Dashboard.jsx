@@ -3,6 +3,7 @@ import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import Sidebar from "../components/Sidebar";
 import { isAdmin, validateGymId } from "../utils/authUtils";
+import { useGymSettings } from "../contexts/GymSettingsContext";
 
 const Dashboard = () => {
   const { user, logout } = useAuth();
@@ -23,6 +24,26 @@ const Dashboard = () => {
   const userIsAdmin = isAdmin(user);
   const gymValidation = validateGymId(user);
   const currentGymId = user?.gymId;
+  const { settings, updateSettings } = useGymSettings();
+  const [savingSettings, setSavingSettings] = useState(false);
+
+  const handleToggle = async (section, key) => {
+    const newSettings = {
+      ...settings,
+      [section]: {
+        ...settings[section],
+        [key]: !settings[section][key],
+      },
+    };
+    setSavingSettings(true);
+    try {
+      await updateSettings(newSettings);
+    } catch {
+      // error already logged in context
+    } finally {
+      setSavingSettings(false);
+    }
+  };
 
   useEffect(() => {
     if (userIsAdmin && currentGymId) {
@@ -82,9 +103,11 @@ const Dashboard = () => {
 
       paymentsSnapshot.forEach((doc) => {
         const payment = doc.data();
-        if (payment.status === "completed") {
+        if (payment.status === "completed" || !payment.status) {
+          // Treat payments without status as completed (legacy data)
           totalRevenue += payment.amount || 0;
-        } else if (payment.status === "pending") {
+        }
+        if (payment.status === "pending") {
           pendingPayments++;
         }
       });
@@ -369,6 +392,102 @@ const Dashboard = () => {
               <p className="text-2xl sm:text-3xl font-bold text-white">
                 {stats.pendingPayments}
               </p>
+            </div>
+          </div>
+
+          {/* Feature Enables */}
+          <div className="mb-6 sm:mb-8 bg-gray-800 border border-gray-700 rounded-xl p-4 sm:p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-bold text-white">Feature Enables</h2>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  Toggle features and notification channels for your gym
+                </p>
+              </div>
+              {savingSettings && (
+                <span className="text-xs text-blue-400 flex items-center gap-1">
+                  <svg className="animate-spin w-3 h-3" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Saving...
+                </span>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Features column */}
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                  Features
+                </p>
+                <div className="space-y-3">
+                  {[
+                    { key: "supplements", label: "Supplements", desc: "Supplement catalog & member requests" },
+                    { key: "classes", label: "Classes", desc: "Class management & member booking" },
+                    { key: "mealPlans", label: "Meal Plans", desc: "Nutrition & meal plan management" },
+                  ].map(({ key, label, desc }) => (
+                    <div
+                      key={key}
+                      className="flex items-center justify-between bg-gray-900 rounded-lg px-4 py-3"
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-white">{label}</p>
+                        <p className="text-xs text-gray-400">{desc}</p>
+                      </div>
+                      <button
+                        onClick={() => handleToggle("features", key)}
+                        disabled={savingSettings}
+                        className={`relative w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none flex-shrink-0 ${
+                          settings.features[key] ? "bg-blue-600" : "bg-gray-600"
+                        } disabled:opacity-60`}
+                      >
+                        <span
+                          className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${
+                            settings.features[key] ? "translate-x-5" : "translate-x-0"
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Notifications column */}
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                  Notification Channels
+                </p>
+                <div className="space-y-3">
+                  {[
+                    { key: "sms", label: "SMS Notifications", desc: "Send credentials & receipts via SMS" },
+                    { key: "whatsapp", label: "WhatsApp Notifications", desc: "Send updates via WhatsApp" },
+                  ].map(({ key, label, desc }) => (
+                    <div
+                      key={key}
+                      className="flex items-center justify-between bg-gray-900 rounded-lg px-4 py-3"
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-white">{label}</p>
+                        <p className="text-xs text-gray-400">{desc}</p>
+                      </div>
+                      <button
+                        onClick={() => handleToggle("notifications", key)}
+                        disabled={savingSettings}
+                        className={`relative w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none flex-shrink-0 ${
+                          settings.notifications[key] ? "bg-green-600" : "bg-gray-600"
+                        } disabled:opacity-60`}
+                      >
+                        <span
+                          className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${
+                            settings.notifications[key] ? "translate-x-5" : "translate-x-0"
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
 
