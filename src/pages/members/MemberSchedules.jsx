@@ -45,17 +45,35 @@ const MemberSchedules = () => {
         "firebase/firestore"
       );
 
-      const schedulesQuery = query(
+      // Fetch assigned schedules (isTemplate: false) — new format
+      const assignedQuery = query(
+        collection(db, "schedules"),
+        where("memberId", "==", currentUser.id),
+        where("isTemplate", "==", false),
+        orderBy("startDate", "desc")
+      );
+
+      // Also fetch legacy schedules (no isTemplate field) for backward compat
+      const legacyQuery = query(
         collection(db, "schedules"),
         where("memberId", "==", currentUser.id),
         orderBy("startDate", "desc")
       );
 
-      const schedulesSnapshot = await getDocs(schedulesQuery);
-      const schedulesData = schedulesSnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
+      const [assignedSnapshot, legacySnapshot] = await Promise.all([
+        getDocs(assignedQuery),
+        getDocs(legacyQuery),
+      ]);
+
+      const assignedIds = new Set(assignedSnapshot.docs.map((d) => d.id));
+
+      // Merge: assigned schedules + legacy schedules that aren't templates
+      const schedulesData = [
+        ...assignedSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })),
+        ...legacySnapshot.docs
+          .filter((doc) => !assignedIds.has(doc.id) && doc.data().isTemplate !== true)
+          .map((doc) => ({ id: doc.id, ...doc.data() })),
+      ];
 
       // Fetch common exercises
       const commonExercisesSnapshot = await getDocs(collection(db, "common_exercises"));

@@ -77,10 +77,11 @@ const ScheduleAnalytics = () => {
         "firebase/firestore"
       );
 
-      // Fetch schedules
+      // Fetch assigned schedules only (not templates) for analytics
       const schedulesQuery = query(
         collection(db, "schedules"),
         where("gymId", "==", currentGymId),
+        where("isTemplate", "==", false),
         orderBy("startDate", "desc")
       );
       const schedulesSnapshot = await getDocs(schedulesQuery);
