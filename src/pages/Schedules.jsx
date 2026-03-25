@@ -23,7 +23,14 @@ const Schedules = () => {
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [scheduleToAssign, setScheduleToAssign] = useState(null);
   const [selectedMembersToAssign, setSelectedMembersToAssign] = useState([]);
-  const [assignDueDate, setAssignDueDate] = useState("");
+  const [assignStartDate, setAssignStartDate] = useState("");
+  const [assignEndDate, setAssignEndDate] = useState("");
+
+  // Tab state: "templates" | "assigned"
+  const [activeTab, setActiveTab] = useState("templates");
+
+  // Assigned schedules (non-template schedules with memberId)
+  const [assignedSchedules, setAssignedSchedules] = useState([]);
 
   const isAdmin =
     currentUser?.role === "admin" || currentUser?.role === "manager" || currentUser?.role === "gym_admin" || currentUser?.role === "gym_manager";
@@ -37,11 +44,8 @@ const Schedules = () => {
   }, [currentGymId]);
 
   const [scheduleForm, setScheduleForm] = useState({
-    memberId: "",
     title: "",
     description: "",
-    startDate: new Date().toISOString().split("T")[0],
-    endDate: "",
     days: [],
     cardio: [{ exerciseId: "", time: "" }],
     warmUp: [{ exerciseId: "", reps: "", rest: "" }],
@@ -85,15 +89,25 @@ const Schedules = () => {
         schedulesQuery = query(
           collection(db, "schedules"),
           where("gymId", "==", currentGymId),
-          orderBy("startDate", "desc")
+          orderBy("createdAt", "desc")
         );
       }
 
       const schedulesSnapshot = await getDocs(schedulesQuery);
-      const schedulesData = schedulesSnapshot.docs.map((doc) => ({
+      const allSchedulesData = schedulesSnapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
       }));
+
+      // Separate templates from assigned schedules
+      const templatesData = allSchedulesData.filter(
+        (s) => s.isTemplate === true
+      );
+      const assignedData = allSchedulesData.filter(
+        (s) => s.isTemplate !== true && s.memberId
+      );
+
+      const schedulesData = isMember ? assignedData : allSchedulesData;
 
       if (isAdmin) {
         const membersSnapshot = await getDocs(
@@ -104,6 +118,7 @@ const Schedules = () => {
           ...doc.data(),
         }));
         setMembers(membersData);
+        setAssignedSchedules(assignedData);
       }
 
       // ✅ NEW: Fetch gym-specific categories
@@ -186,7 +201,8 @@ const Schedules = () => {
         schedules: schedulesData.length,
       });
 
-      setSchedules(schedulesData);
+      // For admin: schedules = templates only; for member: schedules = their assigned schedules
+      setSchedules(isAdmin ? templatesData : schedulesData);
       setExercises(allExercises);
       setCategories(allCategories); // ✅ NEW: Set categories state
       setLoading(false);
@@ -202,8 +218,8 @@ const Schedules = () => {
       return;
     }
 
-    if (!scheduleForm.memberId || !scheduleForm.title) {
-      alert("Please fill in all required fields");
+    if (!scheduleForm.title) {
+      alert("Please enter a schedule title");
       return;
     }
 
@@ -228,27 +244,44 @@ const Schedules = () => {
         }))
         .filter((workout) => workout.exercises.length > 0);
 
+      // Determine if this is a template or an assigned schedule edit
+      const isTemplateEdit = editingSchedule ? editingSchedule.isTemplate !== false : true;
+
       const scheduleData = {
-        ...scheduleForm,
-        gymId: currentGymId,
+        title: scheduleForm.title,
+        description: scheduleForm.description,
+        days: scheduleForm.days,
         cardio: cleanedCardio,
         warmUp: cleanedWarmUp,
         warmDown: cleanedWarmDown,
         workouts: cleanedWorkouts,
-        startDate: Timestamp.fromDate(new Date(scheduleForm.startDate)),
-        endDate: scheduleForm.endDate
-          ? Timestamp.fromDate(new Date(scheduleForm.endDate))
-          : null,
+        status: scheduleForm.status,
+        notes: scheduleForm.notes,
+        gymId: currentGymId,
+        isTemplate: isTemplateEdit,
         createdAt: Timestamp.now(),
         createdBy: currentUser.id,
       };
+
+      // For assigned schedule edits, preserve memberId and dates
+      if (editingSchedule && !isTemplateEdit) {
+        scheduleData.memberId = editingSchedule.memberId;
+        scheduleData.memberName = editingSchedule.memberName;
+        scheduleData.templateId = editingSchedule.templateId;
+        if (scheduleForm.startDate) {
+          scheduleData.startDate = Timestamp.fromDate(new Date(scheduleForm.startDate));
+        }
+        if (scheduleForm.endDate) {
+          scheduleData.endDate = Timestamp.fromDate(new Date(scheduleForm.endDate));
+        }
+      }
 
       if (editingSchedule) {
         await updateDoc(doc(db, "schedules", editingSchedule.id), scheduleData);
         showSuccessNotification("Schedule updated successfully! 🎉");
       } else {
         await addDoc(collection(db, "schedules"), scheduleData);
-        showSuccessNotification("Schedule created successfully! 🎉");
+        showSuccessNotification("Schedule template created successfully! 🎉");
       }
 
       resetForm();
@@ -290,12 +323,11 @@ const Schedules = () => {
   const handleEditSchedule = (schedule) => {
     setEditingSchedule(schedule);
     setScheduleForm({
-      memberId: schedule.memberId,
       title: schedule.title,
       description: schedule.description || "",
       startDate: schedule.startDate?.toDate
         ? schedule.startDate.toDate().toISOString().split("T")[0]
-        : new Date().toISOString().split("T")[0],
+        : "",
       endDate: schedule.endDate?.toDate
         ? schedule.endDate.toDate().toISOString().split("T")[0]
         : "",
@@ -331,10 +363,9 @@ const Schedules = () => {
     setShowAddSchedule(false);
     setEditingSchedule(null);
     setScheduleForm({
-      memberId: "",
       title: "",
       description: "",
-      startDate: new Date().toISOString().split("T")[0],
+      startDate: "",
       endDate: "",
       days: [],
       cardio: [{ exerciseId: "", time: "" }],
@@ -484,7 +515,8 @@ const Schedules = () => {
     setScheduleForm({ ...scheduleForm, warmDown: newWarmDown });
   };
 
-  const filteredSchedules = schedules.filter((schedule) => {
+  // Templates are in `schedules` state; assigned are in `assignedSchedules` state
+  const filteredAssignedSchedules = assignedSchedules.filter((schedule) => {
     if (selectedMember === "all") return true;
     return schedule.memberId === selectedMember;
   });
@@ -527,18 +559,23 @@ const Schedules = () => {
     });
   };
 
-  // New: Handle opening assign modal
+  // Handle opening assign modal
   const handleOpenAssignModal = (schedule) => {
     setScheduleToAssign(schedule);
     setShowAssignModal(true);
     setSelectedMembersToAssign([]);
-    setAssignDueDate("");
+    setAssignStartDate("");
+    setAssignEndDate("");
   };
 
-  // New: Handle assigning schedule to members
+  // Handle assigning schedule template to members — creates individual schedule docs per member
   const handleAssignSchedule = async () => {
     if (selectedMembersToAssign.length === 0) {
       alert("Please select at least one member");
+      return;
+    }
+    if (!assignStartDate) {
+      alert("Please set a start date for the assignment");
       return;
     }
 
@@ -550,35 +587,41 @@ const Schedules = () => {
 
       const promises = selectedMembersToAssign.map((memberId) => {
         const member = members.find((m) => m.id === memberId);
-        return addDoc(collection(db, "workout_assignments"), {
-          templateId: scheduleToAssign.id,
-          templateName: scheduleToAssign.title,
+        return addDoc(collection(db, "schedules"), {
+          // Copy all template exercise data
+          title: scheduleToAssign.title,
+          description: scheduleToAssign.description || "",
+          days: scheduleToAssign.days || [],
+          cardio: scheduleToAssign.cardio || [],
+          warmUp: scheduleToAssign.warmUp || [],
+          workouts: scheduleToAssign.workouts || [],
+          warmDown: scheduleToAssign.warmDown || [],
+          notes: scheduleToAssign.notes || "",
+          // Member-specific fields
           memberId: memberId,
-          memberName: member.name,
-          assignedBy: currentUser.id,
-          assignedByName: currentUser.name,
+          memberName: member?.name || "",
           gymId: currentGymId,
+          isTemplate: false,
+          templateId: scheduleToAssign.id,
+          startDate: Timestamp.fromDate(new Date(assignStartDate)),
+          endDate: assignEndDate ? Timestamp.fromDate(new Date(assignEndDate)) : null,
+          status: "active",
+          assignedBy: currentUser.id,
+          assignedByName: currentUser.name || currentUser.email,
           assignedAt: Timestamp.now(),
-          dueDate: assignDueDate ? new Date(assignDueDate) : null,
-          status: "assigned",
-          progress: {
-            completedExercises: 0,
-            totalExercises: scheduleToAssign.workouts?.reduce((total, workout) => {
-              return total + (workout.exercises?.length || 0);
-            }, 0) || 0,
-            lastUpdated: Timestamp.now(),
-          },
         });
       });
 
       await Promise.all(promises);
       showSuccessNotification(
-        `Schedule assigned to ${selectedMembersToAssign.length} member(s) successfully! 🎉`
+        `Schedule assigned to ${selectedMembersToAssign.length} member(s) successfully!`
       );
       setShowAssignModal(false);
       setScheduleToAssign(null);
       setSelectedMembersToAssign([]);
-      setAssignDueDate("");
+      setAssignStartDate("");
+      setAssignEndDate("");
+      fetchData();
     } catch (error) {
       console.error("Error assigning schedule:", error);
       alert(`Error assigning schedule: ${error.message}`);
@@ -661,190 +704,203 @@ const Schedules = () => {
         </header>
 
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredSchedules.length === 0 ? (
-              <div className="col-span-full text-center py-12">
-                <svg
-                  className="w-16 h-16 text-gray-600 mx-auto mb-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                  />
-                </svg>
-                <p className="text-gray-400 text-lg mb-4">
-                  {isMember
-                    ? "No schedules assigned to you yet"
-                    : "No schedules created yet"}
-                </p>
-                {isAdmin && (
+          {/* Tabs for Admin */}
+          {isAdmin && (
+            <div className="flex gap-1 bg-gray-800 rounded-xl p-1 mb-6 w-fit border border-gray-700">
+              <button
+                onClick={() => setActiveTab("templates")}
+                className={`px-5 py-2 rounded-lg text-sm font-medium transition ${
+                  activeTab === "templates"
+                    ? "bg-blue-600 text-white"
+                    : "text-gray-400 hover:text-white"
+                }`}
+              >
+                Schedule Templates ({schedules.length})
+              </button>
+              <button
+                onClick={() => setActiveTab("assigned")}
+                className={`px-5 py-2 rounded-lg text-sm font-medium transition ${
+                  activeTab === "assigned"
+                    ? "bg-purple-600 text-white"
+                    : "text-gray-400 hover:text-white"
+                }`}
+              >
+                Assigned Schedules ({assignedSchedules.length})
+              </button>
+            </div>
+          )}
+
+          {/* Member filter for assigned schedules tab */}
+          {isAdmin && activeTab === "assigned" && members.length > 0 && (
+            <div className="mb-4">
+              <select
+                value={selectedMember}
+                onChange={(e) => setSelectedMember(e.target.value)}
+                className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+              >
+                <option value="all">All Members</option>
+                {members.map((m) => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Templates Tab */}
+          {(isAdmin && activeTab === "templates") && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {schedules.length === 0 ? (
+                <div className="col-span-full text-center py-12">
+                  <svg className="w-16 h-16 text-gray-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  <p className="text-gray-400 text-lg mb-4">No schedule templates created yet</p>
                   <button
                     onClick={() => setShowAddSchedule(true)}
-                    className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition shadow-lg hover:shadow-xl flex items-center gap-2 mx-auto"
+                    className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition shadow-lg flex items-center gap-2 mx-auto"
                   >
-                    <svg
-                      className="w-5 h-5"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M12 4v16m8-8H4"
-                      />
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                     </svg>
-                    Create Your First Schedule
+                    Create First Template
                   </button>
-                )}
-              </div>
-            ) : (
-              filteredSchedules.map((schedule) => (
-                <div
-                  key={schedule.id}
-                  className="bg-gray-800 border border-gray-700 rounded-xl p-5 hover:border-gray-600 transition"
-                >
-                  <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <h3 className="text-lg font-bold text-white mb-1">
-                        {schedule.title}
-                      </h3>
-                      {isAdmin && (
-                        <p className="text-sm text-gray-400">
-                          {getMemberName(schedule.memberId)}
-                        </p>
-                      )}
+                </div>
+              ) : (
+                schedules.map((schedule) => (
+                  <div key={schedule.id} className="bg-gray-800 border border-gray-700 rounded-xl p-5 hover:border-gray-600 transition">
+                    <div className="flex items-start justify-between mb-3">
+                      <div>
+                        <h3 className="text-lg font-bold text-white mb-1">{schedule.title}</h3>
+                        <span className="text-xs px-2 py-0.5 bg-blue-600/20 text-blue-400 rounded-full">Template</span>
+                      </div>
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${schedule.status === "active" ? "bg-green-600/20 text-green-600" : schedule.status === "completed" ? "bg-blue-600/20 text-blue-600" : "bg-gray-600/20 text-gray-400"}`}>
+                        {schedule.status}
+                      </span>
                     </div>
-                    <span
-                      className={`px-2 py-1 rounded text-xs font-medium ${
-                        schedule.status === "active"
-                          ? "bg-green-600/20 text-green-600"
-                          : schedule.status === "completed"
-                          ? "bg-blue-600/20 text-blue-600"
-                          : "bg-gray-600/20 text-gray-400"
-                      }`}
-                    >
-                      {schedule.status}
-                    </span>
-                  </div>
-
-                  <p className="text-sm text-gray-400 mb-4 line-clamp-2">
-                    {schedule.description}
-                  </p>
-
-                  <div className="flex items-center gap-4 mb-4 text-sm text-gray-400">
-                    <div className="flex items-center gap-1">
-                      <svg
-                        className="w-4 h-4"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                        />
-                      </svg>
-                      <span>{formatDate(schedule.startDate)}</span>
+                    <p className="text-sm text-gray-400 mb-4 line-clamp-2">{schedule.description}</p>
+                    <div className="flex items-center gap-3 mb-4 text-sm text-gray-400">
+                      <span>{schedule.workouts?.length || 0} workout days</span>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <svg
-                        className="w-4 h-4"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
+                    <div className="flex gap-2">
+                      <button onClick={() => setViewSchedule(schedule)} className="flex-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">
+                        View
+                      </button>
+                      <button
+                        onClick={() => handleOpenAssignModal(schedule)}
+                        className="px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition"
+                        title="Assign to Members"
                       >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
-                        />
-                      </svg>
-                      <span>{schedule.workouts?.length || 0} days</span>
+                        Assign
+                      </button>
+                      <button onClick={() => handleEditSchedule(schedule)} className="px-3 py-2 bg-yellow-600/20 hover:bg-yellow-600/30 text-yellow-600 rounded-lg text-sm font-medium transition">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                      </button>
+                      <button onClick={() => handleDeleteSchedule(schedule.id)} className="px-3 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-600 rounded-lg text-sm font-medium transition">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
                     </div>
                   </div>
+                ))
+              )}
+            </div>
+          )}
 
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setViewSchedule(schedule)}
-                      className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition"
-                    >
+          {/* Assigned Schedules Tab */}
+          {isAdmin && activeTab === "assigned" && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredAssignedSchedules.length === 0 ? (
+                <div className="col-span-full text-center py-12">
+                  <svg className="w-16 h-16 text-gray-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                  </svg>
+                  <p className="text-gray-400 text-lg">No schedules assigned yet. Create a template and assign it to members.</p>
+                </div>
+              ) : (
+                filteredAssignedSchedules.map((schedule) => (
+                  <div key={schedule.id} className="bg-gray-800 border border-gray-700 rounded-xl p-5 hover:border-gray-600 transition">
+                    <div className="flex items-start justify-between mb-3">
+                      <div>
+                        <h3 className="text-lg font-bold text-white mb-1">{schedule.title}</h3>
+                        <p className="text-sm text-purple-400 font-medium">{schedule.memberName || getMemberName(schedule.memberId)}</p>
+                      </div>
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${schedule.status === "active" ? "bg-green-600/20 text-green-600" : schedule.status === "completed" ? "bg-blue-600/20 text-blue-600" : "bg-gray-600/20 text-gray-400"}`}>
+                        {schedule.status}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 mb-4 text-xs">
+                      <div className="bg-gray-900 rounded-lg p-2">
+                        <div className="text-gray-500 mb-0.5">Start Date</div>
+                        <div className="text-white font-medium">{formatDate(schedule.startDate)}</div>
+                      </div>
+                      <div className="bg-gray-900 rounded-lg p-2">
+                        <div className="text-gray-500 mb-0.5">End Date</div>
+                        <div className="text-white font-medium">{schedule.endDate ? formatDate(schedule.endDate) : "Ongoing"}</div>
+                      </div>
+                    </div>
+                    <p className="text-sm text-gray-400 mb-3 line-clamp-1">{schedule.description}</p>
+                    <div className="flex gap-2">
+                      <button onClick={() => setViewSchedule(schedule)} className="flex-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">
+                        View
+                      </button>
+                      <button onClick={() => handleEditSchedule(schedule)} className="px-3 py-2 bg-yellow-600/20 hover:bg-yellow-600/30 text-yellow-600 rounded-lg text-sm font-medium transition" title="Edit schedule exercises, reps, dates">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                      </button>
+                      <button onClick={() => handleDeleteSchedule(schedule.id)} className="px-3 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-600 rounded-lg text-sm font-medium transition">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+
+          {/* Member view */}
+          {isMember && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {schedules.length === 0 ? (
+                <div className="col-span-full text-center py-12">
+                  <svg className="w-16 h-16 text-gray-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  <p className="text-gray-400 text-lg">No schedules assigned to you yet</p>
+                </div>
+              ) : (
+                schedules.map((schedule) => (
+                  <div key={schedule.id} className="bg-gray-800 border border-gray-700 rounded-xl p-5 hover:border-gray-600 transition">
+                    <div className="flex items-start justify-between mb-3">
+                      <h3 className="text-lg font-bold text-white">{schedule.title}</h3>
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${schedule.status === "active" ? "bg-green-600/20 text-green-600" : schedule.status === "completed" ? "bg-blue-600/20 text-blue-600" : "bg-gray-600/20 text-gray-400"}`}>
+                        {schedule.status}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 mb-3 text-xs">
+                      <div className="bg-gray-900 rounded-lg p-2">
+                        <div className="text-gray-500 mb-0.5">Start</div>
+                        <div className="text-white font-medium">{formatDate(schedule.startDate)}</div>
+                      </div>
+                      <div className="bg-gray-900 rounded-lg p-2">
+                        <div className="text-gray-500 mb-0.5">End</div>
+                        <div className="text-white font-medium">{schedule.endDate ? formatDate(schedule.endDate) : "Ongoing"}</div>
+                      </div>
+                    </div>
+                    <p className="text-sm text-gray-400 mb-4 line-clamp-2">{schedule.description}</p>
+                    <button onClick={() => setViewSchedule(schedule)} className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">
                       View Details
                     </button>
-                    {isAdmin && (
-                      <>
-                        <button
-                          onClick={() => handleOpenAssignModal(schedule)}
-                          className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition flex items-center gap-1"
-                          title="Assign to Members"
-                        >
-                          <svg
-                            className="w-4 h-4"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
-                            />
-                          </svg>
-                          Assign
-                        </button>
-                        <button
-                          onClick={() => handleEditSchedule(schedule)}
-                          className="px-4 py-2 bg-yellow-600/20 hover:bg-yellow-600/30 text-yellow-600 rounded-lg text-sm font-medium transition"
-                        >
-                          <svg
-                            className="w-4 h-4"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                            />
-                          </svg>
-                        </button>
-                        <button
-                          onClick={() => handleDeleteSchedule(schedule.id)}
-                          className="px-4 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-600 rounded-lg text-sm font-medium transition"
-                        >
-                          <svg
-                            className="w-4 h-4"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                            />
-                          </svg>
-                        </button>
-                      </>
-                    )}
                   </div>
-                </div>
-              ))
-            )}
-          </div>
+                ))
+              )}
+            </div>
+          )}
         </main>
       </div>
 
@@ -878,8 +934,10 @@ const Schedules = () => {
             <div className="sticky top-0 bg-gray-800 border-b border-gray-700 p-6 flex items-center justify-between z-10">
               <h2 className="text-2xl font-bold text-white">
                 {editingSchedule
-                  ? "Edit Workout Schedule"
-                  : "Create Workout Schedule"}
+                  ? editingSchedule.isTemplate !== false
+                    ? "Edit Schedule Template"
+                    : `Edit Schedule — ${editingSchedule.memberName || getMemberName(editingSchedule.memberId)}`
+                  : "Create Schedule Template"}
               </h2>
               <button
                 onClick={resetForm}
@@ -904,32 +962,18 @@ const Schedules = () => {
             <div className="p-6">
               {/* Basic Information */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Assign to Member *
-                  </label>
-                  <select
-                    value={scheduleForm.memberId}
-                    onChange={(e) =>
-                      setScheduleForm({
-                        ...scheduleForm,
-                        memberId: e.target.value,
-                      })
-                    }
-                    className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">Select a member</option>
-                    {members.map((member) => (
-                      <option key={member.id} value={member.id}>
-                        {member.name} - {member.level}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                {/* Show member info (read-only) when editing an assigned schedule */}
+                {editingSchedule && editingSchedule.isTemplate === false && (
+                  <div className="md:col-span-2 bg-purple-600/10 border border-purple-600/30 rounded-lg p-4">
+                    <p className="text-purple-400 text-sm font-medium">
+                      Editing assigned schedule for: <span className="text-white font-bold">{editingSchedule.memberName || getMemberName(editingSchedule.memberId)}</span>
+                    </p>
+                  </div>
+                )}
 
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Schedule Title
+                    Schedule Title *
                   </label>
                   <input
                     type="text"
@@ -963,39 +1007,37 @@ const Schedules = () => {
                   />
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Start Date *
-                  </label>
-                  <input
-                    type="date"
-                    value={scheduleForm.startDate}
-                    onChange={(e) =>
-                      setScheduleForm({
-                        ...scheduleForm,
-                        startDate: e.target.value,
-                      })
-                    }
-                    className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    End Date (Optional)
-                  </label>
-                  <input
-                    type="date"
-                    value={scheduleForm.endDate}
-                    onChange={(e) =>
-                      setScheduleForm({
-                        ...scheduleForm,
-                        endDate: e.target.value,
-                      })
-                    }
-                    className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
+                {/* Show dates only when editing an assigned schedule */}
+                {editingSchedule && editingSchedule.isTemplate === false && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        Start Date
+                      </label>
+                      <input
+                        type="date"
+                        value={scheduleForm.startDate}
+                        onChange={(e) =>
+                          setScheduleForm({ ...scheduleForm, startDate: e.target.value })
+                        }
+                        className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        End Date (Optional)
+                      </label>
+                      <input
+                        type="date"
+                        value={scheduleForm.endDate}
+                        onChange={(e) =>
+                          setScheduleForm({ ...scheduleForm, endDate: e.target.value })
+                        }
+                        className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  </>
+                )}
 
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-300 mb-2">
@@ -1499,7 +1541,11 @@ const Schedules = () => {
                   onClick={handleAddSchedule}
                   className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition"
                 >
-                  {editingSchedule ? "Update Schedule" : "Create Schedule"}
+                  {editingSchedule
+                    ? editingSchedule.isTemplate === false
+                      ? "Update Assigned Schedule"
+                      : "Update Template"
+                    : "Create Template"}
                 </button>
                 <button
                   onClick={resetForm}
@@ -1522,9 +1568,12 @@ const Schedules = () => {
                 <h2 className="text-2xl font-bold text-white">
                   {viewSchedule.title}
                 </h2>
-                {isAdmin && (
-                  <p className="text-gray-400 mt-1">
-                    Assigned to: {getMemberName(viewSchedule.memberId)}
+                {isAdmin && viewSchedule.isTemplate === true && (
+                  <span className="text-xs px-2 py-0.5 bg-blue-600/20 text-blue-400 rounded-full">Template</span>
+                )}
+                {isAdmin && viewSchedule.isTemplate === false && viewSchedule.memberId && (
+                  <p className="text-purple-400 mt-1 text-sm font-medium">
+                    Assigned to: {viewSchedule.memberName || getMemberName(viewSchedule.memberId)}
                   </p>
                 )}
               </div>
@@ -1809,7 +1858,8 @@ const Schedules = () => {
                   setShowAssignModal(false);
                   setScheduleToAssign(null);
                   setSelectedMembersToAssign([]);
-                  setAssignDueDate("");
+                  setAssignStartDate("");
+                  setAssignEndDate("");
                 }}
                 className="text-gray-400 hover:text-white transition"
               >
@@ -1829,17 +1879,30 @@ const Schedules = () => {
               </button>
             </div>
 
-            {/* Due Date */}
-            <div className="mb-6">
-              <label className="block text-gray-300 mb-2">
-                Due Date (Optional)
-              </label>
-              <input
-                type="date"
-                value={assignDueDate}
-                onChange={(e) => setAssignDueDate(e.target.value)}
-                className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-              />
+            {/* Schedule Dates */}
+            <div className="grid grid-cols-2 gap-4 mb-6">
+              <div>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">
+                  Start Date <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  value={assignStartDate}
+                  onChange={(e) => setAssignStartDate(e.target.value)}
+                  className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+              <div>
+                <label className="block text-gray-300 mb-2 text-sm font-medium">
+                  End Date (Optional)
+                </label>
+                <input
+                  type="date"
+                  value={assignEndDate}
+                  onChange={(e) => setAssignEndDate(e.target.value)}
+                  className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
             </div>
 
             {/* Members List */}
@@ -1885,7 +1948,8 @@ const Schedules = () => {
                   setShowAssignModal(false);
                   setScheduleToAssign(null);
                   setSelectedMembersToAssign([]);
-                  setAssignDueDate("");
+                  setAssignStartDate("");
+                  setAssignEndDate("");
                 }}
                 className="flex-1 px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-medium transition"
               >
@@ -1893,7 +1957,7 @@ const Schedules = () => {
               </button>
               <button
                 onClick={handleAssignSchedule}
-                disabled={selectedMembersToAssign.length === 0}
+                disabled={selectedMembersToAssign.length === 0 || !assignStartDate}
                 className="flex-1 px-6 py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white rounded-lg font-medium transition flex items-center justify-center gap-2"
               >
                 <svg
