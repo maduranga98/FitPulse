@@ -110,14 +110,22 @@ service cloud.firestore {
 
     // ============================================
     // SCHEDULES
-    // Schedules.jsx writes:
-    //   memberId, gymId, title, startDate, createdAt,
-    //   workouts, cardio, warmUp, warmDown, days,
-    //   description, status, notes, createdBy …
+    // Schedules.jsx writes two document types:
+    //   Templates (isTemplate: true):
+    //     gymId, title, isTemplate, createdAt, createdBy,
+    //     workouts, cardio, warmUp, warmDown, days,
+    //     description, status, notes
+    //   Assigned schedules (isTemplate: false):
+    //     gymId, title, memberId, memberName, isTemplate,
+    //     templateId, startDate, assignedAt, assignedBy,
+    //     workouts, cardio, warmUp, warmDown, days,
+    //     description, status, notes
+    // Legacy assigned schedules (no isTemplate field):
+    //     memberId, gymId, title, startDate, createdAt …
     // ============================================
     match /schedules/{scheduleId} {
       allow read: if true;
-      allow create: if hasFields(['memberId', 'gymId', 'title']);
+      allow create: if hasFields(['gymId', 'title']);
       allow update: if true;
       allow delete: if true;
     }
