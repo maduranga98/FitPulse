@@ -51,6 +51,7 @@ import InstructorMealPlans from "./pages/instructor/InstructorMealPlans";
 import InstructorMemberAnalytics from "./pages/instructor/InstructorMemberAnalytics";
 import InstructorClasses from "./pages/instructor/InstructorClasses";
 import SelfRegister from "./pages/SelfRegister";
+import DeviceManagement from "./pages/DeviceManagement";
 
 
 // Component to handle root redirect based on user role
@@ -402,6 +403,23 @@ function App() {
                   ]}
                 >
                   <InstructorManagement />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/devices"
+            element={
+              <ProtectedRoute>
+                <RoleRoute
+                  allowedRoles={[
+                    "admin",
+                    "manager",
+                    "gym_admin",
+                    "gym_manager",
+                  ]}
+                >
+                  <DeviceManagement />
                 </RoleRoute>
               </ProtectedRoute>
             }

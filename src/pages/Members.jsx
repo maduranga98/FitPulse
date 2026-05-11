@@ -251,6 +251,7 @@ const Members = () => {
 
       const username = generateUsername(memberForm.name);
       const password = generatePassword();
+      const hikvisionUserId = `${currentGymId.slice(-4).toUpperCase()}${Date.now().toString().slice(-6)}`;
 
       let facePhotosArray = [];
 
@@ -326,6 +327,8 @@ const Members = () => {
         bmi: bmiInfo?.bmi || null,
         bmiCategory: bmiInfo?.category || null,
         role: "member",
+        hikvisionUserId,
+        enrolledDevices: [],
         facePhotos: facePhotosArray.length > 0 ? facePhotosArray : null,
         faceRegistered: facePhotosArray.length > 0 ? true : false,
         faceRegistrationDate:
