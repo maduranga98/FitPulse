@@ -811,6 +811,229 @@ export const testWhatsAppMessage = functions.https.onCall(
   },
 );
 
+// ========================================
+// 📡 HIKVISION DEVICE INTEGRATION
+// ========================================
+
+/**
+ * Receives attendance events pushed by Hikvision terminals via HTTP Listening.
+ * Configure each device: Network > Advanced > HTTP Listening → point to this URL.
+ */
+export const hikvisionEvent = functions.https.onRequest(async (req, res) => {
+  if (req.method !== "POST") {
+    res.sendStatus(405);
+    return;
+  }
+
+  const db = admin.firestore();
+
+  try {
+    const body = req.body;
+    console.log("📡 Hikvision event received:", JSON.stringify(body));
+
+    // Hikvision sends events in various envelope shapes depending on firmware.
+    // We support both the flat AccessControllerEvent and the nested JSON envelope.
+    const event =
+      body?.AccessControllerEvent ||
+      body?.Events?.[0]?.AccessControllerEvent ||
+      null;
+
+    if (!event) {
+      console.log("⏭️  No AccessControllerEvent in payload, ignoring");
+      res.status(200).send("OK");
+      return;
+    }
+
+    const employeeNo = event.employeeNoString || String(event.employeeNo || "");
+    const deviceIp =
+      body.ipAddress || req.headers["x-forwarded-for"] || req.ip || "";
+    const eventTime = event.time ? new Date(event.time) : new Date();
+
+    if (!employeeNo) {
+      console.warn("⚠️  No employeeNo in event, ignoring");
+      res.status(200).send("OK");
+      return;
+    }
+
+    // 1. Look up device by IP across all gyms
+    const devicesSnap = await db
+      .collectionGroup("devices")
+      .where("ip", "==", deviceIp.split(",")[0].trim())
+      .limit(1)
+      .get();
+
+    if (devicesSnap.empty) {
+      console.warn(`⚠️  No device registered for IP ${deviceIp}`);
+      res.status(200).send("OK");
+      return;
+    }
+
+    const deviceDoc = devicesSnap.docs[0];
+    const deviceData = deviceDoc.data();
+    const gymId = deviceData.gymId;
+    const deviceId = deviceDoc.id;
+
+    // 2. Validate gym
+    const gymDoc = await db.collection("gyms").doc(gymId).get();
+    if (!gymDoc.exists || gymDoc.data().status !== "active") {
+      console.warn(`⚠️  Gym ${gymId} not found or not active`);
+      res.status(200).send("OK");
+      return;
+    }
+
+    // 3. Look up member by hikvisionUserId within the gym
+    const memberSnap = await db
+      .collection("members")
+      .where("gymId", "==", gymId)
+      .where("hikvisionUserId", "==", employeeNo)
+      .limit(1)
+      .get();
+
+    if (memberSnap.empty) {
+      console.warn(`⚠️  No member with hikvisionUserId ${employeeNo} in gym ${gymId}`);
+      res.status(200).send("OK");
+      return;
+    }
+
+    const memberDoc = memberSnap.docs[0];
+    const member = memberDoc.data();
+
+    if (member.status !== "active") {
+      console.warn(`⚠️  Member ${memberDoc.id} is not active`);
+      res.status(200).send("OK");
+      return;
+    }
+
+    // 4. Deduplicate: same member + device within 10 seconds = skip
+    const dedupeWindowMs = 10 * 1000;
+    const dedupeKey = `${deviceId}_${memberDoc.id}`;
+    const recentSnap = await db
+      .collection("attendance")
+      .where("gymId", "==", gymId)
+      .where("memberId", "==", memberDoc.id)
+      .where("deviceId", "==", deviceId)
+      .orderBy("checkInTime", "desc")
+      .limit(1)
+      .get();
+
+    if (!recentSnap.empty) {
+      const lastEvent = recentSnap.docs[0].data();
+      const lastTime = lastEvent.checkInTime?.toDate?.() || new Date(lastEvent.checkInTime);
+      if (eventTime - lastTime < dedupeWindowMs) {
+        console.log(`⏭️  Duplicate event for ${member.name} within 10s, skipping`);
+        res.status(200).send("OK");
+        return;
+      }
+    }
+
+    // 5. Write attendance record
+    const dateStr = eventTime.toISOString().split("T")[0];
+    const attendanceRef = db.collection("attendance").doc(
+      `${deviceId}_${memberDoc.id}_${eventTime.getTime()}`
+    );
+
+    await attendanceRef.set({
+      memberId: memberDoc.id,
+      memberName: member.name,
+      gymId,
+      deviceId,
+      deviceName: deviceData.name || deviceId,
+      direction: deviceData.direction || "in",
+      checkInTime: admin.firestore.Timestamp.fromDate(eventTime),
+      date: dateStr,
+      recognitionMethod: "hikvision",
+      status: "present",
+      rawEvent: {
+        employeeNo,
+        cardNo: event.cardNo || null,
+        eventType: event.eventType || null,
+        verifyMode: event.verifyMode || null,
+      },
+      createdAt: admin.firestore.Timestamp.now(),
+    });
+
+    // 6. Update device last heartbeat
+    await deviceDoc.ref.update({
+      lastHeartbeat: admin.firestore.Timestamp.now(),
+      status: "online",
+    });
+
+    console.log(`✅ Attendance recorded: ${member.name} via ${deviceData.name || deviceId}`);
+    res.status(200).send("OK");
+  } catch (error) {
+    console.error("❌ hikvisionEvent error:", error);
+    // Always return 200 to prevent device retry storms
+    res.status(200).send("OK");
+  }
+});
+
+/**
+ * Test connectivity to a registered Hikvision device.
+ * Calls GET /ISAPI/System/deviceInfo on the device and returns the result.
+ */
+export const testDeviceConnection = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError("unauthenticated", "Must be logged in");
+  }
+
+  const { deviceId, gymId } = data;
+  if (!deviceId || !gymId) {
+    throw new functions.https.HttpsError("invalid-argument", "deviceId and gymId required");
+  }
+
+  const db = admin.firestore();
+  const deviceDoc = await db.collection("gyms").doc(gymId).collection("devices").doc(deviceId).get();
+
+  if (!deviceDoc.exists) {
+    throw new functions.https.HttpsError("not-found", "Device not found");
+  }
+
+  const device = deviceDoc.data();
+
+  try {
+    const { default: https } = await import("https");
+    const { default: http } = await import("http");
+
+    const isHttps = (device.protocol || "HTTP").toUpperCase() === "HTTPS";
+    const agent = isHttps ? https : http;
+
+    const credentials = Buffer.from(`${device.username}:${device.password}`).toString("base64");
+
+    const result = await new Promise((resolve, reject) => {
+      const options = {
+        hostname: device.ip,
+        port: device.port || 80,
+        path: "/ISAPI/System/deviceInfo",
+        method: "GET",
+        headers: { Authorization: `Basic ${credentials}` },
+        timeout: 5000,
+        rejectUnauthorized: false,
+      };
+
+      const req = agent.request(options, (res) => {
+        let data = "";
+        res.on("data", (chunk) => (data += chunk));
+        res.on("end", () => resolve({ statusCode: res.statusCode, body: data }));
+      });
+
+      req.on("error", reject);
+      req.on("timeout", () => { req.destroy(); reject(new Error("Connection timed out")); });
+      req.end();
+    });
+
+    if (result.statusCode === 200) {
+      await deviceDoc.ref.update({ status: "online", lastHeartbeat: admin.firestore.Timestamp.now() });
+      return { success: true, statusCode: result.statusCode };
+    } else {
+      await deviceDoc.ref.update({ status: "error" });
+      return { success: false, error: `Device returned HTTP ${result.statusCode}` };
+    }
+  } catch (err) {
+    await deviceDoc.ref.update({ status: "offline" });
+    return { success: false, error: err.message };
+  }
+});
+
 /**
  * Webhook endpoint for WhatsApp status updates
  */
