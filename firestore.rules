@@ -578,6 +578,20 @@ service cloud.firestore {
     }
 
     // ============================================
+    // DEVICES (Hikvision terminals per gym)
+    // DeviceManagement.jsx writes:
+    //   name, location, ip, port, username, password,
+    //   model, serialNumber, direction, protocol,
+    //   gymId, status, lastHeartbeat, createdAt, updatedAt
+    // ============================================
+    match /gyms/{gymId}/devices/{deviceId} {
+      allow read: if true;
+      allow create: if hasFields(['name', 'ip', 'gymId']);
+      allow update: if true;
+      allow delete: if true;
+    }
+
+    // ============================================
     // DEFAULT — deny everything else
     // ============================================
     match /{document=**} {
