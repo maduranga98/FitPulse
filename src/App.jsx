@@ -52,6 +52,7 @@ import InstructorMemberAnalytics from "./pages/instructor/InstructorMemberAnalyt
 import InstructorClasses from "./pages/instructor/InstructorClasses";
 import SelfRegister from "./pages/SelfRegister";
 import DeviceManagement from "./pages/DeviceManagement";
+import Reports from "./pages/Reports";
 
 
 // Component to handle root redirect based on user role
@@ -437,6 +438,23 @@ function App() {
                   ]}
                 >
                   <MealPlanManagement />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/reports"
+            element={
+              <ProtectedRoute>
+                <RoleRoute
+                  allowedRoles={[
+                    "admin",
+                    "manager",
+                    "gym_admin",
+                    "gym_manager",
+                  ]}
+                >
+                  <Reports />
                 </RoleRoute>
               </ProtectedRoute>
             }

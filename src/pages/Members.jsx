@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { useNotification } from "../contexts/NotificationContext";
 import Sidebar from "../components/Sidebar";
-import MultiAngleFaceCapture from "../components/MultiAngleFaceCapture";
 import { isAdmin, validateGymId } from "../utils/authUtils";
 import { calculateBMI, validateBMIInputs } from "../utils/validationUtils";
 import { QRCodeSVG } from "qrcode.react";
@@ -25,12 +24,6 @@ const Members = () => {
   const [showQRModal, setShowQRModal] = useState(false);
   const [pendingRegistrations, setPendingRegistrations] = useState([]);
 
-  // Multi-angle face capture states
-  const [showMultiAngleCaptureModal, setShowMultiAngleCaptureModal] =
-    useState(false);
-  const [capturedFacePhotos, setCapturedFacePhotos] = useState([]);
-  const [uploadingFacePhoto, setUploadingFacePhoto] = useState(false);
-  const [faceUploadProgress, setFaceUploadProgress] = useState(0);
 
   const userIsAdmin = isAdmin(user);
   const gymValidation = validateGymId(user);
@@ -233,12 +226,6 @@ const Members = () => {
       }
     }
 
-    if (capturedFacePhotos.length === 0) {
-      const confirmWithoutFace = window.confirm(
-        "⚠️ No face photos captured. Member won't be able to use face recognition attendance.\n\nContinue without face photos?"
-      );
-      if (!confirmWithoutFace) return;
-    }
 
     try {
       const { db, storage } = await import("../config/firebase");
@@ -252,68 +239,6 @@ const Members = () => {
       const username = generateUsername(memberForm.name);
       const password = generatePassword();
       const hikvisionUserId = `${currentGymId.slice(-4).toUpperCase()}${Date.now().toString().slice(-6)}`;
-
-      let facePhotosArray = [];
-
-      // Upload all face photos (6 photos: 3 angles x 2 copies)
-      if (capturedFacePhotos && capturedFacePhotos.length > 0) {
-        try {
-          setUploadingFacePhoto(true);
-
-          for (let i = 0; i < capturedFacePhotos.length; i++) {
-            const photo = capturedFacePhotos[i];
-
-            const timestamp = Date.now();
-            const copyLabel = photo.copy ? `copy${photo.copy}` : '';
-            const fileName = `faces/${currentGymId}/${username}_${photo.angle}_${copyLabel}_${timestamp}.jpg`;
-            const storageRef = ref(storage, fileName);
-
-            const uploadTask = uploadBytesResumable(storageRef, photo.blob);
-
-            await new Promise((resolve, reject) => {
-              uploadTask.on(
-                "state_changed",
-                (snapshot) => {
-                  const progress =
-                    (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-                  setFaceUploadProgress(progress);
-                  console.log(
-                    `Photo ${i + 1}/6 upload: ${progress.toFixed(0)}%`
-                  );
-                },
-                (error) => {
-                  console.error(`Photo ${i + 1} upload error:`, error);
-                  reject(error);
-                },
-                async () => {
-                  const downloadURL = await getDownloadURL(
-                    uploadTask.snapshot.ref
-                  );
-                  facePhotosArray.push({
-                    url: downloadURL,
-                    angle: photo.angle,
-                    uploadedAt: new Date().toISOString(),
-                    index: photo.index,
-                    copy: photo.copy,
-                  });
-                  console.log(`✅ Photo ${i + 1}/6 uploaded`);
-                  resolve();
-                }
-              );
-            });
-          }
-
-          setUploadingFacePhoto(false);
-          console.log(
-            `✅ All ${facePhotosArray.length} photos uploaded successfully`
-          );
-        } catch (uploadError) {
-          console.error("❌ Face photos upload failed:", uploadError);
-          showError("Failed to upload face photos. Please try again.");
-          setUploadingFacePhoto(false);
-          return;
-        }
-      }
 
       // Create member data
       const memberData = {
@@ -329,12 +254,6 @@ const Members = () => {
         role: "member",
         hikvisionUserId,
         enrolledDevices: [],
-        facePhotos: facePhotosArray.length > 0 ? facePhotosArray : null,
-        faceRegistered: facePhotosArray.length > 0 ? true : false,
-        faceRegistrationDate:
-          facePhotosArray.length > 0 ? new Date().toISOString() : null,
-        faceRegistrationMethod:
-          facePhotosArray.length > 0 ? "multi-angle-capture" : null,
         createdAt: Timestamp.now(),
         joinDate: Timestamp.fromDate(new Date(memberForm.joinDate)),
       };
@@ -419,9 +338,6 @@ const Members = () => {
         emergencyName: "",
         notes: "",
       });
-
-      setCapturedFacePhotos([]);
-      setFaceUploadProgress(0);
 
       fetchMembers();
     } catch (error) {
@@ -855,7 +771,6 @@ const Members = () => {
               <button
                 onClick={() => {
                   setShowAddMember(false);
-                  setCapturedFacePhotos([]);
                 }}
                 className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition"
               >
@@ -1038,164 +953,6 @@ const Members = () => {
                   </div>
                 )}
 
-                {/* Face Recognition Section */}
-                <div className="md:col-span-2 mt-6">
-                  <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
-                    <svg
-                      className="w-5 h-5 text-blue-500"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-                      />
-                    </svg>
-                    Face Recognition (Optional)
-                  </h3>
-                  <p className="text-sm text-gray-400 mb-4">
-                    Capture 3 face photos from different angles (saved as 6 images) for better
-                    recognition accuracy
-                  </p>
-                </div>
-
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-300 mb-3">
-                    Face Photos (6 Images: 3 Angles × 2 Copies)
-                  </label>
-
-                  {capturedFacePhotos.length > 0 ? (
-                    <div className="space-y-4">
-                      {/* Photos Preview Grid */}
-                      <div className="grid grid-cols-3 gap-4">
-                        {capturedFacePhotos.map((photo, index) => (
-                          <div key={index} className="relative">
-                            <img
-                              src={photo.url}
-                              alt={`Face ${photo.angle}`}
-                              className="w-full h-32 object-cover rounded-lg border-2 border-green-500"
-                            />
-                            <div className="absolute top-2 left-2 bg-green-500 text-white px-2 py-1 rounded text-xs font-semibold">
-                              {photo.angle} {photo.copy ? `(${photo.copy})` : ''}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Upload Progress */}
-                      {uploadingFacePhoto && (
-                        <div>
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-sm text-gray-400">
-                              Uploading photos...
-                            </span>
-                            <span className="text-sm text-blue-400">
-                              {faceUploadProgress.toFixed(0)}%
-                            </span>
-                          </div>
-                          <div className="w-full bg-gray-700 rounded-full h-2">
-                            <div
-                              className="bg-blue-500 h-2 rounded-full transition-all duration-300"
-                              style={{ width: `${faceUploadProgress}%` }}
-                            />
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Action Buttons */}
-                      <div className="flex gap-3">
-                        <button
-                          type="button"
-                          onClick={() => setShowMultiAngleCaptureModal(true)}
-                          className="flex-1 px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition font-medium flex items-center justify-center gap-2"
-                          disabled={uploadingFacePhoto}
-                        >
-                          <svg
-                            className="w-5 h-5"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                            />
-                          </svg>
-                          Retake Photos
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setCapturedFacePhotos([])}
-                          className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-medium flex items-center justify-center gap-2"
-                          disabled={uploadingFacePhoto}
-                        >
-                          <svg
-                            className="w-5 h-5"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                            />
-                          </svg>
-                          Remove
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div>
-                      {/* Capture Button */}
-                      <button
-                        type="button"
-                        onClick={() => setShowMultiAngleCaptureModal(true)}
-                        className="w-full px-6 py-8 bg-gradient-to-br from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white rounded-xl transition-all duration-300 transform hover:scale-[1.02] font-semibold text-lg flex items-center justify-center gap-3"
-                      >
-                        <svg
-                          className="w-8 h-8"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"
-                          />
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"
-                          />
-                        </svg>
-                        Capture 3 Face Photos
-                      </button>
-
-                      {/* Guidelines */}
-                      <div className="mt-4 p-3 bg-blue-900/20 border border-blue-500/30 rounded-lg">
-                        <p className="text-xs text-blue-300 font-medium mb-2">
-                          📸 Multi-Angle Capture:
-                        </p>
-                        <ul className="text-xs text-gray-400 space-y-1 list-disc list-inside">
-                          <li>Capture 3 photos from different angles (saved as 6 images)</li>
-                          <li>Improves recognition accuracy by 10-20%</li>
-                          <li>Takes only 2-3 minutes</li>
-                          <li>Works better in varying lighting conditions</li>
-                        </ul>
-                      </div>
-                    </div>
-                  )}
-                </div>
 
                 {/* Medical Information */}
                 <div className="md:col-span-2 mt-4">
@@ -1409,18 +1166,14 @@ const Members = () => {
               <div className="flex gap-3 mt-6">
                 <button
                   type="submit"
-                  disabled={uploadingFacePhoto}
-                  className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition"
                 >
-                  {uploadingFacePhoto
-                    ? "Uploading..."
-                    : "Add Member & Generate Credentials"}
+                  Add Member & Generate Credentials
                 </button>
                 <button
                   type="button"
                   onClick={() => {
                     setShowAddMember(false);
-                    setCapturedFacePhotos([]);
                   }}
                   className="px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-medium transition"
                 >
@@ -1874,23 +1627,6 @@ const Members = () => {
             </div>
           </div>
         </div>
-      )}
-
-      {/* Multi-Angle Face Capture Modal */}
-      {showMultiAngleCaptureModal && (
-        <MultiAngleFaceCapture
-          memberId={null}
-          memberName={memberForm.name || "New Member"}
-          onComplete={(photos) => {
-            console.log("✅ Multi-angle capture complete:", photos);
-            // Photos already have blob and url properties
-            setCapturedFacePhotos(photos);
-            setShowMultiAngleCaptureModal(false);
-          }}
-          onCancel={() => {
-            setShowMultiAngleCaptureModal(false);
-          }}
-        />
       )}
 
       {/* QR Code Self-Registration Modal */}
