@@ -65,17 +65,17 @@ service cloud.firestore {
     // ============================================
     // MEMBERS
     // Members.jsx writes:
-    //   name, email, phone, gymId, username, password,
+    //   name, email, gymId, username, password,
     //   mobile, whatsapp, weight, height, allergies,
-    //   diseases, level, status, joinDate, emergencyContact,
+    //   diseases, level, status, joinDate, membershipFee,
+    //   packageDuration, nextPaymentDate, emergencyContact,
     //   emergencyName, notes, bmi, bmiCategory, role,
-    //   facePhotos, faceRegistered, createdAt …
+    //   hikvisionUserId, enrolledDevices, createdAt …
     // ============================================
     match /members/{memberId} {
       allow read: if true;
-      allow create: if hasFields(['name', 'email', 'phone', 'gymId'])
-                    && isValidEmail(request.resource.data.email)
-                    && isValidPhone(request.resource.data.phone);
+      allow create: if hasFields(['name', 'gymId', 'mobile', 'whatsapp'])
+                    && (request.resource.data.email == null || isValidEmail(request.resource.data.email));
       allow update: if true;
       allow delete: if true;
     }
