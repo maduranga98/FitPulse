@@ -8,6 +8,7 @@ import admin from "firebase-admin";
 import { ImageAnnotatorClient } from "@google-cloud/vision";
 import process from "process";
 import * as metaWhatsAppService from "./services/metaWhatsAppService.js";
+import * as hik from "./services/hikCentralService.js";
 
 admin.initializeApp();
 
@@ -1080,4 +1081,70 @@ export const whatsappWebhook = functions.https.onRequest(async (req, res) => {
   }
 
   res.sendStatus(405);
+});
+
+// ========================================
+// 🔐 HIKCENTRAL OPENAPI (AK/SK signed)
+// ========================================
+
+function requireAuth(context) {
+  if (!context.auth) {
+    throw new functions.https.HttpsError("unauthenticated", "Must be logged in");
+  }
+}
+
+function hikErr(err) {
+  console.error("HikCentral call failed:", err);
+  throw new functions.https.HttpsError("internal", err.message || String(err));
+}
+
+export const hikAddPerson = functions.https.onCall(async (data, context) => {
+  requireAuth(context);
+  return hik.addPerson(data).catch(hikErr);
+});
+
+export const hikSearchPersons = functions.https.onCall(async (data, context) => {
+  requireAuth(context);
+  return hik.searchPersons(data || {}).catch(hikErr);
+});
+
+export const hikUpdatePerson = functions.https.onCall(async (data, context) => {
+  requireAuth(context);
+  const { personId, updates } = data || {};
+  if (!personId) {
+    throw new functions.https.HttpsError("invalid-argument", "personId required");
+  }
+  return hik.updatePerson(personId, updates || {}).catch(hikErr);
+});
+
+export const hikDeletePersons = functions.https.onCall(async (data, context) => {
+  requireAuth(context);
+  const ids = (data && data.personIds) || [];
+  if (!ids.length) {
+    throw new functions.https.HttpsError("invalid-argument", "personIds required");
+  }
+  return hik.deletePersons(ids).catch(hikErr);
+});
+
+export const hikAddFace = functions.https.onCall(async (data, context) => {
+  requireAuth(context);
+  const { personId, faceData } = data || {};
+  if (!personId || !faceData) {
+    throw new functions.https.HttpsError("invalid-argument", "personId and faceData required");
+  }
+  return hik.addFace({ personId, faceData }).catch(hikErr);
+});
+
+export const hikDeleteFaces = functions.https.onCall(async (data, context) => {
+  requireAuth(context);
+  const ids = (data && data.faceIds) || [];
+  if (!ids.length) {
+    throw new functions.https.HttpsError("invalid-argument", "faceIds required");
+  }
+  return hik.deleteFaces(ids).catch(hikErr);
+});
+
+export const hikGetAccessRecords = functions.https.onCall(async (data, context) => {
+  requireAuth(context);
+  return hik.getAccessRecords(data || {}).catch(hikErr);
 });
