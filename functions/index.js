@@ -1114,7 +1114,7 @@ export const hikUpdatePerson = functions.https.onCall(async (data, context) => {
   if (!personId) {
     throw new functions.https.HttpsError("invalid-argument", "personId required");
   }
-  return hik.updatePerson(personId, updates || {}).catch(hikErr);
+  return hik.updatePerson({ personId, ...(updates || {}) }).catch(hikErr);
 });
 
 export const hikDeletePersons = functions.https.onCall(async (data, context) => {
@@ -1147,4 +1147,58 @@ export const hikDeleteFaces = functions.https.onCall(async (data, context) => {
 export const hikGetAccessRecords = functions.https.onCall(async (data, context) => {
   requireAuth(context);
   return hik.getAccessRecords(data || {}).catch(hikErr);
+});
+
+export const hikGetAttendanceReport = functions.https.onCall(async (data, context) => {
+  requireAuth(context);
+  return hik.getAttendanceReport(data || {}).catch(hikErr);
+});
+
+export const hikGetDoorEvents = functions.https.onCall(async (data, context) => {
+  requireAuth(context);
+  return hik.getDoorEvents(data || {}).catch(hikErr);
+});
+
+export const hikRevokePrivilege = functions.https.onCall(async (data, context) => {
+  requireAuth(context);
+  const { privilegeGroupId, personIds } = data || {};
+  if (!privilegeGroupId || !personIds || !personIds.length) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "privilegeGroupId and personIds required",
+    );
+  }
+  const res = await hik.revokePrivilege({ privilegeGroupId, personIds }).catch(hikErr);
+  await hik.reapplyPrivileges().catch(hikErr);
+  return res;
+});
+
+export const hikBlockPerson = functions.https.onCall(async (data, context) => {
+  requireAuth(context);
+  const { personId, endTime } = data || {};
+  if (!personId) {
+    throw new functions.https.HttpsError("invalid-argument", "personId required");
+  }
+  const res = await hik.blockPersonByValidity(personId, endTime).catch(hikErr);
+  await hik.reapplyPrivileges().catch(hikErr);
+  return res;
+});
+
+export const hikUnblockPerson = functions.https.onCall(async (data, context) => {
+  requireAuth(context);
+  const { personId, endTime } = data || {};
+  if (!personId || !endTime) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "personId and endTime required",
+    );
+  }
+  const res = await hik.unblockPerson(personId, endTime).catch(hikErr);
+  await hik.reapplyPrivileges().catch(hikErr);
+  return res;
+});
+
+export const hikReapplyPrivileges = functions.https.onCall(async (_data, context) => {
+  requireAuth(context);
+  return hik.reapplyPrivileges().catch(hikErr);
 });

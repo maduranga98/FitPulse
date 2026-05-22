@@ -122,50 +122,130 @@ export async function callApi(path, body = {}) {
   return data;
 }
 
-// ─── 7 endpoint wrappers ────────────────────────────────────────────────
+// ─── Person (Member) Management ──────────────────────────────────────────
 
+/**
+ * Add a person (member). Optionally include face / fingerprint / card credentials.
+ * person fields:
+ *   personCode, personFamilyName, personGivenName, gender, orgIndexCode,
+ *   phoneNo, email, jobNo, birthday ("YYYY-MM-DD"),
+ *   beginTime, endTime (ISO8601 validity window — set endTime to past to block),
+ *   faces: [{ faceData: <base64 JPEG> }],
+ *   fingerPrint: [{ fingerPrintData, fingerPrintType }],
+ *   cards: [{ cardNo }]
+ */
 export function addPerson(person) {
-  // person: { personCode, personFamilyName, personGivenName, gender, phoneNo, email, ... }
-  return callApi("/api/resource/v1/person", person);
+  return callApi("/artemis/api/resource/v1/person/single/add", person);
 }
 
-export function searchPersons({ pageNo = 1, pageSize = 100, personName, personCode } = {}) {
-  return callApi("/api/resource/v1/person/advance/search", {
-    pageNo, pageSize, personName, personCode,
+export function updatePerson(updates) {
+  // updates MUST include personId
+  return callApi("/artemis/api/resource/v1/person/single/update", updates);
+}
+
+export function searchPersons({
+  pageNo = 1,
+  pageSize = 100,
+  personName,
+  personCode,
+  orgIndexCodes,
+} = {}) {
+  return callApi("/artemis/api/resource/v1/person/advance/personList", {
+    pageNo, pageSize, personName, personCode, orgIndexCodes,
   });
 }
 
-export function updatePerson(personId, updates) {
-  return callApi(`/api/resource/v1/person/${personId}`, updates);
-}
-
 export function deletePersons(personIds) {
-  // personIds: string[]
-  return callApi("/api/resource/v1/person/batch/delete", {
+  return callApi("/artemis/api/resource/v1/person/batch/delete", {
     personIds: personIds.map((id) => ({ personId: id })),
   });
 }
 
+// ─── Face Credentials ────────────────────────────────────────────────────
+
 export function addFace({ personId, faceData }) {
-  // faceData: base64-encoded JPEG of the face
-  return callApi("/api/resource/v1/face", { personId, faceData });
+  return callApi("/artemis/api/resource/v1/face/single/add", { personId, faceData });
 }
 
 export function deleteFaces(faceIds) {
-  return callApi("/api/resource/v1/face/batch/delete", {
+  return callApi("/artemis/api/resource/v1/face/batch/delete", {
     faceIds: faceIds.map((id) => ({ faceId: id })),
   });
 }
 
-export function getAccessRecords({
+// ─── Attendance ──────────────────────────────────────────────────────────
+
+/**
+ * Processed daily attendance report (late/absent/work duration).
+ */
+export function getAttendanceReport({
   startTime,
   endTime,
-  personName,
-  doorIndexCodes,
+  personIndexCodes,
   pageNo = 1,
   pageSize = 100,
 } = {}) {
-  return callApi("/api/acs/v1/door/access/record/search", {
-    startTime, endTime, personName, doorIndexCodes, pageNo, pageSize,
+  return callApi("/artemis/api/attendance/v1/report", {
+    startTime, endTime, personIndexCodes, pageNo, pageSize,
   });
+}
+
+/**
+ * Raw door events — every card / face / fingerprint swipe.
+ */
+export function getDoorEvents({
+  startTime,
+  endTime,
+  doorIndexCodes,
+  personName,
+  cardNo,
+  eventType,
+  pageNo = 1,
+  pageSize = 100,
+} = {}) {
+  return callApi("/artemis/api/acs/v1/door/events", {
+    startTime, endTime, doorIndexCodes, personName, cardNo, eventType, pageNo, pageSize,
+  });
+}
+
+/**
+ * Kept for backwards compatibility with existing callers.
+ */
+export function getAccessRecords(params) {
+  return getDoorEvents(params);
+}
+
+// ─── Temporary Blocking (suspend without delete) ─────────────────────────
+
+/**
+ * Remove a person from a privilege group (revokes door access for that group).
+ */
+export function revokePrivilege({ privilegeGroupId, personIds }) {
+  return callApi("/artemis/api/acs/v1/privilege/group/single/deletePersons", {
+    privilegeGroupId,
+    list: personIds.map((id) => ({ personId: id })),
+  });
+}
+
+/**
+ * Block by expiring validity: set endTime to now (or any past date).
+ * Caller must invoke reapplyPrivileges() after this for the device to enforce it.
+ */
+export function blockPersonByValidity(personId, endTime = new Date().toISOString()) {
+  return updatePerson({ personId, endTime });
+}
+
+/**
+ * Unblock: extend validity into the future.
+ */
+export function unblockPerson(personId, endTime) {
+  return updatePerson({ personId, endTime });
+}
+
+/**
+ * Push privilege / validity changes from HikCentral to the physical devices.
+ * MUST be called after revokePrivilege / blockPersonByValidity / unblockPerson.
+ */
+export function reapplyPrivileges() {
+  return callApi("/artemis/api/visitor/v1/auth/reapplication", {});
 }
