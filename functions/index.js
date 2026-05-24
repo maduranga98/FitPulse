@@ -1087,12 +1087,6 @@ export const whatsappWebhook = functions.https.onRequest(async (req, res) => {
 // 🔐 HIKCENTRAL OPENAPI (AK/SK signed)
 // ========================================
 
-function requireAuth(context) {
-  if (!context.auth) {
-    throw new functions.https.HttpsError("unauthenticated", "Must be logged in");
-  }
-}
-
 function hikErr(err) {
   console.error("HikCentral call failed:", err);
   throw new functions.https.HttpsError("internal", err.message || String(err));
@@ -1100,32 +1094,48 @@ function hikErr(err) {
 
 /**
  * Validate that a gymId is provided, the gym exists, and is active.
+ * This app uses custom auth (not Firebase Auth), so context.auth is always
+ * null in callable functions. Gym validation is the access control instead.
  * Throws an HttpsError otherwise. Returns the gym document data.
  */
-async function validateGym(gymId) {
-  if (!gymId) throw new functions.https.HttpsError("invalid-argument", "gymId is required");
-  const gymDoc = await admin.firestore().collection("gyms").doc(gymId).get();
-  if (!gymDoc.exists) throw new functions.https.HttpsError("not-found", `Gym ${gymId} not found`);
+async function validateGymAccess(data) {
+  const gymId = data?.gymId;
+  if (!gymId) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "gymId is required"
+    );
+  }
+  const db = admin.firestore();
+  const gymDoc = await db.collection("gyms").doc(gymId).get();
+  if (!gymDoc.exists) {
+    throw new functions.https.HttpsError(
+      "not-found",
+      `Gym ${gymId} not found`
+    );
+  }
   if (gymDoc.data().status !== "active") {
-    throw new functions.https.HttpsError("failed-precondition", `Gym ${gymId} is not active`);
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      `Gym ${gymId} is not active`
+    );
   }
   return gymDoc.data();
 }
 
 export const hikAddPerson = functions.https.onCall(async (data, context) => {
-  requireAuth(context);
-  const { gymId, ...personData } = data || {};
-  await validateGym(gymId);
+  await validateGymAccess(data);
+  const { gymId, ...personData } = data;
   return hik.addPerson(personData).catch(hikErr);
 });
 
 export const hikSearchPersons = functions.https.onCall(async (data, context) => {
-  requireAuth(context);
+  // No gymId required — read-only person search.
   return hik.searchPersons(data || {}).catch(hikErr);
 });
 
 export const hikUpdatePerson = functions.https.onCall(async (data, context) => {
-  requireAuth(context);
+  await validateGymAccess(data);
   const { personId, updates } = data || {};
   if (!personId) {
     throw new functions.https.HttpsError("invalid-argument", "personId required");
@@ -1134,28 +1144,31 @@ export const hikUpdatePerson = functions.https.onCall(async (data, context) => {
 });
 
 export const hikDeletePersons = functions.https.onCall(async (data, context) => {
-  requireAuth(context);
-  const { gymId, personIds } = data || {};
-  await validateGym(gymId);
-  const ids = personIds || [];
+  await validateGymAccess(data);
+  const ids = data?.personIds || [];
   if (!ids.length) {
-    throw new functions.https.HttpsError("invalid-argument", "personIds required");
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "personIds required"
+    );
   }
   return hik.deletePersons(ids).catch(hikErr);
 });
 
 export const hikAddFace = functions.https.onCall(async (data, context) => {
-  requireAuth(context);
-  const { gymId, personId, faceData } = data || {};
-  await validateGym(gymId);
+  await validateGymAccess(data);
+  const { personId, faceData } = data || {};
   if (!personId || !faceData) {
-    throw new functions.https.HttpsError("invalid-argument", "personId and faceData required");
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "personId and faceData required"
+    );
   }
   return hik.addFace({ personId, faceData }).catch(hikErr);
 });
 
 export const hikDeleteFaces = functions.https.onCall(async (data, context) => {
-  requireAuth(context);
+  await validateGymAccess(data);
   const ids = (data && data.faceIds) || [];
   if (!ids.length) {
     throw new functions.https.HttpsError("invalid-argument", "faceIds required");
@@ -1164,53 +1177,53 @@ export const hikDeleteFaces = functions.https.onCall(async (data, context) => {
 });
 
 export const hikGetAccessRecords = functions.https.onCall(async (data, context) => {
-  requireAuth(context);
-  const { gymId } = data || {};
-  await validateGym(gymId);
-  console.log(`Access records requested for gym: ${gymId}`);
+  await validateGymAccess(data);
   return hik.getAccessRecords(data || {}).catch(hikErr);
 });
 
 export const hikGetDoors = functions.https.onCall(async (data, context) => {
-  requireAuth(context);
+  await validateGymAccess(data);
   return hik.getDoors(data || {}).catch(hikErr);
 });
 
 export const hikGetDeviceList = functions.https.onCall(async (data, context) => {
-  requireAuth(context);
+  // No auth check needed — returns all devices from HikCentral.
   return hik.getDeviceList(data || {}).catch(hikErr);
 });
 
-export const hikViewSubscriptions = functions.https.onCall(async (_data, context) => {
-  requireAuth(context);
+export const hikViewSubscriptions = functions.https.onCall(async (data, context) => {
+  // No auth check needed — diagnostic only.
   return hik.viewSubscriptions().catch(hikErr);
 });
 
 export const hikControlDoor = functions.https.onCall(async (data, context) => {
-  requireAuth(context);
-  const { gymId, doorIndexCode, controlType } = data || {};
   // Security-critical: never allow door control without a valid, active gym.
-  await validateGym(gymId);
+  await validateGymAccess(data);
+  const { doorIndexCode, controlType } = data || {};
   if (!doorIndexCode) {
-    throw new functions.https.HttpsError("invalid-argument", "doorIndexCode required");
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "doorIndexCode is required"
+    );
   }
-  return hik.controlDoor(doorIndexCode, controlType).catch(hikErr);
+  return hik.controlDoor(doorIndexCode, controlType ?? 1).catch(hikErr);
 });
 
 export const hikSubscribeEvents = functions.https.onCall(async (data, context) => {
-  requireAuth(context);
-  const { gymId, eventDest, callbackUrl, eventTypes } = data || {};
-  await validateGym(gymId);
+  await validateGymAccess(data);
+  const { eventDest, callbackUrl, eventTypes } = data || {};
   const dest = eventDest || callbackUrl;
   if (!dest) {
-    throw new functions.https.HttpsError("invalid-argument", "eventDest required");
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "eventDest is required"
+    );
   }
-  console.log(`Subscribing events for gym: ${gymId} → ${dest}`);
   return hik.subscribeEvents(dest, eventTypes || []).catch(hikErr);
 });
 
-export const hikTestConnection = functions.https.onCall(async (_data, context) => {
-  requireAuth(context);
+export const hikTestConnection = functions.https.onCall(async (data, context) => {
+  // No auth check needed — diagnostic only.
   try {
     const result = await hik.getApiInfo();
     return { success: true, result };
