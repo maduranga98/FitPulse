@@ -10,16 +10,22 @@ import { useGymSettings } from "../contexts/GymSettingsContext";
 const HikStatus = ({ member, onRetry, retrying }) => {
   if (member.hikCentralSynced === true) {
     return (
-      <span className="flex items-center gap-1.5 text-green-400 text-xs font-medium">
+      <span
+        title="Synced to HikCentral"
+        className="flex items-center gap-1.5 text-green-400 text-xs font-medium"
+      >
         <span className="w-2 h-2 rounded-full bg-green-500" /> Synced
       </span>
     );
   }
-  if (member.hikCentralSynced === false) {
+  if (member.hikCentralSynced === false && member.hikCentralSyncError) {
     return (
       <span className="flex items-center gap-2 text-xs font-medium">
-        <span className="flex items-center gap-1.5 text-red-400">
-          <span className="w-2 h-2 rounded-full bg-red-500" /> Sync Failed
+        <span
+          title={`Sync failed: ${member.hikCentralSyncError}`}
+          className="flex items-center gap-1.5 text-red-400"
+        >
+          <span className="w-2 h-2 rounded-full bg-red-500" /> Sync failed
         </span>
         <button
           onClick={onRetry}
@@ -33,14 +39,20 @@ const HikStatus = ({ member, onRetry, retrying }) => {
   }
   if (member.useHikCentral === true && !member.hikCentralSynced) {
     return (
-      <span className="flex items-center gap-1.5 text-yellow-400 text-xs font-medium">
+      <span
+        title="Sync pending"
+        className="flex items-center gap-1.5 text-yellow-400 text-xs font-medium"
+      >
         <span className="w-2 h-2 rounded-full bg-yellow-500" /> Pending
       </span>
     );
   }
   return (
-    <span className="flex items-center gap-1.5 text-gray-400 text-xs font-medium">
-      <span className="w-2 h-2 rounded-full bg-gray-500" /> Not enrolled
+    <span
+      title="Not enrolled in HikCentral"
+      className="flex items-center gap-1.5 text-gray-500 text-xs font-medium"
+    >
+      <span className="w-2 h-2 rounded-full bg-gray-600" /> Not enrolled
     </span>
   );
 };
@@ -424,16 +436,29 @@ const Members = () => {
       await updateDoc(doc(db, "members", member.id), {
         useHikCentral: true,
         hikCentralSynced: true,
+        hikCentralSyncError: null,
         hikCentralSyncedAt: serverTimestamp(),
       });
 
-      showSuccess(`${member.name} synced to HikCentral`);
+      showSuccess("Member synced to HikCentral");
       if (viewMember?.id === member.id) {
         setViewMember({ ...viewMember, useHikCentral: true, hikCentralSynced: true });
       }
       fetchMembers();
     } catch (error) {
       console.error("HikCentral sync failed:", error);
+      try {
+        const { db } = await import("../config/firebase");
+        const { doc, updateDoc } = await import("firebase/firestore");
+        await updateDoc(doc(db, "members", member.id), {
+          useHikCentral: true,
+          hikCentralSynced: false,
+          hikCentralSyncError: error.message || String(error),
+        });
+        fetchMembers();
+      } catch {
+        // ignore secondary failure
+      }
       showError("HikCentral sync failed: " + error.message);
     } finally {
       setHikSyncingId(null);
