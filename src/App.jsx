@@ -54,7 +54,6 @@ import SelfRegister from "./pages/SelfRegister";
 import DeviceManagement from "./pages/DeviceManagement";
 import Reports from "./pages/Reports";
 
-
 // Component to handle root redirect based on user role
 function RootRedirect() {
   const { user } = useAuth();
@@ -79,623 +78,623 @@ function App() {
     <BrowserRouter>
       <AuthProvider>
         <GymSettingsProvider>
-        <NotificationProvider>
-          <Toast />
-          <Routes>
-          {/* Public Routes */}
-          <Route path="/login" element={<Login />} />
-          <Route path="/register/:gymId" element={<SelfRegister />} />
+          <NotificationProvider>
+            <Toast />
+            <Routes>
+              {/* Public Routes */}
+              <Route path="/login" element={<Login />} />
+              <Route path="/register/:gymId" element={<SelfRegister />} />
 
-          {/* Super Admin Routes */}
-          <Route
-            path="/super-admin"
-            element={
-              <ProtectedRoute>
-                <RoleRoute allowedRoles={["super_admin"]}>
-                  <SuperAdminDashboard />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/super-admin/bulk-exercise-import"
-            element={
-              <ProtectedRoute>
-                <RoleRoute allowedRoles={["super_admin"]}>
-                  <BulkExerciseImport />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/super-admin/common-exercises"
-            element={
-              <ProtectedRoute>
-                <RoleRoute allowedRoles={["super_admin"]}>
-                  <CommonExercises />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
+              {/* Super Admin Routes */}
+              <Route
+                path="/super-admin"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute allowedRoles={["super_admin"]}>
+                      <SuperAdminDashboard />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/super-admin/bulk-exercise-import"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute allowedRoles={["super_admin"]}>
+                      <BulkExerciseImport />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/super-admin/common-exercises"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute allowedRoles={["super_admin"]}>
+                      <CommonExercises />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
 
-          {/* Protected Routes - Admin/Manager Only */}
-          <Route
-            path="/dashboard"
-            element={
-              <ProtectedRoute>
-                <RoleRoute
-                  allowedRoles={[
-                    "admin",
-                    "manager",
-                    "gym_admin",
-                    "gym_manager",
-                  ]}
-                >
-                  <Dashboard />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/members"
-            element={
-              <ProtectedRoute>
-                <RoleRoute
-                  allowedRoles={[
-                    "admin",
-                    "manager",
-                    "gym_admin",
-                    "gym_manager",
-                  ]}
-                >
-                  <Members />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/analytics"
-            element={
-              <ProtectedRoute>
-                <RoleRoute
-                  allowedRoles={[
-                    "admin",
-                    "manager",
-                    "gym_admin",
-                    "gym_manager",
-                  ]}
-                >
-                  <Analytics />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/analytics/members"
-            element={
-              <ProtectedRoute>
-                <RoleRoute
-                  allowedRoles={[
-                    "admin",
-                    "manager",
-                    "gym_admin",
-                    "gym_manager",
-                  ]}
-                >
-                  <MemberAnalytics />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/analytics/financial"
-            element={
-              <ProtectedRoute>
-                <RoleRoute
-                  allowedRoles={[
-                    "admin",
-                    "manager",
-                    "gym_admin",
-                    "gym_manager",
-                  ]}
-                >
-                  <FinancialAnalytics />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/analytics/schedules"
-            element={
-              <ProtectedRoute>
-                <RoleRoute
-                  allowedRoles={[
-                    "admin",
-                    "manager",
-                    "gym_admin",
-                    "gym_manager",
-                  ]}
-                >
-                  <ScheduleAnalytics />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/analytics/complaints"
-            element={
-              <ProtectedRoute>
-                <RoleRoute
-                  allowedRoles={[
-                    "admin",
-                    "manager",
-                    "gym_admin",
-                    "gym_manager",
-                  ]}
-                >
-                  <ComplaintAnalytics />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/analytics/operational"
-            element={
-              <ProtectedRoute>
-                <RoleRoute
-                  allowedRoles={[
-                    "admin",
-                    "manager",
-                    "gym_admin",
-                    "gym_manager",
-                  ]}
-                >
-                  <OperationalAnalytics />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/analytics/exercises"
-            element={
-              <ProtectedRoute>
-                <RoleRoute
-                  allowedRoles={[
-                    "admin",
-                    "manager",
-                    "gym_admin",
-                    "gym_manager",
-                  ]}
-                >
-                  <ExerciseAnalytics />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/complaints"
-            element={
-              <ProtectedRoute>
-                <RoleRoute
-                  allowedRoles={[
-                    "admin",
-                    "manager",
-                    "gym_admin",
-                    "gym_manager",
-                  ]}
-                >
-                  <AdminComplaints />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/payments"
-            element={
-              <ProtectedRoute>
-                <RoleRoute
-                  allowedRoles={[
-                    "admin",
-                    "manager",
-                    "gym_admin",
-                    "gym_manager",
-                  ]}
-                >
-                  <AdminPayments />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/payment-analytics"
-            element={
-              <ProtectedRoute>
-                <RoleRoute
-                  allowedRoles={[
-                    "admin",
-                    "manager",
-                    "gym_admin",
-                    "gym_manager",
-                  ]}
-                >
-                  <PaymentAnalytics />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/supplements"
-            element={
-              <ProtectedRoute>
-                <RoleRoute
-                  allowedRoles={[
-                    "admin",
-                    "manager",
-                    "gym_admin",
-                    "gym_manager",
-                  ]}
-                >
-                  <Supplements />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/supplement-requests"
-            element={
-              <ProtectedRoute>
-                <RoleRoute
-                  allowedRoles={[
-                    "admin",
-                    "manager",
-                    "gym_admin",
-                    "gym_manager",
-                  ]}
-                >
-                  <SupplementRequests />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/class-management"
-            element={
-              <ProtectedRoute>
-                <RoleRoute
-                  allowedRoles={[
-                    "admin",
-                    "manager",
-                    "gym_admin",
-                    "gym_manager",
-                  ]}
-                >
-                  <ClassManagement />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/equipment-inventory"
-            element={
-              <ProtectedRoute>
-                <RoleRoute
-                  allowedRoles={[
-                    "admin",
-                    "manager",
-                    "gym_admin",
-                    "gym_manager",
-                  ]}
-                >
-                  <EquipmentInventory />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/instructor-management"
-            element={
-              <ProtectedRoute>
-                <RoleRoute
-                  allowedRoles={[
-                    "admin",
-                    "manager",
-                    "gym_admin",
-                    "gym_manager",
-                  ]}
-                >
-                  <InstructorManagement />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/devices"
-            element={
-              <ProtectedRoute>
-                <RoleRoute
-                  allowedRoles={[
-                    "admin",
-                    "manager",
-                    "gym_admin",
-                    "gym_manager",
-                  ]}
-                >
-                  <DeviceManagement />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/meal-plans"
-            element={
-              <ProtectedRoute>
-                <RoleRoute
-                  allowedRoles={[
-                    "admin",
-                    "manager",
-                    "gym_admin",
-                    "gym_manager",
-                  ]}
-                >
-                  <MealPlanManagement />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/reports"
-            element={
-              <ProtectedRoute>
-                <RoleRoute
-                  allowedRoles={[
-                    "admin",
-                    "manager",
-                    "gym_admin",
-                    "gym_manager",
-                  ]}
-                >
-                  <Reports />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
+              {/* Protected Routes - Admin/Manager Only */}
+              <Route
+                path="/dashboard"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute
+                      allowedRoles={[
+                        "admin",
+                        "manager",
+                        "gym_admin",
+                        "gym_manager",
+                      ]}
+                    >
+                      <Dashboard />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/members"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute
+                      allowedRoles={[
+                        "admin",
+                        "manager",
+                        "gym_admin",
+                        "gym_manager",
+                      ]}
+                    >
+                      <Members />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/analytics"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute
+                      allowedRoles={[
+                        "admin",
+                        "manager",
+                        "gym_admin",
+                        "gym_manager",
+                      ]}
+                    >
+                      <Analytics />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/analytics/members"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute
+                      allowedRoles={[
+                        "admin",
+                        "manager",
+                        "gym_admin",
+                        "gym_manager",
+                      ]}
+                    >
+                      <MemberAnalytics />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/analytics/financial"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute
+                      allowedRoles={[
+                        "admin",
+                        "manager",
+                        "gym_admin",
+                        "gym_manager",
+                      ]}
+                    >
+                      <FinancialAnalytics />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/analytics/schedules"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute
+                      allowedRoles={[
+                        "admin",
+                        "manager",
+                        "gym_admin",
+                        "gym_manager",
+                      ]}
+                    >
+                      <ScheduleAnalytics />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/analytics/complaints"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute
+                      allowedRoles={[
+                        "admin",
+                        "manager",
+                        "gym_admin",
+                        "gym_manager",
+                      ]}
+                    >
+                      <ComplaintAnalytics />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/analytics/operational"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute
+                      allowedRoles={[
+                        "admin",
+                        "manager",
+                        "gym_admin",
+                        "gym_manager",
+                      ]}
+                    >
+                      <OperationalAnalytics />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/analytics/exercises"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute
+                      allowedRoles={[
+                        "admin",
+                        "manager",
+                        "gym_admin",
+                        "gym_manager",
+                      ]}
+                    >
+                      <ExerciseAnalytics />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/complaints"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute
+                      allowedRoles={[
+                        "admin",
+                        "manager",
+                        "gym_admin",
+                        "gym_manager",
+                      ]}
+                    >
+                      <AdminComplaints />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/payments"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute
+                      allowedRoles={[
+                        "admin",
+                        "manager",
+                        "gym_admin",
+                        "gym_manager",
+                      ]}
+                    >
+                      <AdminPayments />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/payment-analytics"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute
+                      allowedRoles={[
+                        "admin",
+                        "manager",
+                        "gym_admin",
+                        "gym_manager",
+                      ]}
+                    >
+                      <PaymentAnalytics />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/supplements"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute
+                      allowedRoles={[
+                        "admin",
+                        "manager",
+                        "gym_admin",
+                        "gym_manager",
+                      ]}
+                    >
+                      <Supplements />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/supplement-requests"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute
+                      allowedRoles={[
+                        "admin",
+                        "manager",
+                        "gym_admin",
+                        "gym_manager",
+                      ]}
+                    >
+                      <SupplementRequests />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/class-management"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute
+                      allowedRoles={[
+                        "admin",
+                        "manager",
+                        "gym_admin",
+                        "gym_manager",
+                      ]}
+                    >
+                      <ClassManagement />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/equipment-inventory"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute
+                      allowedRoles={[
+                        "admin",
+                        "manager",
+                        "gym_admin",
+                        "gym_manager",
+                      ]}
+                    >
+                      <EquipmentInventory />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/instructor-management"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute
+                      allowedRoles={[
+                        "admin",
+                        "manager",
+                        "gym_admin",
+                        "gym_manager",
+                      ]}
+                    >
+                      <InstructorManagement />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/devices"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute
+                      allowedRoles={[
+                        "admin",
+                        "manager",
+                        "gym_admin",
+                        "gym_manager",
+                      ]}
+                    >
+                      <DeviceManagement />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/meal-plans"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute
+                      allowedRoles={[
+                        "admin",
+                        "manager",
+                        "gym_admin",
+                        "gym_manager",
+                      ]}
+                    >
+                      <MealPlanManagement />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/reports"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute
+                      allowedRoles={[
+                        "admin",
+                        "manager",
+                        "gym_admin",
+                        "gym_manager",
+                      ]}
+                    >
+                      <Reports />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
 
-          {/* Protected Routes - All Authenticated Users */}
-          <Route
-            path="/exercises"
-            element={
-              <ProtectedRoute>
-                <Exercises />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/exercise-programs"
-            element={
-              <ProtectedRoute>
-                <RoleRoute
-                  allowedRoles={[
-                    "admin",
-                    "manager",
-                    "gym_admin",
-                    "gym_manager",
-                  ]}
-                >
-                  <ExercisePrograms />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/schedules"
-            element={
-              <ProtectedRoute>
-                <Schedules />
-              </ProtectedRoute>
-            }
-          />
+              {/* Protected Routes - All Authenticated Users */}
+              <Route
+                path="/exercises"
+                element={
+                  <ProtectedRoute>
+                    <Exercises />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/exercise-programs"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute
+                      allowedRoles={[
+                        "admin",
+                        "manager",
+                        "gym_admin",
+                        "gym_manager",
+                      ]}
+                    >
+                      <ExercisePrograms />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/schedules"
+                element={
+                  <ProtectedRoute>
+                    <Schedules />
+                  </ProtectedRoute>
+                }
+              />
 
-          {/* Protected Routes - Trainers/Instructors Only */}
-          <Route
-            path="/instructor-dashboard"
-            element={
-              <ProtectedRoute>
-                <RoleRoute allowedRoles={["trainer"]}>
-                  <InstructorDashboard />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/instructor/exercises"
-            element={
-              <ProtectedRoute>
-                <RoleRoute allowedRoles={["trainer"]}>
-                  <InstructorExercises />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/instructor/workouts"
-            element={
-              <ProtectedRoute>
-                <RoleRoute allowedRoles={["trainer"]}>
-                  <InstructorWorkouts />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/instructor/members"
-            element={
-              <ProtectedRoute>
-                <RoleRoute allowedRoles={["trainer"]}>
-                  <InstructorMembers />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/instructor/meal-plans"
-            element={
-              <ProtectedRoute>
-                <RoleRoute allowedRoles={["trainer"]}>
-                  <InstructorMealPlans />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/instructor/analytics"
-            element={
-              <ProtectedRoute>
-                <RoleRoute allowedRoles={["trainer"]}>
-                  <InstructorMemberAnalytics />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/instructor/classes"
-            element={
-              <ProtectedRoute>
-                <RoleRoute allowedRoles={["trainer"]}>
-                  <InstructorClasses />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
+              {/* Protected Routes - Trainers/Instructors Only */}
+              <Route
+                path="/instructor-dashboard"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute allowedRoles={["trainer"]}>
+                      <InstructorDashboard />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/instructor/exercises"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute allowedRoles={["trainer"]}>
+                      <InstructorExercises />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/instructor/workouts"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute allowedRoles={["trainer"]}>
+                      <InstructorWorkouts />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/instructor/members"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute allowedRoles={["trainer"]}>
+                      <InstructorMembers />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/instructor/meal-plans"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute allowedRoles={["trainer"]}>
+                      <InstructorMealPlans />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/instructor/analytics"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute allowedRoles={["trainer"]}>
+                      <InstructorMemberAnalytics />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/instructor/classes"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute allowedRoles={["trainer"]}>
+                      <InstructorClasses />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
 
-          {/* Protected Routes - Members Only */}
-          <Route
-            path="/member-dashboard"
-            element={
-              <ProtectedRoute>
-                <RoleRoute allowedRoles={["member"]}>
-                  <MemberDashboard />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/member/workouts"
-            element={
-              <ProtectedRoute>
-                <RoleRoute allowedRoles={["member"]}>
-                  <MemberWorkoutTracker />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/member/workout-session"
-            element={
-              <ProtectedRoute>
-                <RoleRoute allowedRoles={["member"]}>
-                  <MemberWorkoutSession />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/member/progress"
-            element={
-              <ProtectedRoute>
-                <RoleRoute allowedRoles={["member"]}>
-                  <MemberProgressTracker />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/member-schedules"
-            element={
-              <ProtectedRoute>
-                <RoleRoute allowedRoles={["member"]}>
-                  <MemberSchedules />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/member-profile"
-            element={
-              <ProtectedRoute>
-                <RoleRoute allowedRoles={["member"]}>
-                  <MemberProfile />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/member-settings"
-            element={
-              <ProtectedRoute>
-                <RoleRoute allowedRoles={["member"]}>
-                  <MemberSettings />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/member/supplements"
-            element={
-              <ProtectedRoute>
-                <RoleRoute allowedRoles={["member"]}>
-                  <MemberSupplements />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/member/goals"
-            element={
-              <ProtectedRoute>
-                <RoleRoute allowedRoles={["member"]}>
-                  <MemberGoals />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/member/classes"
-            element={
-              <ProtectedRoute>
-                <RoleRoute allowedRoles={["member"]}>
-                  <MemberClasses />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/member/nutrition"
-            element={
-              <ProtectedRoute>
-                <RoleRoute allowedRoles={["member"]}>
-                  <MemberNutrition />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/member/meal-plans"
-            element={
-              <ProtectedRoute>
-                <RoleRoute allowedRoles={["member"]}>
-                  <MemberMealPlans />
-                </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
+              {/* Protected Routes - Members Only */}
+              <Route
+                path="/member-dashboard"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute allowedRoles={["member"]}>
+                      <MemberDashboard />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/member/workouts"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute allowedRoles={["member"]}>
+                      <MemberWorkoutTracker />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/member/workout-session"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute allowedRoles={["member"]}>
+                      <MemberWorkoutSession />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/member/progress"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute allowedRoles={["member"]}>
+                      <MemberProgressTracker />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/member-schedules"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute allowedRoles={["member"]}>
+                      <MemberSchedules />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/member-profile"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute allowedRoles={["member"]}>
+                      <MemberProfile />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/member-settings"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute allowedRoles={["member"]}>
+                      <MemberSettings />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/member/supplements"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute allowedRoles={["member"]}>
+                      <MemberSupplements />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/member/goals"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute allowedRoles={["member"]}>
+                      <MemberGoals />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/member/classes"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute allowedRoles={["member"]}>
+                      <MemberClasses />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/member/nutrition"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute allowedRoles={["member"]}>
+                      <MemberNutrition />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/member/meal-plans"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute allowedRoles={["member"]}>
+                      <MemberMealPlans />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
 
-          {/* Root redirect based on user role */}
-          <Route path="/" element={<RootRedirect />} />
+              {/* Root redirect based on user role */}
+              <Route path="/" element={<RootRedirect />} />
 
-          {/* 404 Not Found */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-        </NotificationProvider>
+              {/* 404 Not Found */}
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </NotificationProvider>
         </GymSettingsProvider>
       </AuthProvider>
     </BrowserRouter>
