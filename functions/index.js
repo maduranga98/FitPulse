@@ -1176,6 +1176,16 @@ export const hikGetDoors = functions.https.onCall(async (data, context) => {
   return hik.getDoors(data || {}).catch(hikErr);
 });
 
+export const hikGetDeviceList = functions.https.onCall(async (data, context) => {
+  requireAuth(context);
+  return hik.getDeviceList(data || {}).catch(hikErr);
+});
+
+export const hikViewSubscriptions = functions.https.onCall(async (_data, context) => {
+  requireAuth(context);
+  return hik.viewSubscriptions().catch(hikErr);
+});
+
 export const hikControlDoor = functions.https.onCall(async (data, context) => {
   requireAuth(context);
   const { gymId, doorIndexCode, controlType } = data || {};
