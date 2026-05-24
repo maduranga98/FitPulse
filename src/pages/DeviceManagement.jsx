@@ -268,15 +268,20 @@ const DeviceManagement = () => {
 
       let count = 0;
       for (const dev of list) {
-        const serialNo = dev.serialNo || dev.serialNumber || dev.devIndex;
+        const serialNo =
+          dev.serialNo ||
+          dev.serialNumber ||
+          dev.devIndex ||
+          dev.acsDevIndexCode ||
+          dev.devIndexCode;
         if (!serialNo) continue;
         await setDoc(
           doc(db, "gyms", gymId, "devices", String(serialNo)),
           {
-            name: dev.name || dev.devName || "Unnamed Device",
+            name: dev.name || dev.devName || dev.acsDevName || "Unnamed Device",
             serialNo: String(serialNo),
             doorIndexCode: dev.doorIndexCode || dev.doorNo || "",
-            ip: dev.ip || dev.ipAddress || "",
+            ip: dev.ip || dev.ipAddress || dev.devIp || "",
             status: "online",
             gymId,
             lastSynced: serverTimestamp(),
@@ -311,8 +316,11 @@ const DeviceManagement = () => {
     }
   };
 
-  const handleControlDoor = async (device, controlType) => {
-    if (!controlType) return;
+  const handleControlDoor = async (device, action) => {
+    if (!action) return;
+    // HikCentral controlType: 0=close, 1=open, 2=always open, 3=always close
+    const controlTypeMap = { open: 1, close: 0, alwaysOpen: 2, alwaysClose: 3 };
+    const controlType = controlTypeMap[action];
     setDoorActionId(device.id);
     try {
       await callFunction("hikControlDoor", {
@@ -320,7 +328,7 @@ const DeviceManagement = () => {
         doorIndexCode: device.doorIndexCode,
         controlType,
       });
-      showSuccess(`Door command "${controlType}" sent to ${device.name}`);
+      showSuccess(`Door command "${action}" sent to ${device.name}`);
     } catch (err) {
       showError("Door control failed: " + err.message);
     } finally {

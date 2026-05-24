@@ -204,6 +204,17 @@ export function getDoors({ pageNo = 1, pageSize = 100 } = {}) {
   return callApi("/api/resource/v1/door/search", { pageNo, pageSize });
 }
 
+export function getDeviceList({ pageNo = 1, pageSize = 100 } = {}) {
+  return callApi("/api/resource/v1/acsDevice/acsDeviceList", {
+    pageNo,
+    pageSize,
+  });
+}
+
+export function viewSubscriptions() {
+  return callApi("/api/eventService/v1/eventSubscriptionView", {});
+}
+
 export function controlDoor(doorIndexCode, controlType) {
   // controlType: 0=close, 1=open, 2=always open, 3=always close
   return callApi("/api/acs/v1/door/doControl", { doorIndexCode, controlType });
