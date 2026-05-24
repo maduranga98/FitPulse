@@ -1098,9 +1098,25 @@ function hikErr(err) {
   throw new functions.https.HttpsError("internal", err.message || String(err));
 }
 
+/**
+ * Validate that a gymId is provided, the gym exists, and is active.
+ * Throws an HttpsError otherwise. Returns the gym document data.
+ */
+async function validateGym(gymId) {
+  if (!gymId) throw new functions.https.HttpsError("invalid-argument", "gymId is required");
+  const gymDoc = await admin.firestore().collection("gyms").doc(gymId).get();
+  if (!gymDoc.exists) throw new functions.https.HttpsError("not-found", `Gym ${gymId} not found`);
+  if (gymDoc.data().status !== "active") {
+    throw new functions.https.HttpsError("failed-precondition", `Gym ${gymId} is not active`);
+  }
+  return gymDoc.data();
+}
+
 export const hikAddPerson = functions.https.onCall(async (data, context) => {
   requireAuth(context);
-  return hik.addPerson(data || {}).catch(hikErr);
+  const { gymId, ...personData } = data || {};
+  await validateGym(gymId);
+  return hik.addPerson(personData).catch(hikErr);
 });
 
 export const hikSearchPersons = functions.https.onCall(async (data, context) => {
@@ -1119,7 +1135,9 @@ export const hikUpdatePerson = functions.https.onCall(async (data, context) => {
 
 export const hikDeletePersons = functions.https.onCall(async (data, context) => {
   requireAuth(context);
-  const ids = (data && data.personIds) || [];
+  const { gymId, personIds } = data || {};
+  await validateGym(gymId);
+  const ids = personIds || [];
   if (!ids.length) {
     throw new functions.https.HttpsError("invalid-argument", "personIds required");
   }
@@ -1128,7 +1146,8 @@ export const hikDeletePersons = functions.https.onCall(async (data, context) => 
 
 export const hikAddFace = functions.https.onCall(async (data, context) => {
   requireAuth(context);
-  const { personId, faceData } = data || {};
+  const { gymId, personId, faceData } = data || {};
+  await validateGym(gymId);
   if (!personId || !faceData) {
     throw new functions.https.HttpsError("invalid-argument", "personId and faceData required");
   }
@@ -1146,6 +1165,9 @@ export const hikDeleteFaces = functions.https.onCall(async (data, context) => {
 
 export const hikGetAccessRecords = functions.https.onCall(async (data, context) => {
   requireAuth(context);
+  const { gymId } = data || {};
+  await validateGym(gymId);
+  console.log(`Access records requested for gym: ${gymId}`);
   return hik.getAccessRecords(data || {}).catch(hikErr);
 });
 
@@ -1156,7 +1178,9 @@ export const hikGetDoors = functions.https.onCall(async (data, context) => {
 
 export const hikControlDoor = functions.https.onCall(async (data, context) => {
   requireAuth(context);
-  const { doorIndexCode, controlType } = data || {};
+  const { gymId, doorIndexCode, controlType } = data || {};
+  // Security-critical: never allow door control without a valid, active gym.
+  await validateGym(gymId);
   if (!doorIndexCode) {
     throw new functions.https.HttpsError("invalid-argument", "doorIndexCode required");
   }
@@ -1165,11 +1189,14 @@ export const hikControlDoor = functions.https.onCall(async (data, context) => {
 
 export const hikSubscribeEvents = functions.https.onCall(async (data, context) => {
   requireAuth(context);
-  const { callbackUrl, eventTypes } = data || {};
-  if (!callbackUrl) {
-    throw new functions.https.HttpsError("invalid-argument", "callbackUrl required");
+  const { gymId, eventDest, callbackUrl, eventTypes } = data || {};
+  await validateGym(gymId);
+  const dest = eventDest || callbackUrl;
+  if (!dest) {
+    throw new functions.https.HttpsError("invalid-argument", "eventDest required");
   }
-  return hik.subscribeEvents(callbackUrl, eventTypes || []).catch(hikErr);
+  console.log(`Subscribing events for gym: ${gymId} → ${dest}`);
+  return hik.subscribeEvents(dest, eventTypes || []).catch(hikErr);
 });
 
 export const hikTestConnection = functions.https.onCall(async (_data, context) => {
@@ -1203,59 +1230,73 @@ export const hikCentralWebhook = functions.https.onRequest(async (req, res) => {
 
     for (const event of events) {
       const data = event.data || event || {};
-      const isAccessEvent =
-        event.eventType === "AccessControllerEvent" || !!data.employeeNoString;
+      const eventType = event.eventType || data.eventType || null;
 
-      if (!isAccessEvent) {
-        continue;
-      }
-
-      const employeeNo =
-        data.employeeNoString ||
-        (data.employeeNo != null ? String(data.employeeNo) : "");
-
-      if (!employeeNo) {
-        continue;
-      }
+      // i. personCode is the Firestore member doc ID
+      const personCode = data.personCode || "";
 
       const doorName = data.doorName || null;
-      const deviceName = data.deviceName || null;
-      const eventTime = data.time ? new Date(data.time) : new Date();
-      const verifyMode = data.verifyMode || null;
-      const cardNo = data.cardNo || null;
-      const pictureUrl = data.pictureURLs?.[0] || null;
+      const picUri = data.picUri || data.pictureURLs?.[0] || null;
+      const happenTime = data.happenTime
+        ? new Date(data.happenTime)
+        : data.time
+          ? new Date(data.time)
+          : new Date();
+      const dateStr = happenTime.toISOString().split("T")[0];
 
-      // b. Look up member by hikvisionUserId
-      const memberSnap = await db
-        .collection("members")
-        .where("hikvisionUserId", "==", employeeNo)
-        .limit(1)
-        .get();
-
-      // c. Not found → store raw event, continue
-      if (memberSnap.empty) {
+      // ii. No personCode → audit raw event WITHOUT gymId, continue
+      if (!personCode) {
         await db.collection("hikRawEvents").add({
-          employeeNo,
+          eventType,
           rawEvent: data,
-          receivedAt: admin.firestore.Timestamp.now(),
+          processed: false,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
         });
         continue;
       }
 
-      const memberDoc = memberSnap.docs[0];
-      const member = memberDoc.data();
+      // iii. Look up member by doc ID (personCode === doc ID)
+      const memberDoc = await db.collection("members").doc(personCode).get();
 
-      // d. Skip inactive members
-      if (member.status !== "active") {
+      // iv. Not found → audit raw event WITHOUT gymId, continue
+      if (!memberDoc.exists) {
+        await db.collection("hikRawEvents").add({
+          personCode,
+          eventType,
+          rawEvent: data,
+          processed: false,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
         continue;
       }
 
-      const gymId = member.gymId;
+      // v. member data
+      const member = memberDoc.data();
 
-      // e. Deduplicate: last attendance < 10s ago → skip
+      // vi-vii. gymId must be present
+      const gymId = member.gymId;
+      if (!gymId) {
+        console.warn(`⚠️  Member ${personCode} has no gymId, skipping`);
+        continue;
+      }
+
+      // viii. Validate gym exists and is active BEFORE writing
+      const gymDoc = await db.collection("gyms").doc(gymId).get();
+      if (!gymDoc.exists || gymDoc.data().status !== "active") {
+        console.warn(`⚠️  Gym not found or not active: ${gymId}`);
+        continue;
+      }
+
+      // ix. Skip inactive members
+      if (member.status !== "active") {
+        console.warn(`⚠️  Member ${personCode} is not active, skipping`);
+        continue;
+      }
+
+      // x. Deduplicate (scoped by gymId): last attendance < 10s ago → skip
       const recentSnap = await db
         .collection("attendance")
-        .where("memberId", "==", memberDoc.id)
+        .where("memberId", "==", personCode)
         .where("gymId", "==", gymId)
         .orderBy("checkInTime", "desc")
         .limit(1)
@@ -1266,7 +1307,7 @@ export const hikCentralWebhook = functions.https.onRequest(async (req, res) => {
         const lastTime =
           lastEvent.checkInTime?.toDate?.() ||
           new Date(lastEvent.checkInTime);
-        if (eventTime - lastTime < 10 * 1000) {
+        if (happenTime - lastTime < 10 * 1000) {
           console.log(
             `⏭️  Duplicate HikCentral event for ${member.name} within 10s, skipping`,
           );
@@ -1274,24 +1315,36 @@ export const hikCentralWebhook = functions.https.onRequest(async (req, res) => {
         }
       }
 
-      // f. Write attendance record
+      // xi. Write attendance record (gymId required)
       await db.collection("attendance").add({
-        memberId: memberDoc.id,
+        memberId: personCode,
         memberName: member.name,
         gymId,
-        checkInTime: admin.firestore.Timestamp.fromDate(eventTime),
-        date: eventTime.toISOString().split("T")[0],
+        checkInTime: admin.firestore.Timestamp.fromDate(happenTime),
+        date: dateStr,
         recognitionMethod: "hikvision-openapi",
+        eventType,
         doorName,
-        deviceName,
-        verifyMode,
-        cardNo,
-        pictureUrl,
+        picUri,
+        checkInAndOutType: data.checkInAndOutType || 1,
         status: "present",
-        createdAt: admin.firestore.Timestamp.now(),
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
-      console.log(`✅ HikCentral attendance recorded: ${member.name}`);
+      // xii. Audit trail (gymId required)
+      await db.collection("hikRawEvents").add({
+        gymId,
+        memberId: personCode,
+        memberName: member.name,
+        eventType,
+        happenTime: admin.firestore.Timestamp.fromDate(happenTime),
+        doorName,
+        picUri,
+        processed: true,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      console.log(`✅ HikCentral attendance recorded: ${member.name} (gym ${gymId})`);
     }
   } catch (error) {
     // Never let errors crash — HikCentral would retry.
@@ -1314,6 +1367,20 @@ export const syncMemberToHikCentral = functions.firestore
     }
 
     const memberId = context.params.memberId;
+    const db = admin.firestore();
+
+    // Validate gymId presence
+    if (!member.gymId) {
+      console.error(`❌ Member ${memberId} has no gymId, cannot sync to HikCentral`);
+      return null;
+    }
+
+    // Validate gym exists and is active
+    const gymDoc = await db.collection("gyms").doc(member.gymId).get();
+    if (!gymDoc.exists || gymDoc.data().status !== "active") {
+      console.warn(`⚠️  Gym ${member.gymId} not found or not active, skipping sync`);
+      return null;
+    }
 
     try {
       // 2. Register the person in HikCentral
@@ -1340,20 +1407,22 @@ export const syncMemberToHikCentral = functions.firestore
         }
       }
 
-      // 5. Mark member as synced
+      // 5. Mark member as synced (preserve gymId)
       await snap.ref.update({
         hikvisionUserId: hikPersonId || memberId,
         hikCentralSynced: true,
         hikCentralSyncedAt: admin.firestore.FieldValue.serverTimestamp(),
+        gymId: member.gymId,
       });
 
-      console.log(`✅ Member ${memberId} synced to HikCentral`);
+      console.log(`✅ Member ${memberId} synced to HikCentral (gym ${member.gymId})`);
     } catch (err) {
-      // 6. Record sync failure
+      // 6. Record sync failure (do NOT touch gymId)
       console.error("❌ syncMemberToHikCentral error:", err);
       await snap.ref.update({
         hikCentralSynced: false,
         hikCentralSyncError: err.message || String(err),
+        hikCentralSyncedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
     }
 
