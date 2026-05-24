@@ -7,6 +7,44 @@ import { calculateBMI, validateBMIInputs } from "../utils/validationUtils";
 import { QRCodeSVG } from "qrcode.react";
 import { useGymSettings } from "../contexts/GymSettingsContext";
 
+const HikStatus = ({ member, onRetry, retrying }) => {
+  if (member.hikCentralSynced === true) {
+    return (
+      <span className="flex items-center gap-1.5 text-green-400 text-xs font-medium">
+        <span className="w-2 h-2 rounded-full bg-green-500" /> Synced
+      </span>
+    );
+  }
+  if (member.hikCentralSynced === false) {
+    return (
+      <span className="flex items-center gap-2 text-xs font-medium">
+        <span className="flex items-center gap-1.5 text-red-400">
+          <span className="w-2 h-2 rounded-full bg-red-500" /> Sync Failed
+        </span>
+        <button
+          onClick={onRetry}
+          disabled={retrying}
+          className="px-2 py-0.5 bg-blue-600 hover:bg-blue-700 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {retrying ? "..." : "Retry"}
+        </button>
+      </span>
+    );
+  }
+  if (member.useHikCentral === true && !member.hikCentralSynced) {
+    return (
+      <span className="flex items-center gap-1.5 text-yellow-400 text-xs font-medium">
+        <span className="w-2 h-2 rounded-full bg-yellow-500" /> Pending
+      </span>
+    );
+  }
+  return (
+    <span className="flex items-center gap-1.5 text-gray-400 text-xs font-medium">
+      <span className="w-2 h-2 rounded-full bg-gray-500" /> Not enrolled
+    </span>
+  );
+};
+
 const Members = () => {
   const { user } = useAuth();
   const { showSuccess, showError, showWarning } = useNotification();
@@ -23,6 +61,7 @@ const Members = () => {
   const [filterLevel, setFilterLevel] = useState("all");
   const [showQRModal, setShowQRModal] = useState(false);
   const [pendingRegistrations, setPendingRegistrations] = useState([]);
+  const [hikSyncingId, setHikSyncingId] = useState(null);
 
 
   const userIsAdmin = isAdmin(user);
@@ -258,7 +297,24 @@ const Members = () => {
         joinDate: Timestamp.fromDate(new Date(memberForm.joinDate)),
       };
 
-      await addDoc(collection(db, "members"), memberData);
+      const memberRef = await addDoc(collection(db, "members"), memberData);
+
+      // Auto-sync to HikCentral if enabled for this gym
+      try {
+        const { doc, getDoc, updateDoc } = await import("firebase/firestore");
+        const gymSnap = await getDoc(doc(db, "gyms", currentGymId));
+        const autoSync =
+          gymSnap.exists() &&
+          gymSnap.data().hikCentralConfig?.autoSync === true;
+        if (autoSync) {
+          await updateDoc(doc(db, "members", memberRef.id), {
+            useHikCentral: true,
+          });
+          showSuccess("Member will be synced to HikCentral automatically");
+        }
+      } catch (syncErr) {
+        console.warn("⚠️ HikCentral auto-sync flag failed:", syncErr);
+      }
 
       setGeneratedCredentials({ username, password, name: memberForm.name });
 
@@ -343,6 +399,44 @@ const Members = () => {
     } catch (error) {
       console.error("❌ Error adding member:", error);
       showError("Failed to add member: " + error.message);
+    }
+  };
+
+  const handleSyncToHikCentral = async (member) => {
+    setHikSyncingId(member.id);
+    try {
+      const { getFunctions, httpsCallable } = await import("firebase/functions");
+      const { app } = await import("../config/firebase");
+      const functions = getFunctions(app);
+      const hikAddPerson = httpsCallable(functions, "hikAddPerson");
+
+      await hikAddPerson({
+        gymId: currentGymId,
+        personCode: member.id,
+        personName: member.name,
+        gender: member.gender || "male",
+        phoneNo: member.phone || member.mobile || "",
+        email: member.email || "",
+      });
+
+      const { db } = await import("../config/firebase");
+      const { doc, updateDoc, serverTimestamp } = await import("firebase/firestore");
+      await updateDoc(doc(db, "members", member.id), {
+        useHikCentral: true,
+        hikCentralSynced: true,
+        hikCentralSyncedAt: serverTimestamp(),
+      });
+
+      showSuccess(`${member.name} synced to HikCentral`);
+      if (viewMember?.id === member.id) {
+        setViewMember({ ...viewMember, useHikCentral: true, hikCentralSynced: true });
+      }
+      fetchMembers();
+    } catch (error) {
+      console.error("HikCentral sync failed:", error);
+      showError("HikCentral sync failed: " + error.message);
+    } finally {
+      setHikSyncingId(null);
     }
   };
 
@@ -724,6 +818,10 @@ const Members = () => {
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-gray-400">Age:</span>
                       <span className="text-white">{member.age} years</span>
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-400">HikCentral:</span>
+                      <HikStatus member={member} onRetry={() => handleSyncToHikCentral(member)} retrying={hikSyncingId === member.id} />
                     </div>
                   </div>
 
@@ -1615,6 +1713,28 @@ const Members = () => {
                       </div>
                     </div>
                   </div>
+                </div>
+              )}
+
+              {userIsAdmin && (
+                <div className="mb-3 flex items-center justify-between bg-gray-900 rounded-lg p-4">
+                  <div>
+                    <p className="text-white font-medium text-sm">HikCentral Access</p>
+                    <div className="mt-1">
+                      <HikStatus
+                        member={viewMember}
+                        onRetry={() => handleSyncToHikCentral(viewMember)}
+                        retrying={hikSyncingId === viewMember.id}
+                      />
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleSyncToHikCentral(viewMember)}
+                    disabled={hikSyncingId === viewMember.id}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {hikSyncingId === viewMember.id ? "Syncing…" : "Sync to HikCentral"}
+                  </button>
                 </div>
               )}
 

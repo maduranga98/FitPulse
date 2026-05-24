@@ -4,6 +4,7 @@ import { useAuth } from "../hooks/useAuth";
 import Sidebar from "../components/Sidebar";
 import { isAdmin, validateGymId } from "../utils/authUtils";
 import { useGymSettings } from "../contexts/GymSettingsContext";
+import AttendanceLiveWidget from "../components/AttendanceLiveWidget";
 
 const Dashboard = () => {
   const { user, logout } = useAuth();
@@ -419,6 +420,13 @@ const Dashboard = () => {
               </p>
             </div>
           </div>
+
+          {/* Live Check-ins Widget */}
+          {currentGymId && (
+            <div className="mb-6 sm:mb-8">
+              <AttendanceLiveWidget />
+            </div>
+          )}
 
           {/* Feature Enables */}
           <div className="mb-6 sm:mb-8 bg-gray-800 border border-gray-700 rounded-xl p-4 sm:p-6">
