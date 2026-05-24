@@ -134,7 +134,7 @@ export function addPerson(person = {}) {
     endTime,
   } = person;
 
-  return callApi("/api/resource/v1/person", {
+  return callApi("/artemis/api/resource/v1/person", {
     personCode,
     personName,
     gender,
@@ -153,7 +153,7 @@ export function searchPersons({
   personName,
   personCode,
 } = {}) {
-  return callApi("/api/resource/v1/person/advance/search", {
+  return callApi("/artemis/api/resource/v1/person/advance/search", {
     pageNo,
     pageSize,
     personName,
@@ -162,22 +162,22 @@ export function searchPersons({
 }
 
 export function updatePerson(personId, updates = {}) {
-  return callApi(`/api/resource/v1/person/${personId}`, updates);
+  return callApi(`/artemis/api/resource/v1/person/${personId}`, updates);
 }
 
 export function deletePersons(personIds = []) {
-  return callApi("/api/resource/v1/person/batch/delete", {
+  return callApi("/artemis/api/resource/v1/person/batch/delete", {
     personIds: personIds.map((id) => ({ personId: id })),
   });
 }
 
 export function addFace({ personId, faceData } = {}) {
   const stripped = (faceData || "").replace(/^data:image\/[^;]+;base64,/, "");
-  return callApi("/api/resource/v1/face", { personId, faceData: stripped });
+  return callApi("/artemis/api/resource/v1/face", { personId, faceData: stripped });
 }
 
 export function deleteFaces(faceIds = []) {
-  return callApi("/api/resource/v1/face/batch/delete", {
+  return callApi("/artemis/api/resource/v1/face/batch/delete", {
     faceIds: faceIds.map((id) => ({ faceId: id })),
   });
 }
@@ -190,7 +190,7 @@ export function getAccessRecords({
   pageNo = 1,
   pageSize = 100,
 } = {}) {
-  return callApi("/api/acs/v1/door/access/record/search", {
+  return callApi("/artemis/api/acs/v1/door/events", {
     startTime,
     endTime,
     personName,
@@ -201,39 +201,39 @@ export function getAccessRecords({
 }
 
 export function getDoors({ pageNo = 1, pageSize = 100 } = {}) {
-  return callApi("/api/resource/v1/door/search", { pageNo, pageSize });
+  return callApi("/artemis/api/resource/v1/door/search", { pageNo, pageSize });
 }
 
 export function getDeviceList({ pageNo = 1, pageSize = 100 } = {}) {
-  return callApi("/api/resource/v1/acsDevice/acsDeviceList", {
+  return callApi("/artemis/api/resource/v1/acsDevice/acsDeviceList", {
     pageNo,
     pageSize,
   });
 }
 
 export function viewSubscriptions() {
-  return callApi("/api/eventService/v1/eventSubscriptionView", {});
+  return callApi("/artemis/api/eventService/v1/eventSubscriptionView", {});
 }
 
 export function controlDoor(doorIndexCode, controlType) {
   // controlType: 0=close, 1=open, 2=always open, 3=always close
-  return callApi("/api/acs/v1/door/doControl", { doorIndexCode, controlType });
+  return callApi("/artemis/api/acs/v1/door/doControl", { doorIndexCode, controlType });
 }
 
 export function addPersonsToAccessGroup(personIds = [], acsGroupId) {
-  return callApi("/api/acs/v1/acsDevice/person/privilege/set", {
+  return callApi("/artemis/api/acs/v1/acsDevice/person/privilege/set", {
     personIds,
     acsGroupId,
   });
 }
 
 export function subscribeEvents(callbackUrl, eventTypes = []) {
-  return callApi("/api/eventService/v1/eventSubscriptionByEventTypes", {
+  return callApi("/artemis/api/eventService/v1/eventSubscriptionByEventTypes", {
     eventDest: callbackUrl,
     eventTypes,
   });
 }
 
-export function getApiInfo() {
-  return callApi("/api/apiInfo", {}, "GET");
+export function getApiVersion() {
+  return callApi("/artemis/api/common/v1/version", {});
 }

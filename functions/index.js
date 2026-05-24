@@ -1225,7 +1225,7 @@ export const hikSubscribeEvents = functions.https.onCall(async (data, context) =
 export const hikTestConnection = functions.https.onCall(async (data, context) => {
   // No auth check needed — diagnostic only.
   try {
-    const result = await hik.getApiInfo();
+    const result = await hik.getApiVersion();
     return { success: true, result };
   } catch (err) {
     console.error("HikCentral connection test failed:", err);
