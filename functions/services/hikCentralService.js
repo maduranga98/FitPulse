@@ -1,25 +1,26 @@
 /**
- * HikCentral / Hikvision OpenAPI client.
+ * HikCentral / Hikvision Artemis OpenAPI client.
  *
  * Implements AK/SK (HMAC-SHA256) request signing as used by Hikvision's
  * Artemis-style OpenAPI. Every request is signed with the partner AppKey
  * and AppSecret, plus a timestamp and a per-request nonce.
  *
- * Credentials are read from environment variables / Firebase functions
- * config:
- *   HIKCENTRAL_HOST     e.g. https://192.0.0.64
- *   HIKCENTRAL_APP_KEY  e.g. 54001767
+ * Credentials are read from environment variables:
+ *   HIKCENTRAL_HOST        e.g. https://136.116.31.22
+ *   HIKCENTRAL_APP_KEY     e.g. 18560347
  *   HIKCENTRAL_APP_SECRET
  */
 import crypto from "node:crypto";
-import https from "node:https";
+import { Agent } from "undici";
 
 const HOST = (process.env.HIKCENTRAL_HOST || "").replace(/\/$/, "");
 const APP_KEY = process.env.HIKCENTRAL_APP_KEY || "";
 const APP_SECRET = process.env.HIKCENTRAL_APP_SECRET || "";
 
 // Test devices use self-signed certs.
-const insecureAgent = new https.Agent({ rejectUnauthorized: false });
+const insecureDispatcher = new Agent({
+  connect: { rejectUnauthorized: false },
+});
 
 function assertConfigured() {
   if (!HOST || !APP_KEY || !APP_SECRET) {
@@ -37,24 +38,22 @@ function assertConfigured() {
  *   Accept\n
  *   Content-MD5\n
  *   Content-Type\n
- *   Date\n
- *   <signed headers, sorted, joined by \n>\n
- *   <path + sorted query string>
+ *   {timestamp}\n
+ *   x-ca-key:{APP_KEY}\n
+ *   x-ca-nonce:{nonce}\n
+ *   x-ca-timestamp:{timestamp}\n
+ *   {path}
  */
-function sign({ method, path, headers, signedHeaderKeys }) {
-  const sortedHeaders = signedHeaderKeys
-    .slice()
-    .sort()
-    .map((k) => `${k.toLowerCase()}:${headers[k]}`)
-    .join("\n");
-
+function buildSignature({ method, path, timestamp, nonce }) {
   const stringToSign = [
     method.toUpperCase(),
-    headers["Accept"] || "",
-    headers["Content-MD5"] || "",
-    headers["Content-Type"] || "",
-    headers["Date"] || "",
-    sortedHeaders,
+    "application/json",
+    "",
+    "application/json",
+    timestamp,
+    `x-ca-key:${APP_KEY}`,
+    `x-ca-nonce:${nonce}`,
+    `x-ca-timestamp:${timestamp}`,
     path,
   ].join("\n");
 
@@ -65,93 +64,119 @@ function sign({ method, path, headers, signedHeaderKeys }) {
 }
 
 /**
- * Make a signed POST request to a HikCentral OpenAPI endpoint.
+ * Make a signed request to a HikCentral OpenAPI endpoint.
+ * Returns the inner `data` field of the Artemis response envelope.
  */
-export async function callApi(path, body = {}) {
+export async function callApi(path, body = {}, method = "POST") {
   assertConfigured();
 
   const timestamp = Date.now().toString();
   const nonce = crypto.randomUUID();
-  const payload = JSON.stringify(body);
 
-  const baseHeaders = {
+  const signature = buildSignature({ method, path, timestamp, nonce });
+
+  const headers = {
     Accept: "application/json",
     "Content-Type": "application/json",
     "X-Ca-Key": APP_KEY,
     "X-Ca-Timestamp": timestamp,
     "X-Ca-Nonce": nonce,
-  };
-
-  const signedHeaderKeys = ["X-Ca-Key", "X-Ca-Nonce", "X-Ca-Timestamp"];
-
-  const signature = sign({
-    method: "POST",
-    path,
-    headers: baseHeaders,
-    signedHeaderKeys,
-  });
-
-  const headers = {
-    ...baseHeaders,
     "X-Ca-Signature": signature,
-    "X-Ca-Signature-Headers": signedHeaderKeys
-      .map((k) => k.toLowerCase())
-      .join(","),
+    "X-Ca-Signature-Headers": "x-ca-key,x-ca-nonce,x-ca-timestamp",
   };
+
+  const init = {
+    method: method.toUpperCase(),
+    headers,
+    dispatcher: insecureDispatcher,
+  };
+
+  if (init.method !== "GET") {
+    init.body = JSON.stringify(body);
+  }
 
   const url = `${HOST}${path}`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers,
-    body: payload,
-    // Node 20 fetch uses undici; pass agent via dispatcher only if needed.
-    // For self-signed certs in dev, set NODE_TLS_REJECT_UNAUTHORIZED=0 in env.
-  });
+  const res = await fetch(url, init);
 
   const text = await res.text();
-  let data;
-  try { data = JSON.parse(text); } catch { data = { raw: text }; }
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    parsed = { raw: text };
+  }
 
   if (!res.ok) {
     throw new Error(`HikCentral ${path} HTTP ${res.status}: ${text}`);
   }
+
   // Hikvision returns { code: "0", msg: "success", data: ... } on success.
-  if (data && data.code && data.code !== "0" && data.code !== 0) {
-    throw new Error(`HikCentral ${path} error ${data.code}: ${data.msg}`);
+  if (parsed && String(parsed.code) !== "0") {
+    throw new Error(
+      `HikCentral ${path} error ${parsed.code}: ${parsed.msg || "unknown"}`,
+    );
   }
-  return data;
+
+  return parsed.data;
 }
 
-// ─── 7 endpoint wrappers ────────────────────────────────────────────────
+// ─── Endpoint wrappers ──────────────────────────────────────────────────
 
-export function addPerson(person) {
-  // person: { personCode, personFamilyName, personGivenName, gender, phoneNo, email, ... }
-  return callApi("/api/resource/v1/person", person);
-}
+export function addPerson(person = {}) {
+  const {
+    personCode,
+    personName,
+    gender,
+    phoneNo,
+    email,
+    orgIndexCode,
+    beginTime,
+    endTime,
+  } = person;
 
-export function searchPersons({ pageNo = 1, pageSize = 100, personName, personCode } = {}) {
-  return callApi("/api/resource/v1/person/advance/search", {
-    pageNo, pageSize, personName, personCode,
+  return callApi("/api/resource/v1/person", {
+    personCode,
+    personName,
+    gender,
+    phoneNo,
+    email,
+    orgIndexCode,
+    beginTime,
+    endTime,
+    personType: 1,
   });
 }
 
-export function updatePerson(personId, updates) {
+export function searchPersons({
+  pageNo = 1,
+  pageSize = 100,
+  personName,
+  personCode,
+} = {}) {
+  return callApi("/api/resource/v1/person/advance/search", {
+    pageNo,
+    pageSize,
+    personName,
+    personCode,
+  });
+}
+
+export function updatePerson(personId, updates = {}) {
   return callApi(`/api/resource/v1/person/${personId}`, updates);
 }
 
-export function deletePersons(personIds) {
-  // personIds: string[]
+export function deletePersons(personIds = []) {
   return callApi("/api/resource/v1/person/batch/delete", {
     personIds: personIds.map((id) => ({ personId: id })),
   });
 }
 
-export function addFace({ personId, faceData }) {
-  // faceData: base64-encoded JPEG of the face
-  return callApi("/api/resource/v1/face", { personId, faceData });
+export function addFace({ personId, faceData } = {}) {
+  const stripped = (faceData || "").replace(/^data:image\/[^;]+;base64,/, "");
+  return callApi("/api/resource/v1/face", { personId, faceData: stripped });
 }
 
-export function deleteFaces(faceIds) {
+export function deleteFaces(faceIds = []) {
   return callApi("/api/resource/v1/face/batch/delete", {
     faceIds: faceIds.map((id) => ({ faceId: id })),
   });
@@ -166,6 +191,38 @@ export function getAccessRecords({
   pageSize = 100,
 } = {}) {
   return callApi("/api/acs/v1/door/access/record/search", {
-    startTime, endTime, personName, doorIndexCodes, pageNo, pageSize,
+    startTime,
+    endTime,
+    personName,
+    doorIndexCodes,
+    pageNo,
+    pageSize,
   });
+}
+
+export function getDoors({ pageNo = 1, pageSize = 100 } = {}) {
+  return callApi("/api/resource/v1/door/search", { pageNo, pageSize });
+}
+
+export function controlDoor(doorIndexCode, controlType) {
+  // controlType: 0=close, 1=open, 2=always open, 3=always close
+  return callApi("/api/acs/v1/door/doControl", { doorIndexCode, controlType });
+}
+
+export function addPersonsToAccessGroup(personIds = [], acsGroupId) {
+  return callApi("/api/acs/v1/acsDevice/person/privilege/set", {
+    personIds,
+    acsGroupId,
+  });
+}
+
+export function subscribeEvents(callbackUrl, eventTypes = []) {
+  return callApi("/api/eventService/v1/eventSubscriptionByEventTypes", {
+    eventDest: callbackUrl,
+    eventTypes,
+  });
+}
+
+export function getApiInfo() {
+  return callApi("/api/apiInfo", {}, "GET");
 }

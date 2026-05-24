@@ -1100,7 +1100,7 @@ function hikErr(err) {
 
 export const hikAddPerson = functions.https.onCall(async (data, context) => {
   requireAuth(context);
-  return hik.addPerson(data).catch(hikErr);
+  return hik.addPerson(data || {}).catch(hikErr);
 });
 
 export const hikSearchPersons = functions.https.onCall(async (data, context) => {
@@ -1148,3 +1148,214 @@ export const hikGetAccessRecords = functions.https.onCall(async (data, context) 
   requireAuth(context);
   return hik.getAccessRecords(data || {}).catch(hikErr);
 });
+
+export const hikGetDoors = functions.https.onCall(async (data, context) => {
+  requireAuth(context);
+  return hik.getDoors(data || {}).catch(hikErr);
+});
+
+export const hikControlDoor = functions.https.onCall(async (data, context) => {
+  requireAuth(context);
+  const { doorIndexCode, controlType } = data || {};
+  if (!doorIndexCode) {
+    throw new functions.https.HttpsError("invalid-argument", "doorIndexCode required");
+  }
+  return hik.controlDoor(doorIndexCode, controlType).catch(hikErr);
+});
+
+export const hikSubscribeEvents = functions.https.onCall(async (data, context) => {
+  requireAuth(context);
+  const { callbackUrl, eventTypes } = data || {};
+  if (!callbackUrl) {
+    throw new functions.https.HttpsError("invalid-argument", "callbackUrl required");
+  }
+  return hik.subscribeEvents(callbackUrl, eventTypes || []).catch(hikErr);
+});
+
+export const hikTestConnection = functions.https.onCall(async (_data, context) => {
+  requireAuth(context);
+  try {
+    const result = await hik.getApiInfo();
+    return { success: true, result };
+  } catch (err) {
+    console.error("HikCentral connection test failed:", err);
+    return { success: false, error: err.message || String(err) };
+  }
+});
+
+/**
+ * Receives access events pushed by HikCentral via OpenAPI event subscription.
+ * Always responds 200 immediately — HikCentral retries on any non-200.
+ */
+export const hikCentralWebhook = functions.https.onRequest(async (req, res) => {
+  // 1. Acknowledge immediately so HikCentral does not retry.
+  res.status(200).send("OK");
+
+  try {
+    const db = admin.firestore();
+    const payload = req.body || {};
+    const events = payload.events || payload.Events || [];
+
+    if (!Array.isArray(events) || events.length === 0) {
+      console.log("⏭️  No events in HikCentral webhook payload");
+      return;
+    }
+
+    for (const event of events) {
+      const data = event.data || event || {};
+      const isAccessEvent =
+        event.eventType === "AccessControllerEvent" || !!data.employeeNoString;
+
+      if (!isAccessEvent) {
+        continue;
+      }
+
+      const employeeNo =
+        data.employeeNoString ||
+        (data.employeeNo != null ? String(data.employeeNo) : "");
+
+      if (!employeeNo) {
+        continue;
+      }
+
+      const doorName = data.doorName || null;
+      const deviceName = data.deviceName || null;
+      const eventTime = data.time ? new Date(data.time) : new Date();
+      const verifyMode = data.verifyMode || null;
+      const cardNo = data.cardNo || null;
+      const pictureUrl = data.pictureURLs?.[0] || null;
+
+      // b. Look up member by hikvisionUserId
+      const memberSnap = await db
+        .collection("members")
+        .where("hikvisionUserId", "==", employeeNo)
+        .limit(1)
+        .get();
+
+      // c. Not found → store raw event, continue
+      if (memberSnap.empty) {
+        await db.collection("hikRawEvents").add({
+          employeeNo,
+          rawEvent: data,
+          receivedAt: admin.firestore.Timestamp.now(),
+        });
+        continue;
+      }
+
+      const memberDoc = memberSnap.docs[0];
+      const member = memberDoc.data();
+
+      // d. Skip inactive members
+      if (member.status !== "active") {
+        continue;
+      }
+
+      const gymId = member.gymId;
+
+      // e. Deduplicate: last attendance < 10s ago → skip
+      const recentSnap = await db
+        .collection("attendance")
+        .where("memberId", "==", memberDoc.id)
+        .where("gymId", "==", gymId)
+        .orderBy("checkInTime", "desc")
+        .limit(1)
+        .get();
+
+      if (!recentSnap.empty) {
+        const lastEvent = recentSnap.docs[0].data();
+        const lastTime =
+          lastEvent.checkInTime?.toDate?.() ||
+          new Date(lastEvent.checkInTime);
+        if (eventTime - lastTime < 10 * 1000) {
+          console.log(
+            `⏭️  Duplicate HikCentral event for ${member.name} within 10s, skipping`,
+          );
+          continue;
+        }
+      }
+
+      // f. Write attendance record
+      await db.collection("attendance").add({
+        memberId: memberDoc.id,
+        memberName: member.name,
+        gymId,
+        checkInTime: admin.firestore.Timestamp.fromDate(eventTime),
+        date: eventTime.toISOString().split("T")[0],
+        recognitionMethod: "hikvision-openapi",
+        doorName,
+        deviceName,
+        verifyMode,
+        cardNo,
+        pictureUrl,
+        status: "present",
+        createdAt: admin.firestore.Timestamp.now(),
+      });
+
+      console.log(`✅ HikCentral attendance recorded: ${member.name}`);
+    }
+  } catch (error) {
+    // Never let errors crash — HikCentral would retry.
+    console.error("❌ hikCentralWebhook error:", error);
+  }
+});
+
+/**
+ * When a member is created with useHikCentral === true, register them in
+ * HikCentral and enroll their face photo.
+ */
+export const syncMemberToHikCentral = functions.firestore
+  .document("members/{memberId}")
+  .onCreate(async (snap, context) => {
+    const member = snap.data();
+
+    // 1. Skip members not flagged for HikCentral
+    if (member.useHikCentral !== true) {
+      return null;
+    }
+
+    const memberId = context.params.memberId;
+
+    try {
+      // 2. Register the person in HikCentral
+      const personResult = await hik.addPerson({
+        personCode: memberId,
+        personName: member.name,
+        gender: member.gender,
+        phoneNo: member.phoneNo || member.phone,
+        email: member.email,
+      });
+
+      // 3. Extract HikCentral person id
+      const hikPersonId = personResult?.personId || personResult?.id;
+
+      // 4. Enroll face photo (failure must not fail whole sync)
+      if (member.facePhotoURL && hikPersonId) {
+        try {
+          const resp = await fetch(member.facePhotoURL);
+          const buffer = Buffer.from(await resp.arrayBuffer());
+          const base64 = buffer.toString("base64");
+          await hik.addFace({ personId: hikPersonId, faceData: base64 });
+        } catch (faceErr) {
+          console.error("⚠️ HikCentral face enrollment failed:", faceErr);
+        }
+      }
+
+      // 5. Mark member as synced
+      await snap.ref.update({
+        hikvisionUserId: hikPersonId || memberId,
+        hikCentralSynced: true,
+        hikCentralSyncedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      console.log(`✅ Member ${memberId} synced to HikCentral`);
+    } catch (err) {
+      // 6. Record sync failure
+      console.error("❌ syncMemberToHikCentral error:", err);
+      await snap.ref.update({
+        hikCentralSynced: false,
+        hikCentralSyncError: err.message || String(err),
+      });
+    }
+
+    return null;
+  });
