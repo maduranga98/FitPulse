@@ -9,6 +9,8 @@ import { ImageAnnotatorClient } from "@google-cloud/vision";
 import process from "process";
 import * as metaWhatsAppService from "./services/metaWhatsAppService.js";
 import * as hik from "./services/hikCentralService.js";
+// import { createClient } from "@supabase/supabase-js";
+import ws from "ws";
 
 admin.initializeApp();
 
@@ -47,6 +49,85 @@ async function validateGymStatus(gymId) {
   }
 }
 
+export const enrichAttendance = functions.https.onRequest(async (req, res) => {
+  // Allow CORS for Supabase webhook
+  res.set("Access-Control-Allow-Origin", "*");
+
+  if (req.method === "OPTIONS") {
+    res.set("Access-Control-Allow-Methods", "POST");
+    res.set("Access-Control-Allow-Headers", "Content-Type");
+    return res.status(204).send("");
+  }
+
+  if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
+
+  try {
+    const { record } = req.body;
+
+    if (!record) {
+      console.error("No record in request body");
+      return res.status(400).send("No record provided");
+    }
+
+    const { id, employee_no, event_time } = record;
+
+    console.log(`Processing attendance for employeeNo: ${employee_no}`);
+
+    // Find member in Firestore by memberCode
+    const snapshot = await admin
+      .firestore()
+      .collection("members")
+      .where("memberCode", "==", employee_no)
+      .limit(1)
+      .get();
+
+    if (snapshot.empty) {
+      console.log(`No member found for code: ${employee_no}`);
+      return res.status(200).send("Member not found");
+    }
+
+    const memberDoc = snapshot.docs[0];
+    const member = memberDoc.data();
+    const memberId = memberDoc.id;
+
+    console.log(`Found member: ${member.name} gymId: ${member.gymId}`);
+
+    // Init Supabase with service role key
+
+    const updateResponse = await fetch(
+      `${process.env.SUPABASE_URL}/rest/v1/attendance_events?id=eq.${id}`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: process.env.SUPABASE_SERVICE_KEY,
+          Authorization: `Bearer ${process.env.SUPABASE_SERVICE_KEY}`,
+          Prefer: "return=minimal",
+        },
+        body: JSON.stringify({
+          gym_id: member.gymId,
+          member_id: memberId,
+          member_name: member.name,
+          enriched: true,
+        }),
+      },
+    );
+
+    if (!updateResponse.ok) {
+      const errText = await updateResponse.text();
+      console.error("Supabase update error:", errText);
+      return res.status(500).send("Supabase update failed");
+    }
+
+    console.log(
+      `✅ Enriched attendance: ${member.name} at gym ${member.gymId}`,
+    );
+    return res.status(200).send("OK");
+  } catch (err) {
+    console.error("enrichAttendance error:", err);
+    return res.status(500).send("Internal error");
+  }
+});
 /**
  * Validate member exists, is active, and belongs to specified gym
  */
@@ -891,7 +972,9 @@ export const hikvisionEvent = functions.https.onRequest(async (req, res) => {
       .get();
 
     if (memberSnap.empty) {
-      console.warn(`⚠️  No member with hikvisionUserId ${employeeNo} in gym ${gymId}`);
+      console.warn(
+        `⚠️  No member with hikvisionUserId ${employeeNo} in gym ${gymId}`,
+      );
       res.status(200).send("OK");
       return;
     }
@@ -919,9 +1002,12 @@ export const hikvisionEvent = functions.https.onRequest(async (req, res) => {
 
     if (!recentSnap.empty) {
       const lastEvent = recentSnap.docs[0].data();
-      const lastTime = lastEvent.checkInTime?.toDate?.() || new Date(lastEvent.checkInTime);
+      const lastTime =
+        lastEvent.checkInTime?.toDate?.() || new Date(lastEvent.checkInTime);
       if (eventTime - lastTime < dedupeWindowMs) {
-        console.log(`⏭️  Duplicate event for ${member.name} within 10s, skipping`);
+        console.log(
+          `⏭️  Duplicate event for ${member.name} within 10s, skipping`,
+        );
         res.status(200).send("OK");
         return;
       }
@@ -929,9 +1015,9 @@ export const hikvisionEvent = functions.https.onRequest(async (req, res) => {
 
     // 5. Write attendance record
     const dateStr = eventTime.toISOString().split("T")[0];
-    const attendanceRef = db.collection("attendance").doc(
-      `${deviceId}_${memberDoc.id}_${eventTime.getTime()}`
-    );
+    const attendanceRef = db
+      .collection("attendance")
+      .doc(`${deviceId}_${memberDoc.id}_${eventTime.getTime()}`);
 
     await attendanceRef.set({
       memberId: memberDoc.id,
@@ -959,7 +1045,9 @@ export const hikvisionEvent = functions.https.onRequest(async (req, res) => {
       status: "online",
     });
 
-    console.log(`✅ Attendance recorded: ${member.name} via ${deviceData.name || deviceId}`);
+    console.log(
+      `✅ Attendance recorded: ${member.name} via ${deviceData.name || deviceId}`,
+    );
     res.status(200).send("OK");
   } catch (error) {
     console.error("❌ hikvisionEvent error:", error);
@@ -972,68 +1060,94 @@ export const hikvisionEvent = functions.https.onRequest(async (req, res) => {
  * Test connectivity to a registered Hikvision device.
  * Calls GET /ISAPI/System/deviceInfo on the device and returns the result.
  */
-export const testDeviceConnection = functions.https.onCall(async (data, context) => {
-  if (!context.auth) {
-    throw new functions.https.HttpsError("unauthenticated", "Must be logged in");
-  }
+export const testDeviceConnection = functions.https.onCall(
+  async (data, context) => {
+    if (!context.auth) {
+      throw new functions.https.HttpsError(
+        "unauthenticated",
+        "Must be logged in",
+      );
+    }
 
-  const { deviceId, gymId } = data;
-  if (!deviceId || !gymId) {
-    throw new functions.https.HttpsError("invalid-argument", "deviceId and gymId required");
-  }
+    const { deviceId, gymId } = data;
+    if (!deviceId || !gymId) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "deviceId and gymId required",
+      );
+    }
 
-  const db = admin.firestore();
-  const deviceDoc = await db.collection("gyms").doc(gymId).collection("devices").doc(deviceId).get();
+    const db = admin.firestore();
+    const deviceDoc = await db
+      .collection("gyms")
+      .doc(gymId)
+      .collection("devices")
+      .doc(deviceId)
+      .get();
 
-  if (!deviceDoc.exists) {
-    throw new functions.https.HttpsError("not-found", "Device not found");
-  }
+    if (!deviceDoc.exists) {
+      throw new functions.https.HttpsError("not-found", "Device not found");
+    }
 
-  const device = deviceDoc.data();
+    const device = deviceDoc.data();
 
-  try {
-    const { default: https } = await import("https");
-    const { default: http } = await import("http");
+    try {
+      const { default: https } = await import("https");
+      const { default: http } = await import("http");
 
-    const isHttps = (device.protocol || "HTTP").toUpperCase() === "HTTPS";
-    const agent = isHttps ? https : http;
+      const isHttps = (device.protocol || "HTTP").toUpperCase() === "HTTPS";
+      const agent = isHttps ? https : http;
 
-    const credentials = Buffer.from(`${device.username}:${device.password}`).toString("base64");
+      const credentials = Buffer.from(
+        `${device.username}:${device.password}`,
+      ).toString("base64");
 
-    const result = await new Promise((resolve, reject) => {
-      const options = {
-        hostname: device.ip,
-        port: device.port || 80,
-        path: "/ISAPI/System/deviceInfo",
-        method: "GET",
-        headers: { Authorization: `Basic ${credentials}` },
-        timeout: 5000,
-        rejectUnauthorized: false,
-      };
+      const result = await new Promise((resolve, reject) => {
+        const options = {
+          hostname: device.ip,
+          port: device.port || 80,
+          path: "/ISAPI/System/deviceInfo",
+          method: "GET",
+          headers: { Authorization: `Basic ${credentials}` },
+          timeout: 5000,
+          rejectUnauthorized: false,
+        };
 
-      const req = agent.request(options, (res) => {
-        let data = "";
-        res.on("data", (chunk) => (data += chunk));
-        res.on("end", () => resolve({ statusCode: res.statusCode, body: data }));
+        const req = agent.request(options, (res) => {
+          let data = "";
+          res.on("data", (chunk) => (data += chunk));
+          res.on("end", () =>
+            resolve({ statusCode: res.statusCode, body: data }),
+          );
+        });
+
+        req.on("error", reject);
+        req.on("timeout", () => {
+          req.destroy();
+          reject(new Error("Connection timed out"));
+        });
+        req.end();
       });
 
-      req.on("error", reject);
-      req.on("timeout", () => { req.destroy(); reject(new Error("Connection timed out")); });
-      req.end();
-    });
-
-    if (result.statusCode === 200) {
-      await deviceDoc.ref.update({ status: "online", lastHeartbeat: admin.firestore.Timestamp.now() });
-      return { success: true, statusCode: result.statusCode };
-    } else {
-      await deviceDoc.ref.update({ status: "error" });
-      return { success: false, error: `Device returned HTTP ${result.statusCode}` };
+      if (result.statusCode === 200) {
+        await deviceDoc.ref.update({
+          status: "online",
+          lastHeartbeat: admin.firestore.Timestamp.now(),
+        });
+        return { success: true, statusCode: result.statusCode };
+      } else {
+        await deviceDoc.ref.update({ status: "error" });
+        return {
+          success: false,
+          error: `Device returned HTTP ${result.statusCode}`,
+        };
+      }
+    } catch (err) {
+      await deviceDoc.ref.update({ status: "offline" });
+      return { success: false, error: err.message };
     }
-  } catch (err) {
-    await deviceDoc.ref.update({ status: "offline" });
-    return { success: false, error: err.message };
-  }
-});
+  },
+);
 
 /**
  * Webhook endpoint for WhatsApp status updates
@@ -1103,21 +1217,18 @@ async function validateGymAccess(data) {
   if (!gymId) {
     throw new functions.https.HttpsError(
       "invalid-argument",
-      "gymId is required"
+      "gymId is required",
     );
   }
   const db = admin.firestore();
   const gymDoc = await db.collection("gyms").doc(gymId).get();
   if (!gymDoc.exists) {
-    throw new functions.https.HttpsError(
-      "not-found",
-      `Gym ${gymId} not found`
-    );
+    throw new functions.https.HttpsError("not-found", `Gym ${gymId} not found`);
   }
   if (gymDoc.data().status !== "active") {
     throw new functions.https.HttpsError(
       "failed-precondition",
-      `Gym ${gymId} is not active`
+      `Gym ${gymId} is not active`,
     );
   }
   return gymDoc.data();
@@ -1129,31 +1240,38 @@ export const hikAddPerson = functions.https.onCall(async (data, context) => {
   return hik.addPerson(personData).catch(hikErr);
 });
 
-export const hikSearchPersons = functions.https.onCall(async (data, context) => {
-  // No gymId required — read-only person search.
-  return hik.searchPersons(data || {}).catch(hikErr);
-});
+export const hikSearchPersons = functions.https.onCall(
+  async (data, context) => {
+    // No gymId required — read-only person search.
+    return hik.searchPersons(data || {}).catch(hikErr);
+  },
+);
 
 export const hikUpdatePerson = functions.https.onCall(async (data, context) => {
   await validateGymAccess(data);
   const { personId, updates } = data || {};
   if (!personId) {
-    throw new functions.https.HttpsError("invalid-argument", "personId required");
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "personId required",
+    );
   }
   return hik.updatePerson(personId, updates || {}).catch(hikErr);
 });
 
-export const hikDeletePersons = functions.https.onCall(async (data, context) => {
-  await validateGymAccess(data);
-  const ids = data?.personIds || [];
-  if (!ids.length) {
-    throw new functions.https.HttpsError(
-      "invalid-argument",
-      "personIds required"
-    );
-  }
-  return hik.deletePersons(ids).catch(hikErr);
-});
+export const hikDeletePersons = functions.https.onCall(
+  async (data, context) => {
+    await validateGymAccess(data);
+    const ids = data?.personIds || [];
+    if (!ids.length) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "personIds required",
+      );
+    }
+    return hik.deletePersons(ids).catch(hikErr);
+  },
+);
 
 export const hikAddFace = functions.https.onCall(async (data, context) => {
   await validateGymAccess(data);
@@ -1161,7 +1279,7 @@ export const hikAddFace = functions.https.onCall(async (data, context) => {
   if (!personId || !faceData) {
     throw new functions.https.HttpsError(
       "invalid-argument",
-      "personId and faceData required"
+      "personId and faceData required",
     );
   }
   return hik.addFace({ personId, faceData }).catch(hikErr);
@@ -1171,30 +1289,39 @@ export const hikDeleteFaces = functions.https.onCall(async (data, context) => {
   await validateGymAccess(data);
   const ids = (data && data.faceIds) || [];
   if (!ids.length) {
-    throw new functions.https.HttpsError("invalid-argument", "faceIds required");
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "faceIds required",
+    );
   }
   return hik.deleteFaces(ids).catch(hikErr);
 });
 
-export const hikGetAccessRecords = functions.https.onCall(async (data, context) => {
-  await validateGymAccess(data);
-  return hik.getAccessRecords(data || {}).catch(hikErr);
-});
+export const hikGetAccessRecords = functions.https.onCall(
+  async (data, context) => {
+    await validateGymAccess(data);
+    return hik.getAccessRecords(data || {}).catch(hikErr);
+  },
+);
 
 export const hikGetDoors = functions.https.onCall(async (data, context) => {
   await validateGymAccess(data);
   return hik.getDoors(data || {}).catch(hikErr);
 });
 
-export const hikGetDeviceList = functions.https.onCall(async (data, context) => {
-  // No auth check needed — returns all devices from HikCentral.
-  return hik.getDeviceList(data || {}).catch(hikErr);
-});
+export const hikGetDeviceList = functions.https.onCall(
+  async (data, context) => {
+    // No auth check needed — returns all devices from HikCentral.
+    return hik.getDeviceList(data || {}).catch(hikErr);
+  },
+);
 
-export const hikViewSubscriptions = functions.https.onCall(async (data, context) => {
-  // No auth check needed — diagnostic only.
-  return hik.viewSubscriptions().catch(hikErr);
-});
+export const hikViewSubscriptions = functions.https.onCall(
+  async (data, context) => {
+    // No auth check needed — diagnostic only.
+    return hik.viewSubscriptions().catch(hikErr);
+  },
+);
 
 export const hikControlDoor = functions.https.onCall(async (data, context) => {
   // Security-critical: never allow door control without a valid, active gym.
@@ -1203,35 +1330,39 @@ export const hikControlDoor = functions.https.onCall(async (data, context) => {
   if (!doorIndexCode) {
     throw new functions.https.HttpsError(
       "invalid-argument",
-      "doorIndexCode is required"
+      "doorIndexCode is required",
     );
   }
   return hik.controlDoor(doorIndexCode, controlType ?? 1).catch(hikErr);
 });
 
-export const hikSubscribeEvents = functions.https.onCall(async (data, context) => {
-  await validateGymAccess(data);
-  const { eventDest, callbackUrl, eventTypes } = data || {};
-  const dest = eventDest || callbackUrl;
-  if (!dest) {
-    throw new functions.https.HttpsError(
-      "invalid-argument",
-      "eventDest is required"
-    );
-  }
-  return hik.subscribeEvents(dest, eventTypes || []).catch(hikErr);
-});
+export const hikSubscribeEvents = functions.https.onCall(
+  async (data, context) => {
+    await validateGymAccess(data);
+    const { eventDest, callbackUrl, eventTypes } = data || {};
+    const dest = eventDest || callbackUrl;
+    if (!dest) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "eventDest is required",
+      );
+    }
+    return hik.subscribeEvents(dest, eventTypes || []).catch(hikErr);
+  },
+);
 
-export const hikTestConnection = functions.https.onCall(async (data, context) => {
-  // No auth check needed — diagnostic only.
-  try {
-    const result = await hik.getApiVersion();
-    return { success: true, result };
-  } catch (err) {
-    console.error("HikCentral connection test failed:", err);
-    return { success: false, error: err.message || String(err) };
-  }
-});
+export const hikTestConnection = functions.https.onCall(
+  async (data, context) => {
+    // No auth check needed — diagnostic only.
+    try {
+      const result = await hik.getApiVersion();
+      return { success: true, result };
+    } catch (err) {
+      console.error("HikCentral connection test failed:", err);
+      return { success: false, error: err.message || String(err) };
+    }
+  },
+);
 
 /**
  * Receives access events pushed by HikCentral via OpenAPI event subscription.
@@ -1328,8 +1459,7 @@ export const hikCentralWebhook = functions.https.onRequest(async (req, res) => {
       if (!recentSnap.empty) {
         const lastEvent = recentSnap.docs[0].data();
         const lastTime =
-          lastEvent.checkInTime?.toDate?.() ||
-          new Date(lastEvent.checkInTime);
+          lastEvent.checkInTime?.toDate?.() || new Date(lastEvent.checkInTime);
         if (happenTime - lastTime < 10 * 1000) {
           console.log(
             `⏭️  Duplicate HikCentral event for ${member.name} within 10s, skipping`,
@@ -1367,7 +1497,9 @@ export const hikCentralWebhook = functions.https.onRequest(async (req, res) => {
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
-      console.log(`✅ HikCentral attendance recorded: ${member.name} (gym ${gymId})`);
+      console.log(
+        `✅ HikCentral attendance recorded: ${member.name} (gym ${gymId})`,
+      );
     }
   } catch (error) {
     // Never let errors crash — HikCentral would retry.
@@ -1394,14 +1526,18 @@ export const syncMemberToHikCentral = functions.firestore
 
     // Validate gymId presence
     if (!member.gymId) {
-      console.error(`❌ Member ${memberId} has no gymId, cannot sync to HikCentral`);
+      console.error(
+        `❌ Member ${memberId} has no gymId, cannot sync to HikCentral`,
+      );
       return null;
     }
 
     // Validate gym exists and is active
     const gymDoc = await db.collection("gyms").doc(member.gymId).get();
     if (!gymDoc.exists || gymDoc.data().status !== "active") {
-      console.warn(`⚠️  Gym ${member.gymId} not found or not active, skipping sync`);
+      console.warn(
+        `⚠️  Gym ${member.gymId} not found or not active, skipping sync`,
+      );
       return null;
     }
 
@@ -1438,7 +1574,9 @@ export const syncMemberToHikCentral = functions.firestore
         gymId: member.gymId,
       });
 
-      console.log(`✅ Member ${memberId} synced to HikCentral (gym ${member.gymId})`);
+      console.log(
+        `✅ Member ${memberId} synced to HikCentral (gym ${member.gymId})`,
+      );
     } catch (err) {
       // 6. Record sync failure (do NOT touch gymId)
       console.error("❌ syncMemberToHikCentral error:", err);

@@ -53,6 +53,7 @@ import InstructorClasses from "./pages/instructor/InstructorClasses";
 import SelfRegister from "./pages/SelfRegister";
 import DeviceManagement from "./pages/DeviceManagement";
 import Reports from "./pages/Reports";
+import Attendance from "./pages/Attendance";
 
 // Component to handle root redirect based on user role
 function RootRedirect() {
@@ -169,6 +170,8 @@ function App() {
                   </ProtectedRoute>
                 }
               />
+              <Route path="/attendance" element={<Attendance />} />
+
               <Route
                 path="/analytics/members"
                 element={
