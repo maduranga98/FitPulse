@@ -5,10 +5,12 @@ import {
   subscribeToAttendance,
 } from "../services/attendanceService";
 import { useAuth } from "../hooks/useAuth";
+import Sidebar from "../components/Sidebar";
 
 const Attendance = () => {
   const { user } = useAuth();
   const gymId = user?.gymId;
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [attendance, setAttendance] = useState([]);
   const [loading, setLoading] = useState(true);
   const [liveCount, setLiveCount] = useState(0);
@@ -108,16 +110,30 @@ const Attendance = () => {
   }, [gymId, isToday]);
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white p-6">
+    <div className="h-screen w-screen overflow-hidden bg-gray-950 text-white flex">
+      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+
+      <div className="flex-1 flex flex-col h-full overflow-hidden">
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Attendance</h1>
-          <p className="text-gray-400 text-sm mt-1">
-            {isToday
-              ? "Live tracking — updates in real time"
-              : `Records for ${formatDate(selectedDate)}`}
-          </p>
+        <div className="flex items-center gap-4">
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="lg:hidden p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+          <div>
+            <h1 className="text-2xl font-bold text-white">Attendance</h1>
+            <p className="text-gray-400 text-sm mt-1">
+              {isToday
+                ? "Live tracking — updates in real time"
+                : `Records for ${formatDate(selectedDate)}`}
+            </p>
+          </div>
         </div>
 
         {/* Live indicator */}
@@ -266,6 +282,8 @@ const Attendance = () => {
             })}
           </div>
         )}
+      </div>
+        </main>
       </div>
     </div>
   );
