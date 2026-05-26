@@ -170,7 +170,23 @@ function App() {
                   </ProtectedRoute>
                 }
               />
-              <Route path="/attendance" element={<Attendance />} />
+              <Route
+                path="/attendance"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute
+                      allowedRoles={[
+                        "admin",
+                        "manager",
+                        "gym_admin",
+                        "gym_manager",
+                      ]}
+                    >
+                      <Attendance />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
 
               <Route
                 path="/analytics/members"
