@@ -242,6 +242,10 @@ const Members = () => {
     return `${cleanName}${randomNum}`;
   };
 
+  const generateMemberCode = (docId) => {
+    return `PG-${docId.substring(0, 6).toUpperCase()}`;
+  };
+
   const generatePassword = () => {
     const chars =
       "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -280,7 +284,7 @@ const Members = () => {
 
     try {
       const { db, storage } = await import("../config/firebase");
-      const { collection, addDoc, Timestamp } = await import(
+      const { collection, addDoc, Timestamp, updateDoc, doc } = await import(
         "firebase/firestore"
       );
       const { ref, uploadBytesResumable, getDownloadURL } = await import(
@@ -311,6 +315,12 @@ const Members = () => {
 
       const memberRef = await addDoc(collection(db, "members"), memberData);
 
+      const memberCode = generateMemberCode(memberRef.id);
+      await updateDoc(doc(db, "members", memberRef.id), {
+        memberCode,
+        firestoreId: memberRef.id,
+      });
+
       // Auto-sync to HikCentral if enabled for this gym
       try {
         const { doc, getDoc, updateDoc } = await import("firebase/firestore");
@@ -328,7 +338,7 @@ const Members = () => {
         console.warn("⚠️ HikCentral auto-sync flag failed:", syncErr);
       }
 
-      setGeneratedCredentials({ username, password, name: memberForm.name });
+      setGeneratedCredentials({ username, password, name: memberForm.name, memberCode });
 
       // Send SMS notification (if enabled)
       if (settings.notifications.sms !== false) {
@@ -1400,6 +1410,29 @@ const Members = () => {
                     </div>
                   </div>
                 </div>
+              </div>
+
+              <div className="bg-blue-600/10 border border-blue-600/30 rounded-lg p-4 mb-4 text-center">
+                <label className="block text-xs font-medium text-blue-400 mb-2">
+                  HikCentral Device Code
+                </label>
+                <div className="text-3xl font-bold text-blue-500 tracking-widest mb-3">
+                  {generatedCredentials.memberCode}
+                </div>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(
+                      generatedCredentials.memberCode
+                    );
+                    showSuccess("Device code copied!");
+                  }}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-medium transition"
+                >
+                  Copy Code
+                </button>
+                <p className="text-xs text-blue-400/70 mt-3">
+                  Enter this code when registering member on HikCentral
+                </p>
               </div>
 
               <div className="bg-yellow-600/10 border border-yellow-600/30 rounded-lg p-4 mb-4">
