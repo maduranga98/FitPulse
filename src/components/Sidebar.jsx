@@ -119,18 +119,7 @@ const Sidebar = ({ isOpen, onClose }) => {
       ),
       label: "Equipment Inventory",
     },
-    {
-      path: "/devices",
-      icon: (
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth={2}
-          d="M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25m18 0A2.25 2.25 0 0018.75 3H5.25A2.25 2.25 0 003 5.25m18 0V12a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 12V5.25"
-        />
-      ),
-      label: "Devices",
-    },
+
     {
       path: "/meal-plans",
       icon: (
@@ -383,9 +372,18 @@ const Sidebar = ({ isOpen, onClose }) => {
 
   // Feature-gated paths — hidden when the feature is disabled
   const featureGatedPaths = {
-    supplements: ["/supplements", "/supplement-requests", "/member/supplements"],
+    supplements: [
+      "/supplements",
+      "/supplement-requests",
+      "/member/supplements",
+    ],
     classes: ["/class-management", "/instructor/classes", "/member/classes"],
-    mealPlans: ["/meal-plans", "/instructor/meal-plans", "/member/meal-plans", "/member/nutrition"],
+    mealPlans: [
+      "/meal-plans",
+      "/instructor/meal-plans",
+      "/member/meal-plans",
+      "/member/nutrition",
+    ],
   };
 
   const isPathAllowed = (path) => {
@@ -400,8 +398,8 @@ const Sidebar = ({ isOpen, onClose }) => {
   const baseItems = userIsMember
     ? memberNavItems
     : user?.role === "trainer"
-    ? instructorNavItems
-    : adminNavItems;
+      ? instructorNavItems
+      : adminNavItems;
 
   const navItems = baseItems.filter((item) => isPathAllowed(item.path));
 
@@ -496,7 +494,7 @@ const Sidebar = ({ isOpen, onClose }) => {
                   </svg>
                   <span className="font-medium">{item.label}</span>
                 </Link>
-              )
+              ),
             )}
           </nav>
 

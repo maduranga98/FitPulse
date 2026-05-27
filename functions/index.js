@@ -50,7 +50,6 @@ async function validateGymStatus(gymId) {
 }
 
 export const enrichAttendance = functions.https.onRequest(async (req, res) => {
-  // Allow CORS for Supabase webhook
   res.set("Access-Control-Allow-Origin", "*");
 
   if (req.method === "OPTIONS") {
@@ -59,73 +58,69 @@ export const enrichAttendance = functions.https.onRequest(async (req, res) => {
     return res.status(204).send("");
   }
 
-  if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
+  if (req.method !== "POST") return res.status(405).send("Not Allowed");
 
   try {
     const { record } = req.body;
 
-    if (!record) {
-      console.error("No record in request body");
-      return res.status(400).send("No record provided");
-    }
+    if (!record) return res.status(400).send("No record provided");
 
-    const { id, employee_no, event_time } = record;
+    const {
+      id,
+      employee_no,
+      event_time,
+      event_type,
+      verify_mode,
+      device_serial,
+    } = record;
 
     console.log(`Processing attendance for employeeNo: ${employee_no}`);
 
-    // Find member in Firestore by memberCode
-    const snapshot = await admin
-      .firestore()
-      .collection("members")
-      .where("memberCode", "==", employee_no)
-      .limit(1)
-      .get();
+    // Look up member from Supabase members table (fast lookup)
+    const memberResponse = await fetch(
+      `${process.env.SUPABASE_URL}/rest/v1/members?employee_no=eq.${employee_no}&limit=1`,
+      {
+        headers: {
+          apikey: process.env.SUPABASE_SERVICE_KEY,
+          Authorization: `Bearer ${process.env.SUPABASE_SERVICE_KEY}`,
+        },
+      },
+    );
 
-    if (snapshot.empty) {
+    const members = await memberResponse.json();
+
+    if (!members || members.length === 0) {
       console.log(`No member found for code: ${employee_no}`);
       return res.status(200).send("Member not found");
     }
 
-    const memberDoc = snapshot.docs[0];
-    const member = memberDoc.data();
-    const memberId = memberDoc.id;
+    const member = members[0];
+    console.log(`Found member: ${member.name} gymId: ${member.gym_id}`);
 
-    console.log(`Found member: ${member.name} gymId: ${member.gymId}`);
+    // Write attendance to Firestore
+    const today = new Date(event_time).toISOString().split("T")[0];
 
-    // Init Supabase with service role key
+    await admin
+      .firestore()
+      .collection("attendance")
+      .add({
+        employeeNo: employee_no,
+        memberName: member.name,
+        gymId: member.gym_id,
+        eventTime: admin.firestore.Timestamp.fromDate(new Date(event_time)),
+        eventType: event_type || "check_in",
+        verifyMode: verify_mode || "face",
+        deviceSerial: device_serial || null,
+        date: today,
+        source: "hikvision",
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
 
-    const updateResponse = await fetch(
-      `${process.env.SUPABASE_URL}/rest/v1/attendance_events?id=eq.${id}`,
-      {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: process.env.SUPABASE_SERVICE_KEY,
-          Authorization: `Bearer ${process.env.SUPABASE_SERVICE_KEY}`,
-          Prefer: "return=minimal",
-        },
-        body: JSON.stringify({
-          gym_id: member.gymId,
-          member_id: memberId,
-          member_name: member.name,
-          enriched: true,
-        }),
-      },
-    );
-
-    if (!updateResponse.ok) {
-      const errText = await updateResponse.text();
-      console.error("Supabase update error:", errText);
-      return res.status(500).send("Supabase update failed");
-    }
-
-    console.log(
-      `✅ Enriched attendance: ${member.name} at gym ${member.gymId}`,
-    );
+    console.log(`✅ Attendance saved to Firestore: ${member.name}`);
     return res.status(200).send("OK");
   } catch (err) {
     console.error("enrichAttendance error:", err);
-    return res.status(500).send("Internal error");
+    return res.status(500).send("Error");
   }
 });
 /**

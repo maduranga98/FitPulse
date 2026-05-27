@@ -6,6 +6,7 @@ import { isAdmin, validateGymId } from "../utils/authUtils";
 import { calculateBMI, validateBMIInputs } from "../utils/validationUtils";
 import { QRCodeSVG } from "qrcode.react";
 import { useGymSettings } from "../contexts/GymSettingsContext";
+import { supabase } from "../services/supabaseClient";
 
 const HikStatus = ({ member, onRetry, retrying }) => {
   if (member.hikCentralSynced === true) {
@@ -75,7 +76,6 @@ const Members = () => {
   const [pendingRegistrations, setPendingRegistrations] = useState([]);
   const [hikSyncingId, setHikSyncingId] = useState(null);
 
-
   const userIsAdmin = isAdmin(user);
   const gymValidation = validateGymId(user);
 
@@ -121,7 +121,9 @@ const Members = () => {
   useEffect(() => {
     if (memberForm.joinDate && memberForm.packageDuration) {
       const joinDate = new Date(memberForm.joinDate);
-      joinDate.setMonth(joinDate.getMonth() + parseInt(memberForm.packageDuration));
+      joinDate.setMonth(
+        joinDate.getMonth() + parseInt(memberForm.packageDuration),
+      );
       const nextDate = joinDate.toISOString().slice(0, 10);
       setMemberForm((prev) => ({ ...prev, nextPaymentDate: nextDate }));
     }
@@ -135,15 +137,14 @@ const Members = () => {
 
     try {
       const { db } = await import("../config/firebase");
-      const { collection, getDocs, orderBy, query, where } = await import(
-        "firebase/firestore"
-      );
+      const { collection, getDocs, orderBy, query, where } =
+        await import("firebase/firestore");
 
       const membersRef = collection(db, "members");
       const membersQuery = query(
         membersRef,
         where("gymId", "==", currentGymId),
-        orderBy("joinDate", "desc")
+        orderBy("joinDate", "desc"),
       );
       const snapshot = await getDocs(membersQuery);
       const membersData = snapshot.docs.map((doc) => ({
@@ -163,19 +164,18 @@ const Members = () => {
     if (!currentGymId) return;
     try {
       const { db } = await import("../config/firebase");
-      const { collection, getDocs, query, where, orderBy } = await import(
-        "firebase/firestore"
-      );
+      const { collection, getDocs, query, where, orderBy } =
+        await import("firebase/firestore");
       const regRef = collection(db, "self_registrations");
       const regQuery = query(
         regRef,
         where("gymId", "==", currentGymId),
         where("status", "==", "pending_approval"),
-        orderBy("submittedAt", "desc")
+        orderBy("submittedAt", "desc"),
       );
       const snapshot = await getDocs(regQuery);
       setPendingRegistrations(
-        snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+        snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })),
       );
     } catch (error) {
       console.error("Error fetching pending registrations:", error);
@@ -267,29 +267,29 @@ const Members = () => {
     // Validation
     if (!memberForm.mobile && !memberForm.whatsapp) {
       showError(
-        "At least one phone number (Mobile or WhatsApp) is required for SMS"
+        "At least one phone number (Mobile or WhatsApp) is required for SMS",
       );
       return;
     }
 
     // Validate BMI inputs if provided
     if (memberForm.weight && memberForm.height) {
-      const bmiValidation = validateBMIInputs(memberForm.weight, memberForm.height);
+      const bmiValidation = validateBMIInputs(
+        memberForm.weight,
+        memberForm.height,
+      );
       if (!bmiValidation.isValid) {
         showError("Invalid measurements: " + bmiValidation.errors.join(", "));
         return;
       }
     }
 
-
     try {
       const { db, storage } = await import("../config/firebase");
-      const { collection, addDoc, Timestamp, updateDoc, doc } = await import(
-        "firebase/firestore"
-      );
-      const { ref, uploadBytesResumable, getDownloadURL } = await import(
-        "firebase/storage"
-      );
+      const { collection, addDoc, Timestamp, updateDoc, doc } =
+        await import("firebase/firestore");
+      const { ref, uploadBytesResumable, getDownloadURL } =
+        await import("firebase/storage");
 
       const username = generateUsername(memberForm.name);
       const password = generatePassword();
@@ -301,7 +301,9 @@ const Members = () => {
         gymId: currentGymId,
         username,
         password,
-        membershipFee: memberForm.membershipFee ? parseFloat(memberForm.membershipFee) : 0,
+        membershipFee: memberForm.membershipFee
+          ? parseFloat(memberForm.membershipFee)
+          : 0,
         packageDuration: parseInt(memberForm.packageDuration) || 1,
         nextPaymentDate: memberForm.nextPaymentDate || "",
         bmi: bmiInfo?.bmi || null,
@@ -320,7 +322,16 @@ const Members = () => {
         memberCode,
         firestoreId: memberRef.id,
       });
+      const { error: supabaseError } = await supabase.from("members").insert({
+        employee_no: memberCode,
+        name: memberForm.name,
+        gym_id: currentGymId,
+      });
 
+      if (supabaseError) {
+        console.error("Supabase member save error:", supabaseError);
+        // Don't block registration — just log it
+      }
       // Auto-sync to HikCentral if enabled for this gym
       try {
         const { doc, getDoc, updateDoc } = await import("firebase/firestore");
@@ -338,14 +349,18 @@ const Members = () => {
         console.warn("⚠️ HikCentral auto-sync flag failed:", syncErr);
       }
 
-      setGeneratedCredentials({ username, password, name: memberForm.name, memberCode });
+      setGeneratedCredentials({
+        username,
+        password,
+        name: memberForm.name,
+        memberCode,
+      });
 
       // Send SMS notification (if enabled)
       if (settings.notifications.sms !== false) {
         try {
-          const { sendMemberRegistrationSMS } = await import(
-            "../services/smsService"
-          );
+          const { sendMemberRegistrationSMS } =
+            await import("../services/smsService");
 
           await sendMemberRegistrationSMS(
             {
@@ -354,14 +369,14 @@ const Members = () => {
               whatsapp: memberForm.whatsapp,
             },
             username,
-            password
+            password,
           );
 
           console.log("✅ SMS sent successfully");
         } catch (smsError) {
           console.error("⚠️ SMS sending failed:", smsError);
           showWarning(
-            `Member added, but SMS sending failed: ${smsError.message}. Manually share credentials with the member.`
+            `Member added, but SMS sending failed: ${smsError.message}. Manually share credentials with the member.`,
           );
         }
       }
@@ -369,9 +384,8 @@ const Members = () => {
       // Send Welcome WhatsApp notification (if enabled)
       if (settings.notifications.whatsapp !== false) {
         try {
-          const { sendWelcomeMemberWhatsApp } = await import(
-            "../services/whatsappService"
-          );
+          const { sendWelcomeMemberWhatsApp } =
+            await import("../services/whatsappService");
 
           const { doc, getDoc } = await import("firebase/firestore");
           const { db } = await import("../config/firebase");
@@ -386,7 +400,7 @@ const Members = () => {
               id: username,
             },
             gymName,
-            memberForm.joinDate || new Date().toLocaleDateString()
+            memberForm.joinDate || new Date().toLocaleDateString(),
           );
 
           console.log("✅ Welcome WhatsApp sent successfully");
@@ -427,7 +441,8 @@ const Members = () => {
   const handleSyncToHikCentral = async (member) => {
     setHikSyncingId(member.id);
     try {
-      const { getFunctions, httpsCallable } = await import("firebase/functions");
+      const { getFunctions, httpsCallable } =
+        await import("firebase/functions");
       const { app } = await import("../config/firebase");
       const functions = getFunctions(app);
       const hikAddPerson = httpsCallable(functions, "hikAddPerson");
@@ -442,7 +457,8 @@ const Members = () => {
       });
 
       const { db } = await import("../config/firebase");
-      const { doc, updateDoc, serverTimestamp } = await import("firebase/firestore");
+      const { doc, updateDoc, serverTimestamp } =
+        await import("firebase/firestore");
       await updateDoc(doc(db, "members", member.id), {
         useHikCentral: true,
         hikCentralSynced: true,
@@ -452,7 +468,11 @@ const Members = () => {
 
       showSuccess("Member synced to HikCentral");
       if (viewMember?.id === member.id) {
-        setViewMember({ ...viewMember, useHikCentral: true, hikCentralSynced: true });
+        setViewMember({
+          ...viewMember,
+          useHikCentral: true,
+          hikCentralSynced: true,
+        });
       }
       fetchMembers();
     } catch (error) {
@@ -556,12 +576,24 @@ const Members = () => {
         <div className="bg-gray-800 border border-gray-700 rounded-xl p-8 text-center max-w-md">
           <div className="flex justify-center mb-4">
             <div className="w-16 h-16 bg-yellow-600/20 rounded-full flex items-center justify-center">
-              <svg className="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              <svg
+                className="w-8 h-8 text-yellow-600"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                />
               </svg>
             </div>
           </div>
-          <h2 className="text-2xl font-bold text-white mb-2">Configuration Error</h2>
+          <h2 className="text-2xl font-bold text-white mb-2">
+            Configuration Error
+          </h2>
           <p className="text-gray-400 mb-4">{gymValidation.error}</p>
           <button
             onClick={() => window.location.reload()}
@@ -725,7 +757,10 @@ const Members = () => {
                           {reg.name}
                         </p>
                         <p className="text-xs text-gray-400 truncate">
-                          {reg.mobile || reg.whatsapp || reg.email || "No contact"}
+                          {reg.mobile ||
+                            reg.whatsapp ||
+                            reg.email ||
+                            "No contact"}
                         </p>
                       </div>
                     </div>
@@ -832,8 +867,8 @@ const Members = () => {
                           member.level === "beginner"
                             ? "bg-blue-600/20 text-blue-600"
                             : member.level === "intermediate"
-                            ? "bg-yellow-600/20 text-yellow-600"
-                            : "bg-purple-600/20 text-purple-600"
+                              ? "bg-yellow-600/20 text-yellow-600"
+                              : "bg-purple-600/20 text-purple-600"
                         }`}
                       >
                         {member.level}
@@ -856,7 +891,11 @@ const Members = () => {
                     </div>
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-gray-400">HikCentral:</span>
-                      <HikStatus member={member} onRetry={() => handleSyncToHikCentral(member)} retrying={hikSyncingId === member.id} />
+                      <HikStatus
+                        member={member}
+                        onRetry={() => handleSyncToHikCentral(member)}
+                        retrying={hikSyncingId === member.id}
+                      />
                     </div>
                   </div>
 
@@ -1086,7 +1125,6 @@ const Members = () => {
                   </div>
                 )}
 
-
                 {/* Medical Information */}
                 <div className="md:col-span-2 mt-4">
                   <h3 className="text-lg font-bold text-white mb-4">
@@ -1192,7 +1230,10 @@ const Members = () => {
                     type="number"
                     value={memberForm.membershipFee}
                     onChange={(e) =>
-                      setMemberForm({ ...memberForm, membershipFee: e.target.value })
+                      setMemberForm({
+                        ...memberForm,
+                        membershipFee: e.target.value,
+                      })
                     }
                     className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="Enter package fee"
@@ -1209,7 +1250,10 @@ const Members = () => {
                   <select
                     value={memberForm.packageDuration}
                     onChange={(e) =>
-                      setMemberForm({ ...memberForm, packageDuration: parseInt(e.target.value) })
+                      setMemberForm({
+                        ...memberForm,
+                        packageDuration: parseInt(e.target.value),
+                      })
                     }
                     className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     required
@@ -1230,7 +1274,10 @@ const Members = () => {
                     type="date"
                     value={memberForm.nextPaymentDate}
                     onChange={(e) =>
-                      setMemberForm({ ...memberForm, nextPaymentDate: e.target.value })
+                      setMemberForm({
+                        ...memberForm,
+                        nextPaymentDate: e.target.value,
+                      })
                     }
                     className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     required
@@ -1374,7 +1421,7 @@ const Members = () => {
                       <button
                         onClick={() => {
                           navigator.clipboard.writeText(
-                            generatedCredentials.username
+                            generatedCredentials.username,
                           );
                           showSuccess("Username copied!");
                         }}
@@ -1399,7 +1446,7 @@ const Members = () => {
                       <button
                         onClick={() => {
                           navigator.clipboard.writeText(
-                            generatedCredentials.password
+                            generatedCredentials.password,
                           );
                           showSuccess("Password copied!");
                         }}
@@ -1422,7 +1469,7 @@ const Members = () => {
                 <button
                   onClick={() => {
                     navigator.clipboard.writeText(
-                      generatedCredentials.memberCode
+                      generatedCredentials.memberCode,
                     );
                     showSuccess("Device code copied!");
                   }}
@@ -1667,8 +1714,8 @@ const Members = () => {
                         viewMember.level === "beginner"
                           ? "bg-blue-600/20 text-blue-600"
                           : viewMember.level === "intermediate"
-                          ? "bg-yellow-600/20 text-yellow-600"
-                          : "bg-purple-600/20 text-purple-600"
+                            ? "bg-yellow-600/20 text-yellow-600"
+                            : "bg-purple-600/20 text-purple-600"
                       }`}
                     >
                       {viewMember.level}
@@ -1688,21 +1735,38 @@ const Members = () => {
                   </div>
                   {viewMember.membershipFee != null && (
                     <div className="bg-gray-900 rounded-lg p-4">
-                      <div className="text-gray-400 text-sm mb-1">Package Fee</div>
-                      <div className="text-white font-medium">Rs. {viewMember.membershipFee}</div>
+                      <div className="text-gray-400 text-sm mb-1">
+                        Package Fee
+                      </div>
+                      <div className="text-white font-medium">
+                        Rs. {viewMember.membershipFee}
+                      </div>
                     </div>
                   )}
                   {viewMember.packageDuration && (
                     <div className="bg-gray-900 rounded-lg p-4">
-                      <div className="text-gray-400 text-sm mb-1">Package Duration</div>
-                      <div className="text-white font-medium">{viewMember.packageDuration} Month{viewMember.packageDuration > 1 ? 's' : ''}</div>
+                      <div className="text-gray-400 text-sm mb-1">
+                        Package Duration
+                      </div>
+                      <div className="text-white font-medium">
+                        {viewMember.packageDuration} Month
+                        {viewMember.packageDuration > 1 ? "s" : ""}
+                      </div>
                     </div>
                   )}
                   {viewMember.nextPaymentDate && (
                     <div className="bg-gray-900 rounded-lg p-4 col-span-2">
-                      <div className="text-gray-400 text-sm mb-1">Next Payment Date</div>
+                      <div className="text-gray-400 text-sm mb-1">
+                        Next Payment Date
+                      </div>
                       <div className="text-white font-medium">
-                        {new Date(viewMember.nextPaymentDate).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}
+                        {new Date(
+                          viewMember.nextPaymentDate,
+                        ).toLocaleDateString("en-US", {
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                        })}
                       </div>
                     </div>
                   )}
@@ -1777,7 +1841,9 @@ const Members = () => {
               {userIsAdmin && (
                 <div className="mb-3 flex items-center justify-between bg-gray-900 rounded-lg p-4">
                   <div>
-                    <p className="text-white font-medium text-sm">HikCentral Access</p>
+                    <p className="text-white font-medium text-sm">
+                      HikCentral Access
+                    </p>
                     <div className="mt-1">
                       <HikStatus
                         member={viewMember}
@@ -1791,7 +1857,9 @@ const Members = () => {
                     disabled={hikSyncingId === viewMember.id}
                     className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {hikSyncingId === viewMember.id ? "Syncing…" : "Sync to HikCentral"}
+                    {hikSyncingId === viewMember.id
+                      ? "Syncing…"
+                      : "Sync to HikCentral"}
                   </button>
                 </div>
               )}
@@ -1819,8 +1887,18 @@ const Members = () => {
               onClick={() => setShowQRModal(false)}
               className="absolute top-3 right-3 p-1 text-gray-400 hover:text-white"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
               </svg>
             </button>
 
@@ -1828,7 +1906,8 @@ const Members = () => {
               Member Self-Registration
             </h3>
             <p className="text-sm text-gray-400 mb-5">
-              Share this QR code with new members. They can scan it to fill in their own details.
+              Share this QR code with new members. They can scan it to fill in
+              their own details.
             </p>
 
             <div className="bg-white rounded-xl p-4 inline-block mb-4">
@@ -1848,8 +1927,18 @@ const Members = () => {
                 }}
                 className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition flex items-center justify-center gap-2"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"
+                  />
                 </svg>
                 Copy Registration Link
               </button>
@@ -1872,8 +1961,18 @@ const Members = () => {
                   }}
                   className="w-full py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition flex items-center justify-center gap-2"
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
+                    />
                   </svg>
                   Share Link
                 </button>
@@ -1881,7 +1980,8 @@ const Members = () => {
             </div>
 
             <p className="text-xs text-gray-500 mt-4">
-              Submitted registrations will appear in a pending list for your approval.
+              Submitted registrations will appear in a pending list for your
+              approval.
             </p>
           </div>
         </div>
