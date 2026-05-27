@@ -243,7 +243,7 @@ const Members = () => {
   };
 
   const generateMemberCode = (docId) => {
-    return `PG-${docId.substring(0, 6).toUpperCase()}`;
+    return `PG${docId.substring(0, 6).toUpperCase()}`;
   };
 
   const generateDevicePIN = () => {
