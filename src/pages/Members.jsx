@@ -246,6 +246,10 @@ const Members = () => {
     return `PG-${docId.substring(0, 6).toUpperCase()}`;
   };
 
+  const generateDevicePIN = () => {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+  };
+
   const generatePassword = () => {
     const chars =
       "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -318,14 +322,17 @@ const Members = () => {
       const memberRef = await addDoc(collection(db, "members"), memberData);
 
       const memberCode = generateMemberCode(memberRef.id);
+      const devicePIN = generateDevicePIN();
       await updateDoc(doc(db, "members", memberRef.id), {
         memberCode,
         firestoreId: memberRef.id,
+        devicePIN,
       });
       const { error: supabaseError } = await supabase.from("members").insert({
         employee_no: memberCode,
         name: memberForm.name,
         gym_id: currentGymId,
+        pin: devicePIN,
       });
 
       if (supabaseError) {
@@ -354,6 +361,7 @@ const Members = () => {
         password,
         name: memberForm.name,
         memberCode,
+        devicePIN,
       });
 
       // Send SMS notification (if enabled)
@@ -1479,6 +1487,30 @@ const Members = () => {
                 </button>
                 <p className="text-xs text-blue-400/70 mt-3">
                   Enter this code when registering member on HikCentral
+                </p>
+              </div>
+
+              <div className="bg-purple-50 border border-purple-400 rounded-lg p-4 mb-4 text-center">
+                <label className="block text-xs font-medium text-purple-600 mb-2">
+                  Device Enrollment PIN
+                </label>
+                <div className="text-3xl font-bold text-purple-600 tracking-widest mb-3">
+                  {generatedCredentials.devicePIN}
+                </div>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(
+                      generatedCredentials.devicePIN,
+                    );
+                    showSuccess("PIN copied!");
+                  }}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded text-sm font-medium transition"
+                >
+                  Copy PIN
+                </button>
+                <p className="text-xs text-purple-600/70 mt-3">
+                  Member enters this PIN at the device to register face &
+                  fingerprint
                 </p>
               </div>
 
