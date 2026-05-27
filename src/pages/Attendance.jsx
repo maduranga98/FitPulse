@@ -165,13 +165,13 @@ const Attendance = () => {
             </div>
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
               <p className="text-3xl font-bold text-green-400">
-                {attendance.filter((a) => a.verify_mode === "face").length}
+                {attendance.filter((a) => a.verifyMode === "face").length}
               </p>
               <p className="text-gray-400 text-sm mt-1">Face Verified</p>
             </div>
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
               <p className="text-3xl font-bold text-blue-400">
-                {attendance.filter((a) => a.enriched).length}
+                {attendance.length}
               </p>
               <p className="text-gray-400 text-sm mt-1">Identified</p>
             </div>
@@ -232,9 +232,9 @@ const Attendance = () => {
             ) : (
               <div className="divide-y divide-gray-800">
                 {attendance.map((record, index) => {
-                  const verifyMode = getVerifyMode(record.verify_mode);
+                  const verifyMode = getVerifyMode(record.verifyMode);
                   const name =
-                    record.member_name || record.employee_no || "Unknown";
+                    record.memberName || record.employeeNo || "Unknown";
                   const initial = name.charAt(0).toUpperCase();
 
                   return (
@@ -259,7 +259,7 @@ const Attendance = () => {
                         {/* Name + Code */}
                         <div>
                           <p className="text-white font-medium">
-                            {record.member_name || (
+                            {record.memberName || (
                               <span className="text-gray-500 italic">
                                 Unidentified
                               </span>
@@ -267,7 +267,7 @@ const Attendance = () => {
                           </p>
                           <div className="flex items-center gap-2 mt-1">
                             <span className="text-gray-500 text-xs">
-                              {record.employee_no}
+                              {record.employeeNo}
                             </span>
                             <span className="text-gray-700">•</span>
                             <span
@@ -275,11 +275,6 @@ const Attendance = () => {
                             >
                               {verifyMode.label}
                             </span>
-                            {!record.enriched && (
-                              <span className="text-xs px-2 py-0.5 rounded-full text-yellow-400 bg-yellow-400/10">
-                                Pending
-                              </span>
-                            )}
                           </div>
                         </div>
                       </div>
@@ -287,10 +282,10 @@ const Attendance = () => {
                       {/* Right — Time */}
                       <div className="text-right">
                         <p className="text-blue-400 font-bold text-lg">
-                          {formatTime(record.event_time)}
+                          {formatTime(record.eventTime?.toDate())}
                         </p>
                         <p className="text-gray-600 text-xs mt-1">
-                          {record.event_type || "check_in"}
+                          {record.eventType || "check_in"}
                         </p>
                       </div>
                     </div>
