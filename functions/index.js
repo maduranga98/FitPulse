@@ -16,7 +16,7 @@ import express from "express";
 admin.initializeApp();
 
 const app = express();
-app.use(express.raw({ type: "*/*" }));
+app.use(express.raw({ type: "*/*", limit: "10mb" }));
 // ========================================
 // 🔒 SECURITY HELPER FUNCTIONS
 // ========================================
@@ -915,13 +915,37 @@ export const hikvisionEvent = functions.https.onRequest(async (req, res) => {
     // Parse multipart/form-data Buffer sent by Hikvision device
     if (Buffer.isBuffer(body)) {
       const raw = body.toString("utf8");
-      const jsonMatch = raw.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        try {
-          body = JSON.parse(jsonMatch[0]);
-          console.log("📦 Parsed multipart body successfully");
-        } catch (e) {
-          console.log("❌ Failed to parse buffer:", e.message);
+
+      // Method 1: Use Content-Length to extract exact JSON bytes
+      const contentLengthMatch = raw.match(/Content-Length:\s*(\d+)/i);
+      if (contentLengthMatch) {
+        const contentLength = parseInt(contentLengthMatch[1]);
+        const jsonStart = raw.indexOf("\r\n\r\n");
+        if (jsonStart !== -1) {
+          const jsonStr = raw.substring(
+            jsonStart + 4,
+            jsonStart + 4 + contentLength,
+          );
+          try {
+            body = JSON.parse(jsonStr);
+            console.log("📦 Parsed multipart body using Content-Length");
+          } catch (e) {
+            console.log("❌ Content-Length parse failed:", e.message);
+          }
+        }
+      }
+
+      // Method 2: fallback — find first { and last }
+      if (Buffer.isBuffer(body) || body?.type === "Buffer") {
+        const start = raw.indexOf("{");
+        const end = raw.lastIndexOf("}");
+        if (start !== -1 && end !== -1 && end > start) {
+          try {
+            body = JSON.parse(raw.substring(start, end + 1));
+            console.log("📦 Parsed multipart body using bracket match");
+          } catch (e) {
+            console.log("❌ Bracket parse failed:", e.message);
+          }
         }
       }
     }
@@ -937,26 +961,22 @@ export const hikvisionEvent = functions.https.onRequest(async (req, res) => {
     }
 
     const employeeNo =
-      event?.employeeNoString ||
-      String(event?.employeeNo || "");
+      event?.employeeNoString || String(event?.employeeNo || "");
 
     console.log("👤 employeeNo:", employeeNo);
 
     if (!employeeNo) {
-      console.log("⏭️  No employeeNo — person not enrolled with Employee ID on device");
+      console.log(
+        "⏭️  No employeeNo — person not enrolled with Employee ID on device",
+      );
       res.status(200).send("OK");
       return;
     }
 
     const deviceIp =
-      body?.ipAddress ||
-      req.headers["x-forwarded-for"] ||
-      req.ip ||
-      "";
+      body?.ipAddress || req.headers["x-forwarded-for"] || req.ip || "";
 
-    const eventTime = body?.dateTime
-      ? new Date(body.dateTime)
-      : new Date();
+    const eventTime = body?.dateTime ? new Date(body.dateTime) : new Date();
 
     console.log("🔍 Looking up device IP:", deviceIp);
 
@@ -997,7 +1017,9 @@ export const hikvisionEvent = functions.https.onRequest(async (req, res) => {
       .get();
 
     if (memberSnap.empty) {
-      console.warn(`⚠️  No member with memberCode ${employeeNo} in gym ${gymId}`);
+      console.warn(
+        `⚠️  No member with memberCode ${employeeNo} in gym ${gymId}`,
+      );
       res.status(200).send("OK");
       return;
     }
@@ -1026,7 +1048,9 @@ export const hikvisionEvent = functions.https.onRequest(async (req, res) => {
       const lastTime =
         lastEvent.checkInTime?.toDate?.() || new Date(lastEvent.checkInTime);
       if (eventTime - lastTime < 10 * 1000) {
-        console.log(`⏭️  Duplicate event for ${member.name} within 10s, skipping`);
+        console.log(
+          `⏭️  Duplicate event for ${member.name} within 10s, skipping`,
+        );
         res.status(200).send("OK");
         return;
       }
@@ -1063,9 +1087,10 @@ export const hikvisionEvent = functions.https.onRequest(async (req, res) => {
       status: "online",
     });
 
-    console.log(`✅ Attendance recorded: ${member.name} via ${deviceData.name || deviceId}`);
+    console.log(
+      `✅ Attendance recorded: ${member.name} via ${deviceData.name || deviceId}`,
+    );
     res.status(200).send("OK");
-
   } catch (error) {
     console.error("❌ hikvisionEvent error:", error);
     res.status(200).send("OK");
