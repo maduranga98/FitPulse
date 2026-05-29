@@ -40,15 +40,14 @@ const Attendance = () => {
     });
   };
 
-  // Get verify mode label
-  const getVerifyMode = (mode) => {
+  // Get verify mode label — verifyMode lives inside rawEvent
+  const getVerifyMode = (record) => {
+    const mode = record.rawEvent?.verifyMode || record.verifyMode;
     const modes = {
       face: { label: "Face", color: "text-green-400 bg-green-400/10" },
-      fingerprint: {
-        label: "Fingerprint",
-        color: "text-blue-400 bg-blue-400/10",
-      },
+      fingerprint: { label: "Fingerprint", color: "text-blue-400 bg-blue-400/10" },
       card: { label: "Card", color: "text-yellow-400 bg-yellow-400/10" },
+      faceOrFpOrCardOrPw: { label: "Face/Card", color: "text-green-400 bg-green-400/10" },
     };
     return (
       modes[mode] || {
@@ -56,6 +55,13 @@ const Attendance = () => {
         color: "text-gray-400 bg-gray-400/10",
       }
     );
+  };
+
+  // Resolve check-in time from record
+  const getCheckInTime = (record) => {
+    if (record.checkInTime?.toDate) return record.checkInTime.toDate();
+    if (record.checkInTime?.seconds) return new Date(record.checkInTime.seconds * 1000);
+    return null;
   };
 
   // Load attendance for selected date
@@ -165,13 +171,16 @@ const Attendance = () => {
             </div>
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
               <p className="text-3xl font-bold text-green-400">
-                {attendance.filter((a) => a.verifyMode === "face").length}
+                {attendance.filter((a) => {
+                  const vm = a.rawEvent?.verifyMode || a.verifyMode || "";
+                  return vm.toLowerCase().includes("face");
+                }).length}
               </p>
               <p className="text-gray-400 text-sm mt-1">Face Verified</p>
             </div>
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
               <p className="text-3xl font-bold text-blue-400">
-                {attendance.length}
+                {attendance.filter((a) => a.memberName).length}
               </p>
               <p className="text-gray-400 text-sm mt-1">Identified</p>
             </div>
@@ -232,10 +241,15 @@ const Attendance = () => {
             ) : (
               <div className="divide-y divide-gray-800">
                 {attendance.map((record, index) => {
-                  const verifyMode = getVerifyMode(record.verifyMode);
+                  const verifyMode = getVerifyMode(record);
+                  const empNoTop = record.rawEvent?.employeeNo || record.employeeNo;
                   const name =
-                    record.memberName || record.employeeNo || "Unknown";
+                    record.memberName || empNoTop || "Unknown";
                   const initial = name.charAt(0).toUpperCase();
+
+                  const checkInTime = getCheckInTime(record);
+                  const empNo = record.rawEvent?.employeeNo || record.employeeNo;
+                  const evtType = record.rawEvent?.eventType || record.eventType || "check_in";
 
                   return (
                     <div
@@ -267,7 +281,7 @@ const Attendance = () => {
                           </p>
                           <div className="flex items-center gap-2 mt-1">
                             <span className="text-gray-500 text-xs">
-                              {record.employeeNo}
+                              {empNo}
                             </span>
                             <span className="text-gray-700">•</span>
                             <span
@@ -282,10 +296,10 @@ const Attendance = () => {
                       {/* Right — Time */}
                       <div className="text-right">
                         <p className="text-blue-400 font-bold text-lg">
-                          {formatTime(record.eventTime?.toDate())}
+                          {checkInTime ? formatTime(checkInTime) : "—"}
                         </p>
                         <p className="text-gray-600 text-xs mt-1">
-                          {record.eventType || "check_in"}
+                          {evtType}
                         </p>
                       </div>
                     </div>
