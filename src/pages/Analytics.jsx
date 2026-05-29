@@ -21,6 +21,7 @@ const Analytics = () => {
       "complaint-analytics": "/analytics/complaints",
       "operational-analytics": "/analytics/operational",
       "exercise-analytics": "/analytics/exercises",
+      "attendance-analytics": "/analytics/attendance",
     };
 
     if (routes[analyticId]) {
@@ -155,6 +156,27 @@ const Analytics = () => {
         "Category Distribution",
         "Exercise Trends",
         "Usage Statistics",
+      ],
+    },
+    {
+      id: "attendance-analytics",
+      title: "Attendance Analytics",
+      description: "Analyze member check-in trends and peak hours",
+      icon: (
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+        />
+      ),
+      color: "green",
+      metrics: [
+        "Daily Check-ins",
+        "Peak Hours",
+        "Top Members",
+        "Verification Methods",
+        "Attendance Trends",
       ],
     },
   ];

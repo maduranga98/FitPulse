@@ -328,16 +328,16 @@ const Members = () => {
         firestoreId: memberRef.id,
         devicePIN,
       });
-      const { error: supabaseError } = await supabase.from("members").insert({
-        employee_no: memberCode,
-        name: memberForm.name,
-        gym_id: currentGymId,
-        pin: devicePIN,
-      });
-
-      if (supabaseError) {
-        console.error("Supabase member save error:", supabaseError);
-        // Don't block registration — just log it
+      if (supabase) {
+        const { error: supabaseError } = await supabase.from("members").insert({
+          employee_no: memberCode,
+          name: memberForm.name,
+          gym_id: currentGymId,
+          pin: devicePIN,
+        });
+        if (supabaseError) {
+          console.error("Supabase member save error:", supabaseError);
+        }
       }
       // Auto-sync to HikCentral if enabled for this gym
       try {
@@ -896,14 +896,6 @@ const Members = () => {
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-gray-400">Age:</span>
                       <span className="text-white">{member.age} years</span>
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-gray-400">HikCentral:</span>
-                      <HikStatus
-                        member={member}
-                        onRetry={() => handleSyncToHikCentral(member)}
-                        retrying={hikSyncingId === member.id}
-                      />
                     </div>
                   </div>
 
@@ -1469,7 +1461,7 @@ const Members = () => {
 
               <div className="bg-blue-600/10 border border-blue-600/30 rounded-lg p-4 mb-4 text-center">
                 <label className="block text-xs font-medium text-blue-400 mb-2">
-                  HikCentral Device Code
+                  Device Code
                 </label>
                 <div className="text-3xl font-bold text-blue-500 tracking-widest mb-3">
                   {generatedCredentials.memberCode}
@@ -1485,9 +1477,6 @@ const Members = () => {
                 >
                   Copy Code
                 </button>
-                <p className="text-xs text-blue-400/70 mt-3">
-                  Enter this code when registering member on HikCentral
-                </p>
               </div>
 
               <div className="bg-purple-50 border border-purple-400 rounded-lg p-4 mb-4 text-center">
@@ -1870,31 +1859,6 @@ const Members = () => {
                 </div>
               )}
 
-              {userIsAdmin && (
-                <div className="mb-3 flex items-center justify-between bg-gray-900 rounded-lg p-4">
-                  <div>
-                    <p className="text-white font-medium text-sm">
-                      HikCentral Access
-                    </p>
-                    <div className="mt-1">
-                      <HikStatus
-                        member={viewMember}
-                        onRetry={() => handleSyncToHikCentral(viewMember)}
-                        retrying={hikSyncingId === viewMember.id}
-                      />
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => handleSyncToHikCentral(viewMember)}
-                    disabled={hikSyncingId === viewMember.id}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {hikSyncingId === viewMember.id
-                      ? "Syncing…"
-                      : "Sync to HikCentral"}
-                  </button>
-                </div>
-              )}
 
               <button
                 onClick={() => setViewMember(null)}

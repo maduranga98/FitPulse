@@ -159,7 +159,7 @@ const Devices = () => {
             </svg>
             <p className="text-gray-300 font-medium text-lg">No devices added yet</p>
             <p className="text-gray-500 text-sm mt-1 max-w-xs">
-              Add your Hikvision device to start tracking attendance
+              Add your access control device to start tracking attendance
             </p>
             <button
               onClick={openAdd}

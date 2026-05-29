@@ -124,69 +124,69 @@ const Reports = () => {
     }));
   };
 
+  const getAttendanceDate = (record) => {
+    if (record.eventTime?.toDate) return record.eventTime.toDate();
+    if (record.eventTime?.seconds) return new Date(record.eventTime.seconds * 1000);
+    if (record.date) return new Date(record.date);
+    if (record.checkInTime) return new Date(record.checkInTime);
+    return null;
+  };
+
   const generateMonthlyActiveMembers = () => {
     const [year, month] = selectedMonth.split("-");
     const startDate = new Date(year, parseInt(month) - 1, 1);
     const endDate = new Date(year, parseInt(month), 0);
+    endDate.setHours(23, 59, 59, 999);
 
     const monthAttendance = attendance.filter((record) => {
-      const recordDate = new Date(record.date || record.checkInTime);
-      return recordDate >= startDate && recordDate <= endDate;
+      const d = getAttendanceDate(record);
+      return d && d >= startDate && d <= endDate;
     });
 
-    const activeMemberIds = new Set(monthAttendance.map((r) => r.memberId));
-    return members
-      .filter((m) => activeMemberIds.has(m.id))
-      .map((member) => {
-        const memberAttendance = monthAttendance.filter((a) => a.memberId === member.id);
-        return {
-          "Member Number": member.id.slice(-6).toUpperCase(),
-          Name: member.name,
-          "Attendance Count": memberAttendance.length,
-          Status: member.status,
-          Email: member.email || "N/A",
-        };
-      });
+    // Group by employeeNo (device ID) or memberName
+    const byEmployee = {};
+    monthAttendance.forEach((r) => {
+      const key = r.employeeNo || r.memberId || "unknown";
+      if (!byEmployee[key]) byEmployee[key] = { count: 0, name: r.memberName || r.employeeNo || "N/A" };
+      byEmployee[key].count++;
+    });
+
+    return Object.entries(byEmployee).map(([empNo, info]) => ({
+      "Employee No": empNo,
+      Name: info.name,
+      "Attendance Count": info.count,
+    }));
   };
 
   const generateAttendanceReport = () => {
     const [year, month] = selectedMonth.split("-");
     const startDate = new Date(year, parseInt(month) - 1, 1);
     const endDate = new Date(year, parseInt(month), 0);
+    endDate.setHours(23, 59, 59, 999);
 
     const monthAttendance = attendance.filter((record) => {
-      const recordDate = new Date(record.date || record.checkInTime);
-      return recordDate >= startDate && recordDate <= endDate;
+      const d = getAttendanceDate(record);
+      return d && d >= startDate && d <= endDate;
     });
 
-    const attendanceByMember = {};
-    const attendanceByDate = {};
-
+    const byEmployee = {};
     monthAttendance.forEach((record) => {
-      const date = new Date(record.date || record.checkInTime).toLocaleDateString();
-      const memberId = record.memberId;
-
-      if (!attendanceByMember[memberId]) {
-        attendanceByMember[memberId] = { count: 0, dates: [] };
+      const key = record.employeeNo || record.memberId || "unknown";
+      const d = getAttendanceDate(record);
+      const dateStr = d ? d.toLocaleDateString("en-LK") : "N/A";
+      if (!byEmployee[key]) {
+        byEmployee[key] = { name: record.memberName || key, count: 0, lastDate: dateStr };
       }
-      attendanceByMember[memberId].count++;
-      attendanceByMember[memberId].dates.push(date);
-
-      if (!attendanceByDate[date]) {
-        attendanceByDate[date] = 0;
-      }
-      attendanceByDate[date]++;
+      byEmployee[key].count++;
+      byEmployee[key].lastDate = dateStr;
     });
 
-    return Object.keys(attendanceByMember).map((memberId) => {
-      const member = members.find((m) => m.id === memberId);
-      return {
-        "Member Number": memberId.slice(-6).toUpperCase(),
-        "Member Name": member?.name || "N/A",
-        "Total Days": attendanceByMember[memberId].count,
-        "Last Attendance": attendanceByMember[memberId].dates[attendanceByMember[memberId].dates.length - 1] || "N/A",
-      };
-    });
+    return Object.entries(byEmployee).map(([empNo, info]) => ({
+      "Employee No": empNo,
+      "Member Name": info.name,
+      "Total Check-ins": info.count,
+      "Last Attendance": info.lastDate,
+    }));
   };
 
   const generateMonthlyPaymentReport = () => {
