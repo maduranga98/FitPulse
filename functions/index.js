@@ -911,80 +911,54 @@ export const hikvisionEvent = functions.https.onRequest(async (req, res) => {
 
   try {
     let body = req.body;
-    console.log("📡 Hikvision event received:", JSON.stringify(body));
 
-    // Handle multipart/form-data Buffer from device
-    let body = req.body;
-    console.log("📡 Hikvision event received:", JSON.stringify(body));
-
-    // Parse multipart form-data from Hikvision device
+    // Parse multipart/form-data Buffer sent by Hikvision device
     if (Buffer.isBuffer(body)) {
       const raw = body.toString("utf8");
       const jsonMatch = raw.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         try {
           body = JSON.parse(jsonMatch[0]);
-          console.log("📦 Parsed multipart body:", JSON.stringify(body));
+          console.log("📦 Parsed multipart body successfully");
         } catch (e) {
           console.log("❌ Failed to parse buffer:", e.message);
         }
       }
     }
 
+    console.log("📡 Hikvision event body:", JSON.stringify(body));
+
     const event = body?.AccessControllerEvent || null;
+
+    if (!event) {
+      console.log("⏭️  No AccessControllerEvent in payload, ignoring");
+      res.status(200).send("OK");
+      return;
+    }
+
     const employeeNo =
       event?.employeeNoString ||
-      String(event?.employeeNo || "") ||
-      body?.employeeNoString ||
-      "";
+      String(event?.employeeNo || "");
 
     console.log("👤 employeeNo:", employeeNo);
-    console.log("📋 event keys:", event ? Object.keys(event) : "no event");
-
-    if (!event) {
-      console.log("⏭️  No AccessControllerEvent in payload, ignoring");
-      res.status(200).send("OK");
-      return;
-    }
 
     if (!employeeNo) {
-      console.log(
-        "⏭️  No employeeNo in event — person not enrolled or unrecognized scan",
-      );
-      res.status(200).send("OK");
-      return;
-    }
-    // Handle multipart form fields
-    if (body?.event_log) {
-      try {
-        body = JSON.parse(body.event_log);
-      } catch (e) {
-        console.log("Failed to parse event_log:", e.message);
-      }
-    }
-
-    const event =
-      body?.AccessControllerEvent ||
-      body?.Events?.[0]?.AccessControllerEvent ||
-      null;
-
-    if (!event) {
-      console.log("⏭️  No AccessControllerEvent in payload, ignoring");
-      console.log("Body keys:", Object.keys(body || {}));
+      console.log("⏭️  No employeeNo — person not enrolled with Employee ID on device");
       res.status(200).send("OK");
       return;
     }
 
-    const employeeNo = event.employeeNoString || String(event.employeeNo || "");
     const deviceIp =
-      body.ipAddress || req.headers["x-forwarded-for"] || req.ip || "";
-    const eventTime = event.time ? new Date(event.time) : new Date();
+      body?.ipAddress ||
+      req.headers["x-forwarded-for"] ||
+      req.ip ||
+      "";
 
-    if (!employeeNo) {
-      console.warn("⚠️  No employeeNo in event, ignoring");
-      res.status(200).send("OK");
-      return;
-    }
+    const eventTime = body?.dateTime
+      ? new Date(body.dateTime)
+      : new Date();
+
+    console.log("🔍 Looking up device IP:", deviceIp);
 
     // 1. Look up device by IP across all gyms
     const devicesSnap = await db
@@ -1004,6 +978,8 @@ export const hikvisionEvent = functions.https.onRequest(async (req, res) => {
     const gymId = deviceData.gymId;
     const deviceId = deviceDoc.id;
 
+    console.log(`✅ Device found: ${deviceId} for gym: ${gymId}`);
+
     // 2. Validate gym
     const gymDoc = await db.collection("gyms").doc(gymId).get();
     if (!gymDoc.exists || gymDoc.data().status !== "active") {
@@ -1012,7 +988,7 @@ export const hikvisionEvent = functions.https.onRequest(async (req, res) => {
       return;
     }
 
-    // 3. Look up member by hikvisionUserId within the gym
+    // 3. Look up member by memberCode
     const memberSnap = await db
       .collection("members")
       .where("gymId", "==", gymId)
@@ -1021,9 +997,7 @@ export const hikvisionEvent = functions.https.onRequest(async (req, res) => {
       .get();
 
     if (memberSnap.empty) {
-      console.warn(
-        `⚠️  No member with hikvisionUserId ${employeeNo} in gym ${gymId}`,
-      );
+      console.warn(`⚠️  No member with memberCode ${employeeNo} in gym ${gymId}`);
       res.status(200).send("OK");
       return;
     }
@@ -1038,8 +1012,6 @@ export const hikvisionEvent = functions.https.onRequest(async (req, res) => {
     }
 
     // 4. Deduplicate: same member + device within 10 seconds = skip
-    const dedupeWindowMs = 10 * 1000;
-    const dedupeKey = `${deviceId}_${memberDoc.id}`;
     const recentSnap = await db
       .collection("attendance")
       .where("gymId", "==", gymId)
@@ -1053,10 +1025,8 @@ export const hikvisionEvent = functions.https.onRequest(async (req, res) => {
       const lastEvent = recentSnap.docs[0].data();
       const lastTime =
         lastEvent.checkInTime?.toDate?.() || new Date(lastEvent.checkInTime);
-      if (eventTime - lastTime < dedupeWindowMs) {
-        console.log(
-          `⏭️  Duplicate event for ${member.name} within 10s, skipping`,
-        );
+      if (eventTime - lastTime < 10 * 1000) {
+        console.log(`⏭️  Duplicate event for ${member.name} within 10s, skipping`);
         res.status(200).send("OK");
         return;
       }
@@ -1081,9 +1051,8 @@ export const hikvisionEvent = functions.https.onRequest(async (req, res) => {
       status: "present",
       rawEvent: {
         employeeNo,
-        cardNo: event.cardNo || null,
-        eventType: event.eventType || null,
-        verifyMode: event.verifyMode || null,
+        verifyMode: event?.currentVerifyMode || null,
+        eventType: body?.eventType || null,
       },
       createdAt: admin.firestore.Timestamp.now(),
     });
@@ -1094,13 +1063,11 @@ export const hikvisionEvent = functions.https.onRequest(async (req, res) => {
       status: "online",
     });
 
-    console.log(
-      `✅ Attendance recorded: ${member.name} via ${deviceData.name || deviceId}`,
-    );
+    console.log(`✅ Attendance recorded: ${member.name} via ${deviceData.name || deviceId}`);
     res.status(200).send("OK");
+
   } catch (error) {
     console.error("❌ hikvisionEvent error:", error);
-    // Always return 200 to prevent device retry storms
     res.status(200).send("OK");
   }
 });
