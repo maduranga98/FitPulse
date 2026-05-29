@@ -52,6 +52,7 @@ import InstructorMemberAnalytics from "./pages/instructor/InstructorMemberAnalyt
 import InstructorClasses from "./pages/instructor/InstructorClasses";
 import SelfRegister from "./pages/SelfRegister";
 import DeviceManagement from "./pages/DeviceManagement";
+import Devices from "./pages/Devices";
 import Reports from "./pages/Reports";
 import Attendance from "./pages/Attendance";
 
@@ -438,7 +439,7 @@ function App() {
                         "gym_manager",
                       ]}
                     >
-                      <DeviceManagement />
+                      <Devices />
                     </RoleRoute>
                   </ProtectedRoute>
                 }
