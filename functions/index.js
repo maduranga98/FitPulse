@@ -11,9 +11,12 @@ import * as metaWhatsAppService from "./services/metaWhatsAppService.js";
 import * as hik from "./services/hikCentralService.js";
 // import { createClient } from "@supabase/supabase-js";
 import ws from "ws";
+import express from "express";
 
 admin.initializeApp();
 
+const app = express();
+app.use(express.raw({ type: "*/*" }));
 // ========================================
 // 🔒 SECURITY HELPER FUNCTIONS
 // ========================================
@@ -107,7 +110,9 @@ export const enrichAttendance = functions.https.onRequest(async (req, res) => {
         employeeNo: employee_no,
         memberName: member.name,
         gymId: member.gym_id,
-        eventTime: admin.firestore.Timestamp.fromDate(new Date(event_time)),
+        eventTime: admin.firestore.Timestamp.fromDate(
+          new Date(event_time || Date.now()),
+        ),
         eventType: event_type || "check_in",
         verifyMode: verify_mode || "face",
         deviceSerial: device_serial || null,
@@ -905,11 +910,59 @@ export const hikvisionEvent = functions.https.onRequest(async (req, res) => {
   const db = admin.firestore();
 
   try {
-    const body = req.body;
+    let body = req.body;
     console.log("📡 Hikvision event received:", JSON.stringify(body));
 
-    // Hikvision sends events in various envelope shapes depending on firmware.
-    // We support both the flat AccessControllerEvent and the nested JSON envelope.
+    // Handle multipart/form-data Buffer from device
+    let body = req.body;
+    console.log("📡 Hikvision event received:", JSON.stringify(body));
+
+    // Parse multipart form-data from Hikvision device
+    if (Buffer.isBuffer(body)) {
+      const raw = body.toString("utf8");
+      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          body = JSON.parse(jsonMatch[0]);
+          console.log("📦 Parsed multipart body:", JSON.stringify(body));
+        } catch (e) {
+          console.log("❌ Failed to parse buffer:", e.message);
+        }
+      }
+    }
+
+    const event = body?.AccessControllerEvent || null;
+    const employeeNo =
+      event?.employeeNoString ||
+      String(event?.employeeNo || "") ||
+      body?.employeeNoString ||
+      "";
+
+    console.log("👤 employeeNo:", employeeNo);
+    console.log("📋 event keys:", event ? Object.keys(event) : "no event");
+
+    if (!event) {
+      console.log("⏭️  No AccessControllerEvent in payload, ignoring");
+      res.status(200).send("OK");
+      return;
+    }
+
+    if (!employeeNo) {
+      console.log(
+        "⏭️  No employeeNo in event — person not enrolled or unrecognized scan",
+      );
+      res.status(200).send("OK");
+      return;
+    }
+    // Handle multipart form fields
+    if (body?.event_log) {
+      try {
+        body = JSON.parse(body.event_log);
+      } catch (e) {
+        console.log("Failed to parse event_log:", e.message);
+      }
+    }
+
     const event =
       body?.AccessControllerEvent ||
       body?.Events?.[0]?.AccessControllerEvent ||
@@ -917,6 +970,7 @@ export const hikvisionEvent = functions.https.onRequest(async (req, res) => {
 
     if (!event) {
       console.log("⏭️  No AccessControllerEvent in payload, ignoring");
+      console.log("Body keys:", Object.keys(body || {}));
       res.status(200).send("OK");
       return;
     }
@@ -962,7 +1016,7 @@ export const hikvisionEvent = functions.https.onRequest(async (req, res) => {
     const memberSnap = await db
       .collection("members")
       .where("gymId", "==", gymId)
-      .where("hikvisionUserId", "==", employeeNo)
+      .where("memberCode", "==", employeeNo)
       .limit(1)
       .get();
 
