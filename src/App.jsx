@@ -43,6 +43,7 @@ import ScheduleAnalytics from "./pages/ScheduleAnalytics";
 import ComplaintAnalytics from "./pages/ComplaintAnalytics";
 import OperationalAnalytics from "./pages/OperationalAnalytics";
 import ExerciseAnalytics from "./pages/ExerciseAnalytics";
+import AttendanceAnalytics from "./pages/AttendanceAnalytics";
 import InstructorDashboard from "./pages/InstructorDashboard";
 import InstructorExercises from "./pages/instructor/InstructorExercises";
 import InstructorWorkouts from "./pages/instructor/InstructorWorkouts";
@@ -287,6 +288,23 @@ function App() {
                       ]}
                     >
                       <ExerciseAnalytics />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/analytics/attendance"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute
+                      allowedRoles={[
+                        "admin",
+                        "manager",
+                        "gym_admin",
+                        "gym_manager",
+                      ]}
+                    >
+                      <AttendanceAnalytics />
                     </RoleRoute>
                   </ProtectedRoute>
                 }

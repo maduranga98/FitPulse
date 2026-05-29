@@ -32,7 +32,7 @@ const EVENT_LABELS = {
 };
 
 const methodLabel = (method) => {
-  if (method === "hikvision-openapi") return "HikCentral";
+  if (method === "hikvision-openapi") return "Access Control";
   if (method === "cloud-vision-multi-photo" || method === "cloud-vision") return "AI Vision";
   if (method === "manual") return "Manual";
   return "Other";
