@@ -17,8 +17,8 @@ export const getTodayAttendance = async (gymId) => {
   const q = query(
     collection(db, "attendance"),
     where("gymId", "==", gymId),
-    where("eventTime", ">=", Timestamp.fromDate(start)),
-    orderBy("eventTime", "desc"),
+    where("checkInTime", ">=", Timestamp.fromDate(start)),
+    orderBy("checkInTime", "desc"),
   );
 
   const snapshot = await getDocs(q);
@@ -26,12 +26,12 @@ export const getTodayAttendance = async (gymId) => {
 };
 
 // Get attendance for a specific member
-export const getMemberAttendance = async (gymId, employeeNo, limit = 30) => {
+export const getMemberAttendance = async (gymId, memberId, limit = 30) => {
   const q = query(
     collection(db, "attendance"),
     where("gymId", "==", gymId),
-    where("employeeNo", "==", employeeNo),
-    orderBy("eventTime", "desc"),
+    where("memberId", "==", memberId),
+    orderBy("checkInTime", "desc"),
   );
 
   const snapshot = await getDocs(q);
@@ -45,9 +45,9 @@ export const getAttendanceRange = async (gymId, startDate, endDate) => {
   const q = query(
     collection(db, "attendance"),
     where("gymId", "==", gymId),
-    where("eventTime", ">=", Timestamp.fromDate(startDate)),
-    where("eventTime", "<=", Timestamp.fromDate(endDate)),
-    orderBy("eventTime", "desc"),
+    where("checkInTime", ">=", Timestamp.fromDate(startDate)),
+    where("checkInTime", "<=", Timestamp.fromDate(endDate)),
+    orderBy("checkInTime", "desc"),
   );
 
   const snapshot = await getDocs(q);
@@ -62,8 +62,8 @@ export const subscribeToAttendance = (gymId, onNewEvent) => {
   const q = query(
     collection(db, "attendance"),
     where("gymId", "==", gymId),
-    where("eventTime", ">=", Timestamp.fromDate(start)),
-    orderBy("eventTime", "desc"),
+    where("checkInTime", ">=", Timestamp.fromDate(start)),
+    orderBy("checkInTime", "desc"),
   );
 
   const unsubscribe = onSnapshot(q, (snapshot) => {

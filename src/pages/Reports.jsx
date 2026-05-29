@@ -125,12 +125,14 @@ const Reports = () => {
   };
 
   const getAttendanceDate = (record) => {
-    if (record.eventTime?.toDate) return record.eventTime.toDate();
-    if (record.eventTime?.seconds) return new Date(record.eventTime.seconds * 1000);
+    if (record.checkInTime?.toDate) return record.checkInTime.toDate();
+    if (record.checkInTime?.seconds) return new Date(record.checkInTime.seconds * 1000);
     if (record.date) return new Date(record.date);
-    if (record.checkInTime) return new Date(record.checkInTime);
     return null;
   };
+
+  const getEmpNo = (record) =>
+    record.rawEvent?.employeeNo || record.employeeNo || record.memberId;
 
   const generateMonthlyActiveMembers = () => {
     const [year, month] = selectedMonth.split("-");
@@ -146,8 +148,8 @@ const Reports = () => {
     // Group by employeeNo (device ID) or memberName
     const byEmployee = {};
     monthAttendance.forEach((r) => {
-      const key = r.employeeNo || r.memberId || "unknown";
-      if (!byEmployee[key]) byEmployee[key] = { count: 0, name: r.memberName || r.employeeNo || "N/A" };
+      const key = getEmpNo(r) || "unknown";
+      if (!byEmployee[key]) byEmployee[key] = { count: 0, name: r.memberName || key };
       byEmployee[key].count++;
     });
 
@@ -171,7 +173,7 @@ const Reports = () => {
 
     const byEmployee = {};
     monthAttendance.forEach((record) => {
-      const key = record.employeeNo || record.memberId || "unknown";
+      const key = getEmpNo(record) || "unknown";
       const d = getAttendanceDate(record);
       const dateStr = d ? d.toLocaleDateString("en-LK") : "N/A";
       if (!byEmployee[key]) {

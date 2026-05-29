@@ -40,10 +40,16 @@ const AttendanceAnalytics = () => {
   const [topMembers, setTopMembers] = useState([]);
 
   const getDate = (record) => {
-    if (record.eventTime?.toDate) return record.eventTime.toDate();
-    if (record.eventTime?.seconds) return new Date(record.eventTime.seconds * 1000);
+    if (record.checkInTime?.toDate) return record.checkInTime.toDate();
+    if (record.checkInTime?.seconds) return new Date(record.checkInTime.seconds * 1000);
     return null;
   };
+
+  const getEmployeeNo = (record) =>
+    record.rawEvent?.employeeNo || record.employeeNo || record.memberId;
+
+  const getVerifyMode = (record) =>
+    record.rawEvent?.verifyMode || record.verifyMode || "unknown";
 
   useEffect(() => {
     if (!gymId) return;
@@ -78,7 +84,7 @@ const AttendanceAnalytics = () => {
       return d && d >= today;
     }).length;
 
-    const uniqueMembers = new Set(data.map((r) => r.employeeNo || r.memberId).filter(Boolean)).size;
+    const uniqueMembers = new Set(data.map((r) => getEmployeeNo(r)).filter(Boolean)).size;
 
     // Daily buckets
     const daily = {};
@@ -108,7 +114,7 @@ const AttendanceAnalytics = () => {
     // Verify mode breakdown
     const modes = {};
     data.forEach((r) => {
-      const m = r.verifyMode || "unknown";
+      const m = getVerifyMode(r);
       modes[m] = (modes[m] || 0) + 1;
     });
     const modeArr = Object.entries(modes).map(([name, value]) => ({ name, value }));
@@ -116,7 +122,7 @@ const AttendanceAnalytics = () => {
     // Top members by attendance
     const byMember = {};
     data.forEach((r) => {
-      const key = r.employeeNo || r.memberId || "unknown";
+      const key = getEmployeeNo(r) || "unknown";
       if (!byMember[key]) byMember[key] = { name: r.memberName || key, count: 0 };
       byMember[key].count++;
     });
