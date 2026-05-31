@@ -1075,20 +1075,59 @@ const InstructorExercises = () => {
                 <div className="mb-6">
                   <p className="text-gray-400 text-sm mb-2">Exercise Videos</p>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {selectedExercise.videoURLs.filter(url => url && url !== "").map((url, index) => (
-                      <div key={index} className="aspect-video bg-gray-900 rounded-lg overflow-hidden">
-                        <video
-                          src={url}
-                          controls
-                          className="w-full h-full"
-                          onError={(e) => {
-                            e.target.parentElement.style.display = 'none';
-                          }}
-                        >
-                          Your browser does not support the video tag.
-                        </video>
-                      </div>
-                    ))}
+                    {selectedExercise.videoURLs.filter(url => url && url !== "").map((url, index) => {
+                      const isYouTube = url.includes("youtube.com") || url.includes("youtu.be");
+                      const isVimeo = url.includes("vimeo.com");
+                      const isDirectVideo =
+                        url.includes("firebase") ||
+                        url.includes("storage.googleapis.com") ||
+                        /\.(mp4|webm|ogg|mov|m4v)(\?|$)/i.test(url);
+
+                      let embedSrc = url;
+                      if (isYouTube) {
+                        let id = "";
+                        if (url.includes("youtube.com/watch?v=")) id = url.split("v=")[1]?.split("&")[0];
+                        else if (url.includes("youtu.be/")) id = url.split("youtu.be/")[1]?.split("?")[0];
+                        else if (url.includes("youtube.com/shorts/")) id = url.split("shorts/")[1]?.split("?")[0]?.split("/")[0];
+                        if (id) embedSrc = `https://www.youtube.com/embed/${id}`;
+                      } else if (isVimeo) {
+                        const id = url.split("vimeo.com/")[1]?.split(/[?#/]/)[0];
+                        if (id) embedSrc = `https://player.vimeo.com/video/${id}`;
+                      }
+
+                      return (
+                        <div key={index} className="aspect-video bg-gray-900 rounded-lg overflow-hidden">
+                          {isYouTube || isVimeo ? (
+                            <iframe
+                              src={embedSrc}
+                              title={`Exercise video ${index + 1}`}
+                              className="w-full h-full"
+                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+                              allowFullScreen
+                            />
+                          ) : isDirectVideo ? (
+                            <video
+                              src={url}
+                              controls
+                              playsInline
+                              preload="metadata"
+                              className="w-full h-full"
+                            >
+                              Your browser does not support the video tag.
+                            </video>
+                          ) : (
+                            <a
+                              href={url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center justify-center w-full h-full text-blue-400 hover:text-blue-300 underline text-sm p-4 text-center"
+                            >
+                              Open video link
+                            </a>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}

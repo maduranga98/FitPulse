@@ -1592,14 +1592,40 @@ const Exercises = ({ onLogout, onNavigate }) => {
                       {/* Video Preview */}
                       {url && url.startsWith("https://") && (
                         <div className="mt-2">
-                          <video
-                            src={url}
-                            className="w-full h-48 rounded-lg bg-gray-900"
-                            controls
-                            onError={(e) => {
-                              e.target.style.display = "none";
-                            }}
-                          />
+                          {url.includes("youtube.com") ||
+                          url.includes("youtu.be") ? (
+                            <iframe
+                              src={(() => {
+                                let id = "";
+                                if (url.includes("youtube.com/watch?v="))
+                                  id = url.split("v=")[1]?.split("&")[0];
+                                else if (url.includes("youtu.be/"))
+                                  id = url.split("youtu.be/")[1]?.split("?")[0];
+                                else if (url.includes("youtube.com/shorts/"))
+                                  id = url
+                                    .split("shorts/")[1]
+                                    ?.split("?")[0]
+                                    ?.split("/")[0];
+                                return id
+                                  ? `https://www.youtube.com/embed/${id}`
+                                  : url;
+                              })()}
+                              title="Video preview"
+                              className="w-full h-48 rounded-lg bg-gray-900"
+                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                              allowFullScreen
+                            />
+                          ) : (
+                            <video
+                              src={url}
+                              className="w-full h-48 rounded-lg bg-gray-900"
+                              controls
+                              playsInline
+                              preload="metadata"
+                            >
+                              Your browser does not support the video tag.
+                            </video>
+                          )}
                         </div>
                       )}
                     </div>
