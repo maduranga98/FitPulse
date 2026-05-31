@@ -62,14 +62,16 @@ const MealPlanManagement = () => {
       // Fetch meal plans
       const mealPlansQuery = query(
         collection(db, "mealPlans"),
-        where("gymId", "==", currentUser.gymId),
-        orderBy("createdAt", "desc")
+        where("gymId", "==", currentUser.gymId)
       );
       const mealPlansSnapshot = await getDocs(mealPlansQuery);
-      const mealPlansData = mealPlansSnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
+      const mealPlansData = mealPlansSnapshot.docs
+        .map((doc) => ({ id: doc.id, ...doc.data() }))
+        .sort((a, b) => {
+          const aTime = a.createdAt?.toMillis?.() ?? 0;
+          const bTime = b.createdAt?.toMillis?.() ?? 0;
+          return bTime - aTime;
+        });
 
       // Fetch members
       const membersQuery = query(
@@ -242,12 +244,22 @@ const MealPlanManagement = () => {
       const { db } = await import("../config/firebase");
       const { collection, addDoc, doc, updateDoc, Timestamp } = await import("firebase/firestore");
 
+      const parsedDuration = parseInt(mealPlanForm.duration);
+      if (!mealPlanForm.name?.trim()) {
+        alert("Please enter a meal plan name.");
+        return;
+      }
+      if (!parsedDuration || parsedDuration < 1) {
+        alert("Please enter a valid duration (number of days).");
+        return;
+      }
+
       const mealPlanData = {
-        name: mealPlanForm.name,
+        name: mealPlanForm.name.trim(),
         description: mealPlanForm.description,
         targetCalories: parseInt(mealPlanForm.targetCalories) || null,
         meals: mealPlanForm.meals,
-        duration: parseInt(mealPlanForm.duration),
+        duration: parsedDuration,
         notes: mealPlanForm.notes,
         gymId: currentUser.gymId,
       };

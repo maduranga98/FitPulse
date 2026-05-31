@@ -46,6 +46,7 @@ const Schedules = () => {
   const [scheduleForm, setScheduleForm] = useState({
     title: "",
     description: "",
+    tags: [],
     days: [],
     cardio: [{ exerciseId: "", time: "" }],
     warmUp: [{ exerciseId: "", reps: "", rest: "" }],
@@ -60,6 +61,12 @@ const Schedules = () => {
     notes: "",
   });
 
+  const SCHEDULE_TAGS = [
+    "Beginner", "Intermediate", "Advanced",
+    "Weight Loss", "Muscle Building", "Strength",
+    "Cardio", "Flexibility", "HIIT", "Recovery",
+  ];
+
   const daysOfWeek = [
     { id: "monday", label: "Monday" },
     { id: "tuesday", label: "Tuesday" },
@@ -69,6 +76,15 @@ const Schedules = () => {
     { id: "saturday", label: "Saturday" },
     { id: "sunday", label: "Sunday" },
   ];
+
+  const toggleTag = (tag) => {
+    setScheduleForm((prev) => ({
+      ...prev,
+      tags: prev.tags.includes(tag)
+        ? prev.tags.filter((t) => t !== tag)
+        : [...prev.tags, tag],
+    }));
+  };
 
   const fetchData = async () => {
     try {
@@ -82,22 +98,23 @@ const Schedules = () => {
         schedulesQuery = query(
           collection(db, "schedules"),
           where("memberId", "==", currentUser.id),
-          where("gymId", "==", currentGymId),
-          orderBy("startDate", "desc")
+          where("gymId", "==", currentGymId)
         );
       } else {
         schedulesQuery = query(
           collection(db, "schedules"),
-          where("gymId", "==", currentGymId),
-          orderBy("createdAt", "desc")
+          where("gymId", "==", currentGymId)
         );
       }
 
       const schedulesSnapshot = await getDocs(schedulesQuery);
-      const allSchedulesData = schedulesSnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
+      const allSchedulesData = schedulesSnapshot.docs
+        .map((doc) => ({ id: doc.id, ...doc.data() }))
+        .sort((a, b) => {
+          const aTime = a.createdAt?.toMillis?.() ?? 0;
+          const bTime = b.createdAt?.toMillis?.() ?? 0;
+          return bTime - aTime;
+        });
 
       // Separate templates from assigned schedules
       const templatesData = allSchedulesData.filter(
@@ -113,12 +130,17 @@ const Schedules = () => {
         const membersSnapshot = await getDocs(
           query(collection(db, "members"), where("gymId", "==", currentGymId))
         );
-        const membersData = membersSnapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        }));
+        const membersData = membersSnapshot.docs
+          .map((doc) => ({ id: doc.id, ...doc.data() }))
+          .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
         setMembers(membersData);
-        setAssignedSchedules(assignedData);
+        setAssignedSchedules(
+          assignedData.sort((a, b) => {
+            const aTime = a.assignedAt?.toMillis?.() ?? a.createdAt?.toMillis?.() ?? 0;
+            const bTime = b.assignedAt?.toMillis?.() ?? b.createdAt?.toMillis?.() ?? 0;
+            return bTime - aTime;
+          })
+        );
       }
 
       // ✅ NEW: Fetch gym-specific categories
@@ -235,7 +257,20 @@ const Schedules = () => {
         (ex) => ex.exerciseId
       );
 
-      const cleanedWorkouts = scheduleForm.workouts
+      // Expand "all" day entries into individual day entries
+      const expandedWorkouts = [];
+      const allDayIds = ["monday","tuesday","wednesday","thursday","friday","saturday","sunday"];
+      scheduleForm.workouts.forEach((workout) => {
+        if (workout.day === "all") {
+          allDayIds.forEach((dayId) => {
+            expandedWorkouts.push({ ...workout, day: dayId });
+          });
+        } else {
+          expandedWorkouts.push(workout);
+        }
+      });
+
+      const cleanedWorkouts = expandedWorkouts
         .map((workout) => ({
           ...workout,
           exercises: workout.exercises.filter(
@@ -250,6 +285,7 @@ const Schedules = () => {
       const scheduleData = {
         title: scheduleForm.title,
         description: scheduleForm.description,
+        tags: scheduleForm.tags || [],
         days: scheduleForm.days,
         cardio: cleanedCardio,
         warmUp: cleanedWarmUp,
@@ -325,6 +361,7 @@ const Schedules = () => {
     setScheduleForm({
       title: schedule.title,
       description: schedule.description || "",
+      tags: schedule.tags || [],
       startDate: schedule.startDate?.toDate
         ? schedule.startDate.toDate().toISOString().split("T")[0]
         : "",
@@ -365,6 +402,7 @@ const Schedules = () => {
     setScheduleForm({
       title: "",
       description: "",
+      tags: [],
       startDate: "",
       endDate: "",
       days: [],
@@ -633,6 +671,7 @@ const Schedules = () => {
     setScheduleForm({
       title: `Copy of ${schedule.title}`,
       description: schedule.description || "",
+      tags: schedule.tags || [],
       startDate: "",
       endDate: "",
       days: schedule.days || [],
@@ -797,7 +836,16 @@ const Schedules = () => {
                         {schedule.status}
                       </span>
                     </div>
-                    <p className="text-sm text-gray-400 mb-4 line-clamp-2">{schedule.description}</p>
+                    <p className="text-sm text-gray-400 mb-3 line-clamp-2">{schedule.description}</p>
+                    {schedule.tags?.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mb-3">
+                        {schedule.tags.map((tag) => (
+                          <span key={tag} className="px-2 py-0.5 bg-blue-600/10 text-blue-400 border border-blue-600/20 rounded-full text-xs">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                     <div className="flex items-center gap-3 mb-4 text-sm text-gray-400">
                       <span>{schedule.workouts?.length || 0} workout days</span>
                     </div>
@@ -1034,6 +1082,34 @@ const Schedules = () => {
                     placeholder="Brief description of the workout program..."
                     rows="3"
                   />
+                </div>
+
+                {/* Schedule Tags */}
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Schedule Tags
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {SCHEDULE_TAGS.map((tag) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => toggleTag(tag)}
+                        className={`px-3 py-1.5 rounded-full text-sm font-medium transition border ${
+                          scheduleForm.tags.includes(tag)
+                            ? "bg-blue-600 border-blue-500 text-white"
+                            : "bg-gray-900 border-gray-700 text-gray-400 hover:border-gray-500 hover:text-white"
+                        }`}
+                      >
+                        {tag}
+                      </button>
+                    ))}
+                  </div>
+                  {scheduleForm.tags.length > 0 && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Selected: {scheduleForm.tags.join(", ")}
+                    </p>
+                  )}
                 </div>
 
                 {/* Show dates only when editing an assigned schedule */}
@@ -1274,6 +1350,7 @@ const Schedules = () => {
                           }
                           className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                         >
+                          <option value="all">All Days (Mon–Sun)</option>
                           {daysOfWeek.map((day) => (
                             <option key={day.id} value={day.id}>
                               {day.label}
