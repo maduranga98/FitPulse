@@ -136,6 +136,8 @@ const SuperAdminDashboard = () => {
       });
 
       // Step 3: Send SMS with credentials
+      let smsSent = false;
+      let smsErrorMessage = null;
       try {
         await sendGymRegistrationSMS(
           {
@@ -145,14 +147,17 @@ const SuperAdminDashboard = () => {
           gymForm.adminUsername,
           gymForm.adminPassword
         );
+        smsSent = true;
       } catch (smsError) {
         console.warn("⚠️ SMS sending failed:", smsError);
-        // Continue — SMS failure shouldn't block registration
+        smsErrorMessage = smsError?.message || "Unknown error";
       }
 
       setSmsStatus({
-        type: "success",
-        message: "✓ Gym registered and credentials sent via SMS!",
+        type: smsSent ? "success" : "error",
+        message: smsSent
+          ? "✓ Gym registered and credentials sent via SMS!"
+          : `Gym registered, but SMS failed: ${smsErrorMessage}. Share credentials manually: ${gymForm.adminUsername} / ${gymForm.adminPassword}`,
       });
 
       // Reset form and refresh list
