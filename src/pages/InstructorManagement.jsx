@@ -48,14 +48,12 @@ const InstructorManagement = () => {
       const instructorsQuery = query(
         collection(db, "users"),
         where("gymId", "==", currentUser.gymId),
-        where("role", "==", "trainer"),
-        orderBy("name", "asc")
+        where("role", "==", "trainer")
       );
       const snapshot = await getDocs(instructorsQuery);
-      const data = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
+      const data = snapshot.docs
+        .map((doc) => ({ id: doc.id, ...doc.data() }))
+        .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
 
       setInstructors(data);
       setLoading(false);
@@ -125,13 +123,15 @@ const InstructorManagement = () => {
         });
         alert("Instructor updated successfully! ✓");
       } else {
+        let secondaryApp = null;
         try {
           // Use a secondary Firebase app to avoid changing the current auth session
-          const { initializeApp, deleteApp } = await import("firebase/app");
+          const { initializeApp, deleteApp, getApps, getApp } = await import("firebase/app");
           const { getAuth, createUserWithEmailAndPassword } = await import("firebase/auth");
           const { firebaseConfig } = await import("../config/firebase");
 
-          const secondaryApp = initializeApp(firebaseConfig, "SecondaryApp");
+          const appName = "SecondaryApp_" + Date.now();
+          secondaryApp = initializeApp(firebaseConfig, appName);
           const secondaryAuth = getAuth(secondaryApp);
 
           const userCredential = await createUserWithEmailAndPassword(
@@ -140,26 +140,29 @@ const InstructorManagement = () => {
             instructorForm.password
           );
 
-          // Add instructor to users collection
           await addDoc(collection(db, "users"), {
             ...instructorData,
             uid: userCredential.user.uid,
             username: instructorForm.username,
-            password: instructorForm.password,
             createdAt: Timestamp.now(),
           });
 
-          // Clean up the secondary app to avoid resource leaks
-          await deleteApp(secondaryApp);
-
-          alert(`Instructor created successfully! 🎉\n\nUsername: ${instructorForm.username}\nPassword: ${instructorForm.password}\n\nPlease share these credentials with the instructor.`);
+          alert(`Instructor created successfully! 🎉\n\nEmail: ${instructorForm.email}\nPassword: ${instructorForm.password}\n\nPlease share these credentials with the instructor.`);
         } catch (authError) {
           if (authError.code === "auth/email-already-in-use") {
             alert("This email is already registered in the system.");
+          } else if (authError.code === "auth/weak-password") {
+            alert("Password must be at least 6 characters.");
           } else {
-            throw authError;
+            console.error("Auth error:", authError);
+            alert(`Failed to create instructor account: ${authError.message}`);
           }
           return;
+        } finally {
+          if (secondaryApp) {
+            const { deleteApp } = await import("firebase/app");
+            await deleteApp(secondaryApp).catch(() => {});
+          }
         }
       }
 
