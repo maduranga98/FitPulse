@@ -628,6 +628,26 @@ const Schedules = () => {
     }
   };
 
+  const handleDuplicateTemplate = (schedule) => {
+    setEditingSchedule(null); // new document, not an update
+    setScheduleForm({
+      title: `Copy of ${schedule.title}`,
+      description: schedule.description || "",
+      startDate: "",
+      endDate: "",
+      days: schedule.days || [],
+      cardio: schedule.cardio?.length > 0 ? schedule.cardio : [{ exerciseId: "", time: "" }],
+      warmUp: schedule.warmUp?.length > 0 ? schedule.warmUp : [{ exerciseId: "", reps: "", rest: "" }],
+      workouts: schedule.workouts?.length > 0
+        ? schedule.workouts
+        : [{ day: "monday", exercises: [{ exerciseId: "", sets: [{ reps: "", rest: "" }] }] }],
+      warmDown: schedule.warmDown?.length > 0 ? schedule.warmDown : [{ exerciseId: "", time: "" }],
+      status: "active",
+      notes: schedule.notes || "",
+    });
+    setShowAddSchedule(true);
+  };
+
   // New: Toggle member selection for assignment
   const toggleMemberSelection = (memberId) => {
     setSelectedMembersToAssign((prev) =>
@@ -791,6 +811,15 @@ const Schedules = () => {
                         title="Assign to Members"
                       >
                         Assign
+                      </button>
+                      <button
+                        onClick={() => handleDuplicateTemplate(schedule)}
+                        className="px-3 py-2 bg-teal-600/20 hover:bg-teal-600/30 text-teal-400 rounded-lg text-sm font-medium transition"
+                        title="Duplicate Template"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
                       </button>
                       <button onClick={() => handleEditSchedule(schedule)} className="px-3 py-2 bg-yellow-600/20 hover:bg-yellow-600/30 text-yellow-600 rounded-lg text-sm font-medium transition">
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
