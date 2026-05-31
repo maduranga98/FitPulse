@@ -1367,8 +1367,8 @@ const Members = () => {
 
       {/* Generated Credentials Modal */}
       {generatedCredentials && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-gray-800 rounded-2xl border border-gray-700 w-full max-w-md">
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-gray-800 rounded-2xl border border-gray-700 w-full max-w-md max-h-[90vh] overflow-y-auto my-auto">
             <div className="border-b border-gray-700 p-6">
               <div className="flex items-center gap-3 mb-2">
                 <div className="w-12 h-12 bg-green-600 rounded-full flex items-center justify-center">

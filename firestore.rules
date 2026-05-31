@@ -44,7 +44,7 @@ service cloud.firestore {
                     && isValidPhone(request.resource.data.phone)
                     && request.resource.data.status in ['active', 'inactive'];
       allow update: if true;
-      allow delete: if false;
+      allow delete: if true;
     }
 
     // ============================================
@@ -59,7 +59,7 @@ service cloud.firestore {
                     && isValidEmail(request.resource.data.email)
                     && request.resource.data.role in ['super_admin', 'gym_admin', 'gym_manager'];
       allow update: if true;
-      allow delete: if false;
+      allow delete: if true;
     }
 
     // ============================================
