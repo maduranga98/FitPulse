@@ -29,8 +29,20 @@ const ExerciseDetailModal = ({ exercise, isOpen, onClose }) => {
       videoId = url.split("v=")[1]?.split("&")[0];
     } else if (url.includes("youtu.be/")) {
       videoId = url.split("youtu.be/")[1]?.split("?")[0];
+    } else if (url.includes("youtube.com/shorts/")) {
+      videoId = url.split("shorts/")[1]?.split("?")[0]?.split("/")[0];
+    } else if (url.includes("youtube.com/embed/")) {
+      videoId = url.split("embed/")[1]?.split("?")[0]?.split("/")[0];
     }
-    return videoId ? `https://www.youtube.com/embed/${videoId}` : null;
+    return videoId ? `https://www.youtube.com/embed/${videoId}` : url;
+  };
+
+  const isVimeoVideo = (url) =>
+    url.includes("vimeo.com") && !url.includes("player.vimeo.com");
+
+  const getVimeoEmbedUrl = (url) => {
+    const id = url.split("vimeo.com/")[1]?.split(/[?#/]/)[0];
+    return id ? `https://player.vimeo.com/video/${id}` : url;
   };
 
   return (
@@ -312,22 +324,35 @@ const ExerciseDetailModal = ({ exercise, isOpen, onClose }) => {
                       key={idx}
                       className="bg-gray-900 border border-gray-700 rounded-xl overflow-hidden"
                     >
-                      {isFirebaseVideo(video) ? (
-                        // Uploaded video - embedded player
-                        <video
-                          src={video}
-                          className="w-full rounded-lg bg-black"
-                          controls
-                          preload="metadata"
-                        />
-                      ) : isYouTubeVideo(video) ? (
+                      {isYouTubeVideo(video) ? (
                         // YouTube video - embedded iframe
                         <iframe
                           src={getYouTubeEmbedUrl(video)}
+                          title={`${exercise.name} video ${idx + 1}`}
                           className="w-full aspect-video rounded-lg"
                           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                           allowFullScreen
                         />
+                      ) : isVimeoVideo(video) ? (
+                        <iframe
+                          src={getVimeoEmbedUrl(video)}
+                          title={`${exercise.name} video ${idx + 1}`}
+                          className="w-full aspect-video rounded-lg"
+                          allow="autoplay; fullscreen; picture-in-picture"
+                          allowFullScreen
+                        />
+                      ) : isFirebaseVideo(video) ||
+                        /\.(mp4|webm|ogg|mov|m4v)(\?|$)/i.test(video) ? (
+                        // Uploaded / direct video file - embedded player
+                        <video
+                          src={video}
+                          className="w-full rounded-lg bg-black"
+                          controls
+                          playsInline
+                          preload="metadata"
+                        >
+                          Your browser does not support the video tag.
+                        </video>
                       ) : (
                         // External link - clickable
                         <a
