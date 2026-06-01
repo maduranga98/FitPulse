@@ -54,6 +54,7 @@ import InstructorClasses from "./pages/instructor/InstructorClasses";
 import SelfRegister from "./pages/SelfRegister";
 import DeviceManagement from "./pages/DeviceManagement";
 import Devices from "./pages/Devices";
+import AdminProfile from "./pages/AdminProfile";
 import Reports from "./pages/Reports";
 import Attendance from "./pages/Attendance";
 
@@ -458,6 +459,23 @@ function App() {
                       ]}
                     >
                       <Devices />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin-profile"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute
+                      allowedRoles={[
+                        "admin",
+                        "manager",
+                        "gym_admin",
+                        "gym_manager",
+                      ]}
+                    >
+                      <AdminProfile />
                     </RoleRoute>
                   </ProtectedRoute>
                 }
