@@ -904,22 +904,91 @@ export const onMemberCreated = functions.firestore
   .document("members/{memberId}")
   .onCreate(async (snap, context) => {
     const member = snap.data();
+    const db = admin.firestore();
 
-    // Skip if no phone number
-    if (!member.phone) {
-      console.log(`⏭️ Member ${snap.id} has no phone, skipping WhatsApp`);
+    // Resolve phone: members store mobile/whatsapp, not phone
+    const phoneNumber = member.mobile || member.whatsapp || member.phone;
+    if (!phoneNumber) {
+      console.log(`⏭️ Member ${snap.id} has no phone number, skipping notifications`);
       return null;
     }
 
-    // Skip if WhatsApp not configured
+    // ── SMS: send credentials ─────────────────────────────────────────────────
+    try {
+      // Fetch gym SMS settings (token stored in Firestore)
+      let API_TOKEN = process.env.TEXTLK_API_TOKEN;
+      let SENDER_ID = process.env.TEXTLK_SENDER_ID || "Lumora Tech";
+
+      if (member.gymId) {
+        const gymSnap = await db.collection("gyms").doc(member.gymId).get();
+        if (gymSnap.exists) {
+          const smsSettings = gymSnap.data()?.settings?.sms || {};
+          if (smsSettings.apiToken) API_TOKEN = smsSettings.apiToken;
+          if (smsSettings.senderId) SENDER_ID = smsSettings.senderId;
+        }
+      }
+
+      if (API_TOKEN) {
+        const APP_URL = process.env.APP_URL || "https://app.pulsedgym.com";
+        const memberName = member.name || "Member";
+        const username = member.username || member.memberCode || snap.id;
+        const password = member.password || member.defaultPassword || "";
+
+        const smsMessage = `💪 Welcome to PulsedGym, ${memberName}!\n\nYou have been registered as a member.\n\n📱 LOGIN DETAILS:\nURL: ${APP_URL}/login\nUsername: ${username}\nPassword: ${password}\n\n⚠️ Keep your credentials safe.`;
+
+        // Validate and format phone (Sri Lankan: 0XXXXXXXXX → 94XXXXXXXXX)
+        let cleaned = phoneNumber.replace(/\D/g, "");
+        if (cleaned.startsWith("0")) cleaned = "94" + cleaned.slice(1);
+        else if (cleaned.length === 9) cleaned = "94" + cleaned;
+
+        if (/^94\d{9}$/.test(cleaned)) {
+          const ENDPOINT = process.env.TEXTLK_HTTP_ENDPOINT || "https://app.text.lk/api/v3/sms/send";
+          const smsResponse = await fetch(ENDPOINT, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${API_TOKEN}`,
+              "Content-Type": "application/json",
+              Accept: "application/json",
+            },
+            body: JSON.stringify({
+              recipient: cleaned,
+              sender_id: SENDER_ID,
+              type: "plain",
+              message: smsMessage,
+            }),
+          });
+          const smsResult = await smsResponse.json();
+          if (smsResponse.ok && smsResult.status !== "error") {
+            console.log(`✅ SMS sent to ${cleaned} for member ${snap.id}`);
+            await db.collection("notifications").add({
+              gymId: member.gymId,
+              memberId: snap.id,
+              memberName: member.name,
+              type: "member_registration",
+              channel: "sms",
+              status: "sent",
+              sentAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+          } else {
+            console.error(`❌ SMS API error for member ${snap.id}:`, smsResult.message);
+          }
+        } else {
+          console.warn(`⚠️ Invalid phone number for member ${snap.id}: ${phoneNumber}`);
+        }
+      } else {
+        console.warn(`⚠️ No SMS API token configured for gym ${member.gymId}, skipping SMS`);
+      }
+    } catch (smsError) {
+      console.error("❌ onMemberCreated SMS error:", smsError);
+    }
+
+    // ── WhatsApp ──────────────────────────────────────────────────────────────
     if (!metaWhatsAppService.isConfigured()) {
-      console.warn("⚠️ WhatsApp not configured, skipping member notification");
+      console.warn("⚠️ WhatsApp not configured, skipping WhatsApp notification");
       return null;
     }
 
     try {
-      // Get gym name
-      const db = admin.firestore();
       const gymDoc = await db.collection("gyms").doc(member.gymId).get();
       const gymName = gymDoc.exists ? gymDoc.data().name : "Your Gym";
 
@@ -928,21 +997,20 @@ export const onMemberCreated = functions.firestore
         {
           memberName: member.name || "Member",
           username: member.username || member.memberCode || snap.id,
-          password: member.defaultPassword || "pulsed@123",
+          password: member.password || member.defaultPassword || "pulsed@123",
           gymName: gymName,
         },
       );
 
       const result = await metaWhatsAppService.sendTemplateMessage(
-        member.phone,
+        phoneNumber,
         "member_registration",
         "en",
         components,
       );
 
       if (result.success) {
-        console.log(`✅ Member registration WhatsApp sent to ${member.phone}`);
-        // Log to notifications collection
+        console.log(`✅ Member registration WhatsApp sent to ${phoneNumber}`);
         await db.collection("notifications").add({
           gymId: member.gymId,
           memberId: snap.id,
@@ -954,10 +1022,7 @@ export const onMemberCreated = functions.firestore
           sentAt: admin.firestore.FieldValue.serverTimestamp(),
         });
       } else {
-        console.error(
-          `❌ Failed to send member registration WhatsApp:`,
-          result.error,
-        );
+        console.error(`❌ Failed to send member registration WhatsApp:`, result.error);
       }
     } catch (error) {
       console.error("❌ onMemberCreated WhatsApp error:", error);
