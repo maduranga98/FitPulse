@@ -57,7 +57,7 @@ service cloud.firestore {
       allow read: if true;
       allow create: if hasFields(['username', 'name', 'email', 'role', 'gymId'])
                     && isValidEmail(request.resource.data.email)
-                    && request.resource.data.role in ['super_admin', 'gym_admin', 'gym_manager'];
+                    && request.resource.data.role in ['super_admin', 'gym_admin', 'gym_manager', 'trainer'];
       allow update: if true;
       allow delete: if true;
     }
@@ -522,7 +522,7 @@ service cloud.firestore {
     // ============================================
     match /mealPlans/{mealPlanId} {
       allow read: if true;
-      allow create: if hasFields(['memberId', 'gymId']);
+      allow create: if hasFields(['gymId']);
       allow update: if true;
       allow delete: if true;
     }
