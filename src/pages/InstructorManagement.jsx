@@ -136,9 +136,11 @@ const InstructorManagement = () => {
         alert("Instructor updated successfully! ✓");
       } else {
         let secondaryApp = null;
+        let userCredential = null;
+
+        // Step 1: Create Firebase Auth account
         try {
-          // Use a secondary Firebase app to avoid changing the current auth session
-          const { initializeApp, deleteApp, getApps, getApp } = await import("firebase/app");
+          const { initializeApp } = await import("firebase/app");
           const { getAuth, createUserWithEmailAndPassword } = await import("firebase/auth");
           const { firebaseConfig } = await import("../config/firebase");
 
@@ -146,59 +148,11 @@ const InstructorManagement = () => {
           secondaryApp = initializeApp(firebaseConfig, appName);
           const secondaryAuth = getAuth(secondaryApp);
 
-          const userCredential = await createUserWithEmailAndPassword(
+          userCredential = await createUserWithEmailAndPassword(
             secondaryAuth,
             instructorForm.email,
             instructorForm.password
           );
-
-          const usersRef = await addDoc(collection(db, "users"), {
-            ...instructorData,
-            uid: userCredential.user.uid,
-            username: instructorForm.username,
-            password: instructorForm.password,
-            createdAt: Timestamp.now(),
-          });
-
-          // Save a mirrored record in the members collection with the same ID format
-          const memberRecord = {
-            ...instructorData,
-            uid: userCredential.user.uid,
-            username: instructorForm.username,
-            password: instructorForm.password,
-            usersDocId: usersRef.id,
-            status: "active",
-            createdAt: Timestamp.now(),
-          };
-          const membersRef = await addDoc(collection(db, "members"), memberRecord);
-          const memberCode = generateMemberCode(membersRef.id);
-          await updateDoc(doc(db, "members", membersRef.id), {
-            memberCode,
-            firestoreId: membersRef.id,
-          });
-          // Back-link the members doc ID into the users record
-          await updateDoc(doc(db, "users", usersRef.id), {
-            membersDocId: membersRef.id,
-            memberCode,
-          });
-
-          // Send SMS with credentials if phone number is provided
-          if (instructorForm.phone) {
-            try {
-              await sendInstructorCredentialsSMS(
-                { name: instructorForm.name, phone: instructorForm.phone },
-                instructorForm.username,
-                instructorForm.password,
-                currentUser.gymId
-              );
-              alert(`Instructor created successfully! 🎉\n\nMember ID: ${memberCode}\nEmail: ${instructorForm.email}\nUsername: ${instructorForm.username}\nPassword: ${instructorForm.password}\n\nLogin credentials have been sent via SMS to ${instructorForm.phone}.`);
-            } catch (smsError) {
-              console.error("SMS sending failed:", smsError);
-              alert(`Instructor created successfully! 🎉\n\nMember ID: ${memberCode}\nEmail: ${instructorForm.email}\nUsername: ${instructorForm.username}\nPassword: ${instructorForm.password}\n\nNote: SMS could not be sent (${smsError.message}). Please share credentials manually.`);
-            }
-          } else {
-            alert(`Instructor created successfully! 🎉\n\nMember ID: ${memberCode}\nEmail: ${instructorForm.email}\nUsername: ${instructorForm.username}\nPassword: ${instructorForm.password}\n\nPlease share these credentials with the instructor.`);
-          }
         } catch (authError) {
           if (authError.code === "auth/email-already-in-use") {
             alert("This email is already registered in the system.");
@@ -206,7 +160,7 @@ const InstructorManagement = () => {
             alert("Password must be at least 6 characters.");
           } else {
             console.error("Auth error:", authError);
-            alert(`Failed to create instructor account: ${authError.message}`);
+            alert(`Failed to create Firebase account: ${authError.message}`);
           }
           return;
         } finally {
@@ -214,6 +168,56 @@ const InstructorManagement = () => {
             const { deleteApp } = await import("firebase/app");
             await deleteApp(secondaryApp).catch(() => {});
           }
+        }
+
+        // Step 2: Write to Firestore (users + members collections)
+        const usersRef = await addDoc(collection(db, "users"), {
+          ...instructorData,
+          uid: userCredential.user.uid,
+          username: instructorForm.username,
+          password: instructorForm.password,
+          createdAt: Timestamp.now(),
+        });
+
+        // Mirror to members collection — mobile/whatsapp map from phone to satisfy Firestore rule
+        const memberRecord = {
+          ...instructorData,
+          uid: userCredential.user.uid,
+          username: instructorForm.username,
+          password: instructorForm.password,
+          mobile: instructorForm.phone || "",
+          whatsapp: instructorForm.phone || "",
+          usersDocId: usersRef.id,
+          status: "active",
+          createdAt: Timestamp.now(),
+        };
+        const membersDocRef = await addDoc(collection(db, "members"), memberRecord);
+        const memberCode = generateMemberCode(membersDocRef.id);
+        await updateDoc(doc(db, "members", membersDocRef.id), {
+          memberCode,
+          firestoreId: membersDocRef.id,
+        });
+        await updateDoc(doc(db, "users", usersRef.id), {
+          membersDocId: membersDocRef.id,
+          memberCode,
+        });
+
+        // Step 3: Send SMS with credentials
+        if (instructorForm.phone) {
+          try {
+            await sendInstructorCredentialsSMS(
+              { name: instructorForm.name, phone: instructorForm.phone },
+              instructorForm.username,
+              instructorForm.password,
+              currentUser.gymId
+            );
+            alert(`Instructor created successfully! 🎉\n\nMember ID: ${memberCode}\nEmail: ${instructorForm.email}\nUsername: ${instructorForm.username}\nPassword: ${instructorForm.password}\n\nLogin credentials have been sent via SMS to ${instructorForm.phone}.`);
+          } catch (smsError) {
+            console.error("SMS sending failed:", smsError);
+            alert(`Instructor created successfully! 🎉\n\nMember ID: ${memberCode}\nEmail: ${instructorForm.email}\nUsername: ${instructorForm.username}\nPassword: ${instructorForm.password}\n\nNote: SMS could not be sent (${smsError.message}). Please share credentials manually.`);
+          }
+        } else {
+          alert(`Instructor created successfully! 🎉\n\nMember ID: ${memberCode}\nEmail: ${instructorForm.email}\nUsername: ${instructorForm.username}\nPassword: ${instructorForm.password}\n\nPlease share these credentials with the instructor.`);
         }
       }
 
