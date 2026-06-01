@@ -1,20 +1,10 @@
 // src/services/smsService.js
 /**
- * SMS Service for text.lk API v3
- * Handles sending SMS notifications for gym registrations and payments
- *
- * API v3 uses:
- * - JSON request body (not form-urlencoded)
- * - Bearer token authentication (Authorization header)
- * - Endpoint: /api/v3/sms/send
+ * SMS Service - routes through Firebase Cloud Function (sendSMSNotification)
+ * to avoid CORS issues and keep the API token server-side.
  */
 
 import { APP_URL } from "../config/app";
-
-// text.lk API v3 Configuration
-const TEXTLK_HTTP_ENDPOINT = import.meta.env.VITE_HTTP_ENDPOINT;
-const API_TOKEN = import.meta.env.VITE_API_TOKEN;
-const SENDER_ID = import.meta.env.VITE_TEXTLK_SENDER_ID || "Lumora Tech";
 
 /**
  * Validate phone number (Sri Lankan format) - IMPROVED VERSION
@@ -136,117 +126,48 @@ For any queries, contact your gym.`;
 };
 
 /**
- * Send SMS via text.lk API v3
+ * Send SMS via Firebase Cloud Function (avoids CORS, keeps API token server-side)
  * @param {string|string[]} recipients - Single phone or array of phones
  * @param {string} message - SMS message content
- * @returns {Promise<Object>} - API response
+ * @returns {Promise<Object>} - Result object
  */
 const sendSMS = async (recipients, message) => {
   try {
-    if (!API_TOKEN) {
-      throw new Error(
-        "SMS API token not configured. Add VITE_API_TOKEN to environment."
-      );
-    }
-
-    if (!TEXTLK_HTTP_ENDPOINT) {
-      throw new Error(
-        "SMS HTTP endpoint not configured. Add VITE_HTTP_ENDPOINT to environment."
-      );
-    }
-
     if (!recipients || !message) {
       throw new Error("Recipients and message are required");
     }
 
-    // Handle single or array
     const recipientList = Array.isArray(recipients) ? recipients : [recipients];
-
-    // console.log("🔍 Processing phone numbers:", recipientList);
-
-    // Validate and format all
-    const formattedPhones = recipientList
-      .map(validatePhoneNumber)
-      .filter(Boolean);
-
-    // console.log("✅ Valid phone numbers after validation:", formattedPhones);
+    const formattedPhones = recipientList.map(validatePhoneNumber).filter(Boolean);
 
     if (formattedPhones.length === 0) {
-      const errorMsg = `No valid phone numbers provided. Original input: ${JSON.stringify(
-        recipientList
-      )}`;
-      console.error("❌", errorMsg);
-      throw new Error(errorMsg);
-    }
-
-    if (formattedPhones.length < recipientList.length) {
-      console.warn(
-        `⚠️ ${
-          recipientList.length - formattedPhones.length
-        } invalid phone numbers skipped`
+      throw new Error(
+        `No valid phone numbers provided. Input: ${JSON.stringify(recipientList)}`
       );
     }
 
-    // Validate message length
     if (message.length > 3000) {
       throw new Error("Message too long (max 3000 characters)");
     }
 
-    // ✅ FIXED: Use text.lk API v3 with JSON body and Bearer token
-    const requestBody = {
-      recipient: formattedPhones.join(","), // Comma-separated for multiple
-      sender_id: SENDER_ID,
-      type: "plain", // Required: 'plain' for text messages
-      message: message,
-    };
+    const { getFunctions, httpsCallable } = await import("firebase/functions");
+    const { app } = await import("../config/firebase");
+    const fns = getFunctions(app);
+    const sendSMSCallable = httpsCallable(fns, "sendSMSNotification");
 
-    // console.log("📤 Sending SMS via text.lk API v3");
-    // console.log("  Recipients:", formattedPhones.join(", "));
-    // console.log("  Sender ID:", SENDER_ID);
-    // console.log("  Type: plain");
-    // console.log("  Message length:", message.length);
-    // console.log("  API Endpoint:", TEXTLK_HTTP_ENDPOINT);
-    // console.log("  🔍 Request Body:", JSON.stringify(requestBody, null, 2));
-
-    const response = await fetch(TEXTLK_HTTP_ENDPOINT, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${API_TOKEN}`,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify(requestBody),
+    const result = await sendSMSCallable({
+      recipient: formattedPhones.join(","),
+      message,
     });
-
-    const data = await response.json();
-
-    // console.log("📥 SMS Response:", {
-    //   status: data.status,
-    //   message: data.message,
-    //   smsCount: data.data?.sms_count,
-    //   fullResponse: data,
-    // });
-
-    if (!response.ok || data.status === "error") {
-      throw new Error(
-        data.message ||
-          `SMS API error: ${response.status} ${response.statusText}`
-      );
-    }
 
     return {
       success: true,
-      data,
+      data: result.data,
       recipients: formattedPhones,
       message,
     };
   } catch (error) {
-    console.error("❌ SMS Service Error:", error);
-    console.error("❌ Error details:", {
-      name: error.name,
-      message: error.message,
-      stack: error.stack,
-    });
+    console.error("❌ SMS Service Error:", error.message);
     return {
       success: false,
       error: error.message,

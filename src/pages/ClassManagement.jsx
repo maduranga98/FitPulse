@@ -43,6 +43,7 @@ const ClassManagement = () => {
       time: "09:00",
       duration: 60,
     },
+    startDate: "",
     maxCapacity: 20,
     description: "",
     isActive: true,
@@ -133,6 +134,7 @@ const ClassManagement = () => {
           time: "09:00",
           duration: 60,
         },
+        startDate: classItem.startDate || "",
         maxCapacity: classItem.maxCapacity,
         description: classItem.description || "",
         isActive: classItem.isActive,
@@ -149,6 +151,7 @@ const ClassManagement = () => {
           time: "09:00",
           duration: 60,
         },
+        startDate: "",
         maxCapacity: 20,
         description: "",
         isActive: true,
@@ -172,6 +175,7 @@ const ClassManagement = () => {
         instructorId: classForm.instructorId,
         instructorName: selectedInstructor?.name || classForm.instructorName,
         schedule: classForm.schedule,
+        startDate: classForm.startDate || null,
         maxCapacity: parseInt(classForm.maxCapacity),
         description: classForm.description,
         gymId: currentUser.gymId,
@@ -698,6 +702,21 @@ const ClassManagement = () => {
                       required
                     />
                   </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Class Start Date *
+                  </label>
+                  <input
+                    type="date"
+                    value={classForm.startDate}
+                    onChange={(e) =>
+                      setClassForm({ ...classForm, startDate: e.target.value })
+                    }
+                    className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    required
+                  />
                 </div>
 
                 <div>
