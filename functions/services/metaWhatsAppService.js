@@ -6,7 +6,6 @@
  * Credentials are stored ONLY on the server (never sent to frontend).
  */
 
-import * as functions from "firebase-functions";
 import process from "process";
 
 // ========================================
@@ -15,30 +14,11 @@ import process from "process";
 
 // Get config from environment variables or Firebase config
 function getConfig() {
-  // Try environment variables first (from .env file)
-  const envConfig = {
-    phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID,
-    accessToken: process.env.WHATSAPP_ACCESS_TOKEN,
-    verifyToken: process.env.WHATSAPP_VERIFY_TOKEN,
-  };
-
-  // If env vars are set, use them
-  if (envConfig.phoneNumberId && envConfig.accessToken) {
-    return {
-      phoneNumberId: envConfig.phoneNumberId,
-      accessToken: envConfig.accessToken,
-      verifyToken: envConfig.verifyToken || envConfig.phoneNumberId,
-      apiVersion: "v21.0",
-      apiUrl: "https://graph.facebook.com",
-    };
-  }
-
-  // Otherwise, try Firebase config
-  const firebaseConfig = functions.config().whatsapp || {};
+  // process.env works for both local .env and Firebase Functions runtime env vars
   return {
-    phoneNumberId: firebaseConfig.phone_number_id || "",
-    accessToken: firebaseConfig.access_token || "",
-    verifyToken: firebaseConfig.verify_token || "",
+    phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID || "",
+    accessToken: process.env.WHATSAPP_ACCESS_TOKEN || "",
+    verifyToken: process.env.WHATSAPP_VERIFY_TOKEN || "pulsedgym_webhook_2024",
     apiVersion: "v21.0",
     apiUrl: "https://graph.facebook.com",
   };

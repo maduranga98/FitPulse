@@ -894,6 +894,162 @@ export const testWhatsAppMessage = functions.https.onCall(
 );
 
 // ========================================
+// 📱 WHATSAPP AUTOMATIC TRIGGERS
+// ========================================
+
+/**
+ * Fires when a new member is created → sends login credentials via WhatsApp
+ */
+export const onMemberCreated = functions.firestore
+  .document("members/{memberId}")
+  .onCreate(async (snap, context) => {
+    const member = snap.data();
+
+    // Skip if no phone number
+    if (!member.phone) {
+      console.log(`⏭️ Member ${snap.id} has no phone, skipping WhatsApp`);
+      return null;
+    }
+
+    // Skip if WhatsApp not configured
+    if (!metaWhatsAppService.isConfigured()) {
+      console.warn("⚠️ WhatsApp not configured, skipping member notification");
+      return null;
+    }
+
+    try {
+      // Get gym name
+      const db = admin.firestore();
+      const gymDoc = await db.collection("gyms").doc(member.gymId).get();
+      const gymName = gymDoc.exists ? gymDoc.data().name : "Your Gym";
+
+      const components = metaWhatsAppService.buildTemplateComponents(
+        "member_registration",
+        {
+          memberName: member.name || "Member",
+          username: member.username || member.memberCode || snap.id,
+          password: member.defaultPassword || "pulsed@123",
+          gymName: gymName,
+        },
+      );
+
+      const result = await metaWhatsAppService.sendTemplateMessage(
+        member.phone,
+        "member_registration",
+        "en",
+        components,
+      );
+
+      if (result.success) {
+        console.log(`✅ Member registration WhatsApp sent to ${member.phone}`);
+        // Log to notifications collection
+        await db.collection("notifications").add({
+          gymId: member.gymId,
+          memberId: snap.id,
+          memberName: member.name,
+          type: "member_registration",
+          channel: "whatsapp",
+          status: "sent",
+          messageId: result.messageId,
+          sentAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      } else {
+        console.error(
+          `❌ Failed to send member registration WhatsApp:`,
+          result.error,
+        );
+      }
+    } catch (error) {
+      console.error("❌ onMemberCreated WhatsApp error:", error);
+    }
+
+    return null;
+  });
+
+/**
+ * Fires when a new payment is recorded → sends payment confirmation via WhatsApp
+ */
+export const onPaymentCreated = functions.firestore
+  .document("payments/{paymentId}")
+  .onCreate(async (snap, context) => {
+    const payment = snap.data();
+
+    // Skip if no memberId
+    if (!payment.memberId || !payment.gymId) {
+      console.log("⏭️ Payment missing memberId or gymId, skipping WhatsApp");
+      return null;
+    }
+
+    if (!metaWhatsAppService.isConfigured()) {
+      console.warn("⚠️ WhatsApp not configured, skipping payment notification");
+      return null;
+    }
+
+    try {
+      const db = admin.firestore();
+
+      // Get member details
+      const memberDoc = await db
+        .collection("members")
+        .doc(payment.memberId)
+        .get();
+      if (!memberDoc.exists) {
+        console.warn(`⚠️ Member ${payment.memberId} not found`);
+        return null;
+      }
+      const member = memberDoc.data();
+
+      if (!member.phone) {
+        console.log(`⏭️ Member ${payment.memberId} has no phone`);
+        return null;
+      }
+
+      // Get gym name
+      const gymDoc = await db.collection("gyms").doc(payment.gymId).get();
+      const gymName = gymDoc.exists ? gymDoc.data().name : "Your Gym";
+
+      const components = metaWhatsAppService.buildTemplateComponents(
+        "payment_received",
+        {
+          memberName: member.name || "Member",
+          amount: String(payment.amount || "0"),
+          gymName: gymName,
+          date: new Date().toLocaleDateString("en-GB"), // DD/MM/YYYY
+          receiptId: context.params.paymentId.slice(0, 8).toUpperCase(),
+        },
+      );
+
+      const result = await metaWhatsAppService.sendTemplateMessage(
+        member.phone,
+        "payment_received",
+        "en",
+        components,
+      );
+
+      if (result.success) {
+        console.log(`✅ Payment WhatsApp sent to ${member.phone}`);
+        await db.collection("notifications").add({
+          gymId: payment.gymId,
+          memberId: payment.memberId,
+          memberName: member.name,
+          type: "payment_received",
+          channel: "whatsapp",
+          status: "sent",
+          messageId: result.messageId,
+          amount: payment.amount,
+          sentAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      } else {
+        console.error(`❌ Failed to send payment WhatsApp:`, result.error);
+      }
+    } catch (error) {
+      console.error("❌ onPaymentCreated WhatsApp error:", error);
+    }
+
+    return null;
+  });
+
+// ========================================
 // 📡 HIKVISION DEVICE INTEGRATION
 // ========================================
 
