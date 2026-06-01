@@ -97,6 +97,10 @@ const InstructorManagement = () => {
     setShowModal(true);
   };
 
+  const generateMemberCode = (docId) => {
+    return `PG${docId.substring(0, 6).toUpperCase()}`;
+  };
+
   const handleSaveInstructor = async (e) => {
     e.preventDefault();
 
@@ -122,6 +126,13 @@ const InstructorManagement = () => {
           ...instructorData,
           updatedAt: Timestamp.now(),
         });
+        // Also sync changes to the members collection mirror
+        if (editingInstructor.membersDocId) {
+          await updateDoc(doc(db, "members", editingInstructor.membersDocId), {
+            ...instructorData,
+            updatedAt: Timestamp.now(),
+          });
+        }
         alert("Instructor updated successfully! ✓");
       } else {
         let secondaryApp = null;
@@ -141,12 +152,34 @@ const InstructorManagement = () => {
             instructorForm.password
           );
 
-          await addDoc(collection(db, "users"), {
+          const usersRef = await addDoc(collection(db, "users"), {
             ...instructorData,
             uid: userCredential.user.uid,
             username: instructorForm.username,
             password: instructorForm.password,
             createdAt: Timestamp.now(),
+          });
+
+          // Save a mirrored record in the members collection with the same ID format
+          const memberRecord = {
+            ...instructorData,
+            uid: userCredential.user.uid,
+            username: instructorForm.username,
+            password: instructorForm.password,
+            usersDocId: usersRef.id,
+            status: "active",
+            createdAt: Timestamp.now(),
+          };
+          const membersRef = await addDoc(collection(db, "members"), memberRecord);
+          const memberCode = generateMemberCode(membersRef.id);
+          await updateDoc(doc(db, "members", membersRef.id), {
+            memberCode,
+            firestoreId: membersRef.id,
+          });
+          // Back-link the members doc ID into the users record
+          await updateDoc(doc(db, "users", usersRef.id), {
+            membersDocId: membersRef.id,
+            memberCode,
           });
 
           // Send SMS with credentials if phone number is provided
@@ -158,13 +191,13 @@ const InstructorManagement = () => {
                 instructorForm.password,
                 currentUser.gymId
               );
-              alert(`Instructor created successfully! 🎉\n\nEmail: ${instructorForm.email}\nUsername: ${instructorForm.username}\nPassword: ${instructorForm.password}\n\nLogin credentials have been sent via SMS to ${instructorForm.phone}.`);
+              alert(`Instructor created successfully! 🎉\n\nMember ID: ${memberCode}\nEmail: ${instructorForm.email}\nUsername: ${instructorForm.username}\nPassword: ${instructorForm.password}\n\nLogin credentials have been sent via SMS to ${instructorForm.phone}.`);
             } catch (smsError) {
               console.error("SMS sending failed:", smsError);
-              alert(`Instructor created successfully! 🎉\n\nEmail: ${instructorForm.email}\nUsername: ${instructorForm.username}\nPassword: ${instructorForm.password}\n\nNote: SMS could not be sent (${smsError.message}). Please share credentials manually.`);
+              alert(`Instructor created successfully! 🎉\n\nMember ID: ${memberCode}\nEmail: ${instructorForm.email}\nUsername: ${instructorForm.username}\nPassword: ${instructorForm.password}\n\nNote: SMS could not be sent (${smsError.message}). Please share credentials manually.`);
             }
           } else {
-            alert(`Instructor created successfully! 🎉\n\nEmail: ${instructorForm.email}\nUsername: ${instructorForm.username}\nPassword: ${instructorForm.password}\n\nPlease share these credentials with the instructor.`);
+            alert(`Instructor created successfully! 🎉\n\nMember ID: ${memberCode}\nEmail: ${instructorForm.email}\nUsername: ${instructorForm.username}\nPassword: ${instructorForm.password}\n\nPlease share these credentials with the instructor.`);
           }
         } catch (authError) {
           if (authError.code === "auth/email-already-in-use") {
