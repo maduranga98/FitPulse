@@ -1480,30 +1480,6 @@ const Members = () => {
                 </button>
               </div>
 
-              <div className="bg-purple-50 border border-purple-400 rounded-lg p-4 mb-4 text-center">
-                <label className="block text-xs font-medium text-purple-600 mb-2">
-                  Device Enrollment PIN
-                </label>
-                <div className="text-3xl font-bold text-purple-600 tracking-widest mb-3">
-                  {generatedCredentials.devicePIN}
-                </div>
-                <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(
-                      generatedCredentials.devicePIN,
-                    );
-                    showSuccess("PIN copied!");
-                  }}
-                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded text-sm font-medium transition"
-                >
-                  Copy PIN
-                </button>
-                <p className="text-xs text-purple-600/70 mt-3">
-                  Member enters this PIN at the device to register face &
-                  fingerprint
-                </p>
-              </div>
-
               <div className="bg-yellow-600/10 border border-yellow-600/30 rounded-lg p-4 mb-4">
                 <div className="flex gap-2">
                   <svg
