@@ -41,39 +41,27 @@ const MemberSchedules = () => {
   const fetchData = async () => {
     try {
       const { db } = await import("../../config/firebase");
-      const { collection, getDocs, query, where, orderBy } = await import(
+      const { collection, getDocs, query, where } = await import(
         "firebase/firestore"
       );
 
-      // Fetch assigned schedules (isTemplate: false) — new format
-      const assignedQuery = query(
+      // Fetch all schedules for this member (no orderBy to avoid composite index requirement)
+      const memberSchedulesQuery = query(
         collection(db, "schedules"),
-        where("memberId", "==", currentUser.id),
-        where("isTemplate", "==", false),
-        orderBy("startDate", "desc")
+        where("memberId", "==", currentUser.id)
       );
 
-      // Also fetch legacy schedules (no isTemplate field) for backward compat
-      const legacyQuery = query(
-        collection(db, "schedules"),
-        where("memberId", "==", currentUser.id),
-        orderBy("startDate", "desc")
-      );
+      const memberSnapshot = await getDocs(memberSchedulesQuery);
 
-      const [assignedSnapshot, legacySnapshot] = await Promise.all([
-        getDocs(assignedQuery),
-        getDocs(legacyQuery),
-      ]);
-
-      const assignedIds = new Set(assignedSnapshot.docs.map((d) => d.id));
-
-      // Merge: assigned schedules + legacy schedules that aren't templates
-      const schedulesData = [
-        ...assignedSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })),
-        ...legacySnapshot.docs
-          .filter((doc) => !assignedIds.has(doc.id) && doc.data().isTemplate !== true)
-          .map((doc) => ({ id: doc.id, ...doc.data() })),
-      ];
+      // Filter out templates and sort client-side
+      const schedulesData = memberSnapshot.docs
+        .map((doc) => ({ id: doc.id, ...doc.data() }))
+        .filter((s) => s.isTemplate !== true)
+        .sort((a, b) => {
+          const aDate = a.startDate?.toDate ? a.startDate.toDate() : new Date(a.startDate || 0);
+          const bDate = b.startDate?.toDate ? b.startDate.toDate() : new Date(b.startDate || 0);
+          return bDate - aDate;
+        });
 
       // Fetch common exercises
       const commonExercisesSnapshot = await getDocs(collection(db, "common_exercises"));
@@ -91,8 +79,19 @@ const MemberSchedules = () => {
         ...doc.data(),
       }));
 
-      // Combine all exercises
-      const exercisesData = [...commonExercisesData, ...gymExercisesData];
+      // Fetch global exercises (used by schedule templates created in admin panel)
+      const globalExercisesSnapshot = await getDocs(collection(db, "exercises"));
+      const globalExercisesData = globalExercisesSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      // Combine all exercises, deduplicating by id
+      const exerciseMap = new Map();
+      [...commonExercisesData, ...gymExercisesData, ...globalExercisesData].forEach(
+        (ex) => exerciseMap.set(ex.id, ex)
+      );
+      const exercisesData = Array.from(exerciseMap.values());
 
       setSchedules(schedulesData);
       setExercises(exercisesData);

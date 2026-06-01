@@ -607,8 +607,8 @@ const MemberClasses = () => {
                                   View Details
                                 </button>
                                 
-                                {/* Rate Class button for attended classes */}
-                                {booking.status === "attended" && (
+                                {/* Rate Class button for attended or confirmed bookings */}
+                                {(booking.status === "attended" || booking.status === "confirmed") && (
                                   <button
                                     onClick={() => handleOpenRatingModal(classItem, booking)}
                                     className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg font-medium transition flex items-center justify-center gap-2"

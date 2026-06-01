@@ -80,6 +80,8 @@ export const AuthProvider = ({ children }) => {
           role = "gym_admin";
         } else if (role === "manager") {
           role = "gym_manager";
+        } else if (role === "instructor") {
+          role = "trainer";
         }
 
         const userToStore = {
