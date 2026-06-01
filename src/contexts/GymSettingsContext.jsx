@@ -9,7 +9,7 @@ const defaultSettings = {
   },
   notifications: {
     sms: true,
-    whatsapp: true,
+    whatsapp: false,
   },
 };
 
