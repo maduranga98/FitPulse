@@ -379,6 +379,7 @@ const Members = () => {
             },
             username,
             password,
+            currentGymId,
           );
 
           console.log("✅ SMS sent successfully");
