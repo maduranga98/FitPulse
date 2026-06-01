@@ -49,57 +49,67 @@ const MemberProgressTracker = () => {
         "firebase/firestore"
       );
 
-      // Fetch weight logs
+      // Fetch weight logs, sort client-side to avoid composite index requirement
       const weightQuery = query(
         collection(db, "weightLogs"),
-        where("memberId", "==", currentUser.id),
-        orderBy("date", "asc")
+        where("memberId", "==", currentUser.id)
       );
       const weightSnapshot = await getDocs(weightQuery);
-      const weightData = weightSnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-        date: doc.data().date?.toDate
-          ? doc.data().date.toDate()
-          : new Date(doc.data().date),
-      }));
+      const weightData = weightSnapshot.docs
+        .map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+          date: doc.data().date?.toDate
+            ? doc.data().date.toDate()
+            : new Date(doc.data().date),
+        }))
+        .sort((a, b) => a.date - b.date);
 
-      // Fetch workout logs
+      // Fetch workout logs, sort client-side to avoid composite index requirement
       const workoutQuery = query(
         collection(db, "workoutLogs"),
-        where("memberId", "==", currentUser.id),
-        orderBy("completedAt", "asc")
+        where("memberId", "==", currentUser.id)
       );
       const workoutSnapshot = await getDocs(workoutQuery);
-      const workoutData = workoutSnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-        completedAt: doc.data().completedAt?.toDate
-          ? doc.data().completedAt.toDate()
-          : new Date(doc.data().completedAt),
-      }));
+      const workoutData = workoutSnapshot.docs
+        .map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+          completedAt: doc.data().completedAt?.toDate
+            ? doc.data().completedAt.toDate()
+            : new Date(doc.data().completedAt),
+        }))
+        .sort((a, b) => a.completedAt - b.completedAt);
 
-      // Fetch exercises
-      const exercisesSnapshot = await getDocs(collection(db, "exercises"));
-      const exercisesData = exercisesSnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
+      // Fetch exercises from all collections to resolve names regardless of source
+      const [globalExSnap, gymExSnap, commonExSnap] = await Promise.all([
+        getDocs(collection(db, "exercises")),
+        getDocs(query(collection(db, "gym_exercises"), where("gymId", "==", currentUser.gymId))),
+        getDocs(collection(db, "common_exercises")),
+      ]);
+      const exMap = new Map();
+      [
+        ...globalExSnap.docs,
+        ...gymExSnap.docs,
+        ...commonExSnap.docs,
+      ].forEach((d) => exMap.set(d.id, { id: d.id, ...d.data() }));
+      const exercisesData = Array.from(exMap.values());
 
-      // Fetch progress photos
+      // Fetch progress photos, sort client-side to avoid composite index requirement
       const photosQuery = query(
         collection(db, "progressPhotos"),
-        where("memberId", "==", currentUser.id),
-        orderBy("date", "desc")
+        where("memberId", "==", currentUser.id)
       );
       const photosSnapshot = await getDocs(photosQuery);
-      const photosData = photosSnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-        date: doc.data().date?.toDate
-          ? doc.data().date.toDate()
-          : new Date(doc.data().date),
-      }));
+      const photosData = photosSnapshot.docs
+        .map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+          date: doc.data().date?.toDate
+            ? doc.data().date.toDate()
+            : new Date(doc.data().date),
+        }))
+        .sort((a, b) => b.date - a.date);
 
       setWeightLogs(weightData);
       setWorkoutLogs(workoutData);

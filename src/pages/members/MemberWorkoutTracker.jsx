@@ -42,7 +42,7 @@ const MemberWorkoutTracker = () => {
   const fetchData = async () => {
     try {
       const { db } = await import("../../config/firebase");
-      const { collection, query, where, getDocs, orderBy } = await import(
+      const { collection, query, where, getDocs } = await import(
         "firebase/firestore"
       );
 
@@ -50,14 +50,16 @@ const MemberWorkoutTracker = () => {
       const schedulesQuery = query(
         collection(db, "schedules"),
         where("memberId", "==", currentUser.id),
-        where("status", "==", "active"),
-        orderBy("startDate", "desc")
+        where("status", "==", "active")
       );
       const schedulesSnapshot = await getDocs(schedulesQuery);
-      const schedulesData = schedulesSnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
+      const schedulesData = schedulesSnapshot.docs
+        .map((doc) => ({ id: doc.id, ...doc.data() }))
+        .sort((a, b) => {
+          const aDate = a.startDate?.toDate ? a.startDate.toDate() : new Date(a.startDate || 0);
+          const bDate = b.startDate?.toDate ? b.startDate.toDate() : new Date(b.startDate || 0);
+          return bDate - aDate;
+        });
 
       // Fetch gym-specific exercises
       const gymExercisesSnapshot = await getDocs(
@@ -80,20 +82,35 @@ const MemberWorkoutTracker = () => {
         ...doc.data(),
       }));
 
-      // Combine both exercise collections
-      const allExercises = [...gymExercisesData, ...commonExercisesData];
-
-      // Fetch workout logs
-      const logsQuery = query(
-        collection(db, "workoutLogs"),
-        where("memberId", "==", currentUser.id),
-        orderBy("completedAt", "desc")
+      // Fetch global exercises (used by schedule templates)
+      const globalExercisesSnapshot = await getDocs(
+        collection(db, "exercises")
       );
-      const logsSnapshot = await getDocs(logsQuery);
-      const logsData = logsSnapshot.docs.map((doc) => ({
+      const globalExercisesData = globalExercisesSnapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
       }));
+
+      // Combine all exercise collections, deduplicating by id
+      const exerciseMap = new Map();
+      [...gymExercisesData, ...commonExercisesData, ...globalExercisesData].forEach(
+        (ex) => exerciseMap.set(ex.id, ex)
+      );
+      const allExercises = Array.from(exerciseMap.values());
+
+      // Fetch workout logs, sort client-side to avoid composite index requirement
+      const logsQuery = query(
+        collection(db, "workoutLogs"),
+        where("memberId", "==", currentUser.id)
+      );
+      const logsSnapshot = await getDocs(logsQuery);
+      const logsData = logsSnapshot.docs
+        .map((doc) => ({ id: doc.id, ...doc.data() }))
+        .sort((a, b) => {
+          const aTime = a.completedAt?.toDate ? a.completedAt.toDate() : new Date(a.completedAt || 0);
+          const bTime = b.completedAt?.toDate ? b.completedAt.toDate() : new Date(b.completedAt || 0);
+          return bTime - aTime;
+        });
 
       setSchedules(schedulesData);
       setExercises(allExercises);

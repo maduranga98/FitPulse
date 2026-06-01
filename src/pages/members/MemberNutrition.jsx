@@ -49,17 +49,19 @@ const MemberNutrition = () => {
       const { db } = await import("../../config/firebase");
       const { collection, query, where, getDocs } = await import("firebase/firestore");
 
-      // Fetch meal logs for selected date
+      // Fetch all meal logs for this member, filter by date client-side
+      // (avoids composite index requirement for compound where queries)
       const mealQuery = query(
         collection(db, "mealPlans"),
-        where("memberId", "==", currentUser.id),
-        where("date", "==", selectedDate)
+        where("memberId", "==", currentUser.id)
       );
       const mealSnapshot = await getDocs(mealQuery);
-      const mealData = mealSnapshot.docs.map((doc) => ({
+      const allMealData = mealSnapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
       }));
+
+      const mealData = allMealData.filter((d) => d.date === selectedDate);
 
       if (mealData.length > 0) {
         setMealLogs(mealData[0].meals || []);
@@ -102,13 +104,14 @@ const MemberNutrition = () => {
         loggedAt: Timestamp.now(),
       };
 
-      // Check if meal plan exists for today
+      // Check if meal plan exists for today (filter by date client-side)
       const mealQuery = query(
         collection(db, "mealPlans"),
-        where("memberId", "==", currentUser.id),
-        where("date", "==", selectedDate)
+        where("memberId", "==", currentUser.id)
       );
-      const mealSnapshot = await getDocs(mealQuery);
+      const allMealSnap = await getDocs(mealQuery);
+      const mealSnapshot = { empty: true, docs: allMealSnap.docs.filter((d) => d.data().date === selectedDate) };
+      if (mealSnapshot.docs.length > 0) mealSnapshot.empty = false;
 
       if (mealSnapshot.empty) {
         // Create new meal plan
@@ -162,15 +165,15 @@ const MemberNutrition = () => {
         "firebase/firestore"
       );
 
-      const mealQuery = query(
+      const mealQueryDel = query(
         collection(db, "mealPlans"),
-        where("memberId", "==", currentUser.id),
-        where("date", "==", selectedDate)
+        where("memberId", "==", currentUser.id)
       );
-      const mealSnapshot = await getDocs(mealQuery);
+      const allMealSnapDel = await getDocs(mealQueryDel);
+      const mealDocs = allMealSnapDel.docs.filter((d) => d.data().date === selectedDate);
 
-      if (!mealSnapshot.empty) {
-        const existingDoc = mealSnapshot.docs[0];
+      if (mealDocs.length > 0) {
+        const existingDoc = mealDocs[0];
         const updatedMeals = mealLogs.filter((_, index) => index !== mealIndex);
         const dayTotals = calculateDayTotals(updatedMeals);
 
@@ -194,12 +197,13 @@ const MemberNutrition = () => {
       const { collection, query, where, getDocs, updateDoc, doc, addDoc, Timestamp } =
         await import("firebase/firestore");
 
-      const mealQuery = query(
+      const waterMealQuery = query(
         collection(db, "mealPlans"),
-        where("memberId", "==", currentUser.id),
-        where("date", "==", selectedDate)
+        where("memberId", "==", currentUser.id)
       );
-      const mealSnapshot = await getDocs(mealQuery);
+      const allWaterSnap = await getDocs(waterMealQuery);
+      const waterDocs = allWaterSnap.docs.filter((d) => d.data().date === selectedDate);
+      const mealSnapshot = { empty: waterDocs.length === 0, docs: waterDocs };
 
       if (mealSnapshot.empty) {
         // Create new meal plan with just water intake
@@ -264,7 +268,7 @@ const MemberNutrition = () => {
     const updatedFoods = [...mealForm.foods];
     updatedFoods[index] = {
       ...updatedFoods[index],
-      [field]: field === "name" ? value : parseFloat(value) || 0,
+      [field]: field === "name" ? value : value === "" ? "" : parseFloat(value) || 0,
     };
     setMealForm({ ...mealForm, foods: updatedFoods });
   };
@@ -579,7 +583,7 @@ const MemberNutrition = () => {
                             <input
                               type="number"
                               placeholder="Calories"
-                              value={food.calories || ""}
+                              value={food.calories === "" ? "" : food.calories}
                               onChange={(e) => updateFoodRow(index, "calories", e.target.value)}
                               className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
                               min="0"
@@ -589,7 +593,7 @@ const MemberNutrition = () => {
                             <input
                               type="number"
                               placeholder="Protein (g)"
-                              value={food.protein || ""}
+                              value={food.protein === "" ? "" : food.protein}
                               onChange={(e) => updateFoodRow(index, "protein", e.target.value)}
                               className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
                               min="0"
@@ -598,7 +602,7 @@ const MemberNutrition = () => {
                             <input
                               type="number"
                               placeholder="Carbs (g)"
-                              value={food.carbs || ""}
+                              value={food.carbs === "" ? "" : food.carbs}
                               onChange={(e) => updateFoodRow(index, "carbs", e.target.value)}
                               className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
                               min="0"
@@ -607,7 +611,7 @@ const MemberNutrition = () => {
                             <input
                               type="number"
                               placeholder="Fats (g)"
-                              value={food.fats || ""}
+                              value={food.fats === "" ? "" : food.fats}
                               onChange={(e) => updateFoodRow(index, "fats", e.target.value)}
                               className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
                               min="0"
