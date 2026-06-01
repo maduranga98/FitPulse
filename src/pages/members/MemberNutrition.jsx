@@ -580,43 +580,55 @@ const MemberNutrition = () => {
                             required
                           />
                           <div className="grid grid-cols-2 gap-2">
-                            <input
-                              type="number"
-                              placeholder="Calories"
-                              value={food.calories === "" ? "" : food.calories}
-                              onChange={(e) => updateFoodRow(index, "calories", e.target.value)}
-                              className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-                              min="0"
-                              step="1"
-                              required
-                            />
-                            <input
-                              type="number"
-                              placeholder="Protein (g)"
-                              value={food.protein === "" ? "" : food.protein}
-                              onChange={(e) => updateFoodRow(index, "protein", e.target.value)}
-                              className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-                              min="0"
-                              step="0.1"
-                            />
-                            <input
-                              type="number"
-                              placeholder="Carbs (g)"
-                              value={food.carbs === "" ? "" : food.carbs}
-                              onChange={(e) => updateFoodRow(index, "carbs", e.target.value)}
-                              className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-                              min="0"
-                              step="0.1"
-                            />
-                            <input
-                              type="number"
-                              placeholder="Fats (g)"
-                              value={food.fats === "" ? "" : food.fats}
-                              onChange={(e) => updateFoodRow(index, "fats", e.target.value)}
-                              className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-                              min="0"
-                              step="0.1"
-                            />
+                            <div className="flex flex-col gap-1">
+                              <label className="text-xs text-gray-400 font-medium">Calories (kcal) *</label>
+                              <input
+                                type="number"
+                                placeholder="e.g. 250"
+                                value={food.calories === "" ? "" : food.calories}
+                                onChange={(e) => updateFoodRow(index, "calories", e.target.value)}
+                                className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                                min="0"
+                                step="1"
+                                required
+                              />
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <label className="text-xs text-gray-400 font-medium">Protein (g)</label>
+                              <input
+                                type="number"
+                                placeholder="e.g. 20"
+                                value={food.protein === "" ? "" : food.protein}
+                                onChange={(e) => updateFoodRow(index, "protein", e.target.value)}
+                                className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                                min="0"
+                                step="0.1"
+                              />
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <label className="text-xs text-gray-400 font-medium">Carbs (g)</label>
+                              <input
+                                type="number"
+                                placeholder="e.g. 30"
+                                value={food.carbs === "" ? "" : food.carbs}
+                                onChange={(e) => updateFoodRow(index, "carbs", e.target.value)}
+                                className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                                min="0"
+                                step="0.1"
+                              />
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <label className="text-xs text-gray-400 font-medium">Fats (g)</label>
+                              <input
+                                type="number"
+                                placeholder="e.g. 10"
+                                value={food.fats === "" ? "" : food.fats}
+                                onChange={(e) => updateFoodRow(index, "fats", e.target.value)}
+                                className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                                min="0"
+                                step="0.1"
+                              />
+                            </div>
                           </div>
                         </div>
                         <div className="flex items-center justify-between">
