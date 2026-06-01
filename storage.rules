@@ -40,13 +40,13 @@ service firebase.storage {
     // ============================================
     // EXERCISE MEDIA (Images & Videos)
     // ============================================
-    // Path: exercises/{gymId}/{exerciseId}/{fileName}
-    match /exercises/{gymId}/{exerciseId}/{fileName} {
+    // Path: exercises/{gymId}/photos/{fileName} or exercises/{gymId}/videos/{fileName}
+    match /exercises/{gymId}/{mediaType}/{fileName} {
       // Allow uploads with validation
-      // Max size: 50MB for videos, 5MB for images
+      // Max size: 100MB for videos, 5MB for images
       allow create: if isValidMedia() &&
                       ((isValidImage() && isWithinSizeLimit(5 * 1024 * 1024)) ||
-                       (isValidVideo() && isWithinSizeLimit(50 * 1024 * 1024)));
+                       (isValidVideo() && isWithinSizeLimit(100 * 1024 * 1024)));
 
       // Allow reads for the application
       allow read: if true;
@@ -54,7 +54,7 @@ service firebase.storage {
       // Allow updates with validation
       allow update: if isValidMedia() &&
                       ((isValidImage() && isWithinSizeLimit(5 * 1024 * 1024)) ||
-                       (isValidVideo() && isWithinSizeLimit(50 * 1024 * 1024)));
+                       (isValidVideo() && isWithinSizeLimit(100 * 1024 * 1024)));
 
       // Allow deletes
       allow delete: if true;

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import Sidebar from "../components/Sidebar";
 import {
@@ -21,6 +22,7 @@ const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899"
 
 const AttendanceAnalytics = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const gymId = user?.gymId;
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -159,9 +161,29 @@ const AttendanceAnalytics = () => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
                 </svg>
               </button>
+              <button
+                onClick={() => navigate("/analytics")}
+                className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition"
+                title="Back to Analytics"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
               <div>
+                <div className="flex items-center gap-2 text-xs text-gray-400 mb-0.5">
+                  <span
+                    className="hover:text-white cursor-pointer transition"
+                    onClick={() => navigate("/analytics")}
+                  >
+                    Analytics
+                  </span>
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                  <span className="text-gray-300">Attendance Analytics</span>
+                </div>
                 <h1 className="text-xl sm:text-2xl font-bold text-white">Attendance Analytics</h1>
-                <p className="text-gray-400 text-sm hidden sm:block">Check-in trends and member patterns</p>
               </div>
             </div>
             <select
