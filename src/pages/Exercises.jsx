@@ -424,9 +424,9 @@ const Exercises = ({ onLogout, onNavigate }) => {
         "firebase/storage"
       );
 
-      // Create a unique filename
+      // Create a unique filename under the gym's path
       const timestamp = Date.now();
-      const fileName = `exercises/photos/${timestamp}_${file.name}`;
+      const fileName = `exercises/${currentGymId}/photos/${timestamp}_${file.name}`;
       const storageRef = ref(storage, fileName);
 
       // Upload file with progress tracking
@@ -493,9 +493,9 @@ const Exercises = ({ onLogout, onNavigate }) => {
         "firebase/storage"
       );
 
-      // Create a unique filename
+      // Create a unique filename under the gym's path
       const timestamp = Date.now();
-      const fileName = `exercises/videos/${timestamp}_${file.name}`;
+      const fileName = `exercises/${currentGymId}/videos/${timestamp}_${file.name}`;
       const storageRef = ref(storage, fileName);
 
       // Upload file with progress tracking
@@ -1677,9 +1677,14 @@ const Exercises = ({ onLogout, onNavigate }) => {
                   onClick={
                     editingExercise ? handleUpdateExercise : handleAddExercise
                   }
-                  className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition"
+                  disabled={uploadingFiles}
+                  className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {editingExercise ? "Update Exercise" : "Add Exercise"}
+                  {uploadingFiles
+                    ? "Uploading..."
+                    : editingExercise
+                    ? "Update Exercise"
+                    : "Add Exercise"}
                 </button>
                 <button
                   onClick={() => {

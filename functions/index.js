@@ -1630,3 +1630,66 @@ export const syncMemberToHikCentral = functions.firestore
 
     return null;
   });
+
+// ========================================
+// 📱 SMS NOTIFICATION FUNCTION
+// ========================================
+// Proxy SMS calls server-side to avoid CORS and keep API token secure.
+// Set env vars: TEXTLK_API_TOKEN, TEXTLK_SENDER_ID (optional), TEXTLK_HTTP_ENDPOINT (optional)
+
+export const sendSMSNotification = functions.https.onCall(async (data) => {
+  const { recipient, message } = data;
+
+  const API_TOKEN = process.env.TEXTLK_API_TOKEN;
+  const SENDER_ID = process.env.TEXTLK_SENDER_ID || "Lumora Tech";
+  const ENDPOINT =
+    process.env.TEXTLK_HTTP_ENDPOINT ||
+    "https://app.text.lk/api/v3/sms/send";
+
+  if (!API_TOKEN) {
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      "SMS API token not configured. Set TEXTLK_API_TOKEN in Cloud Functions environment."
+    );
+  }
+
+  if (!recipient || !message) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "recipient and message are required."
+    );
+  }
+
+  try {
+    const response = await fetch(ENDPOINT, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${API_TOKEN}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        recipient,
+        sender_id: SENDER_ID,
+        type: "plain",
+        message,
+      }),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok || result.status === "error") {
+      throw new functions.https.HttpsError(
+        "internal",
+        result.message || `SMS API error: ${response.status}`
+      );
+    }
+
+    console.log(`✅ SMS sent to ${recipient}`);
+    return { success: true, data: result };
+  } catch (err) {
+    console.error("❌ SMS send error:", err);
+    throw new functions.https.HttpsError("internal", err.message);
+  }
+});
+
