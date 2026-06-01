@@ -1,10 +1,22 @@
 // src/services/smsService.js
 /**
- * SMS Service - routes through Firebase Cloud Function (sendSMSNotification)
- * to avoid CORS issues and keep the API token server-side.
+ * SMS Service - uses Firebase Cloud Function (sendSMSNotification) as primary path.
+ * Falls back to direct text.lk API call if the Cloud Function is not yet deployed
+ * and VITE_API_TOKEN / VITE_HTTP_ENDPOINT are set in the environment.
  */
 
+import { getFunctions, httpsCallable } from "firebase/functions";
+import { app } from "../config/firebase";
 import { APP_URL } from "../config/app";
+
+// Initialise at module level (same pattern as whatsappService.js)
+const firebaseFunctions = getFunctions(app);
+
+// Direct-call fallback env vars (set in .env if Cloud Function is not deployed)
+const DIRECT_API_TOKEN = import.meta.env.VITE_API_TOKEN;
+const DIRECT_ENDPOINT =
+  import.meta.env.VITE_HTTP_ENDPOINT || "https://app.text.lk/api/v3/sms/send";
+const SENDER_ID = import.meta.env.VITE_TEXTLK_SENDER_ID || "Lumora Tech";
 
 /**
  * Validate phone number (Sri Lankan format) - IMPROVED VERSION
@@ -126,10 +138,10 @@ For any queries, contact your gym.`;
 };
 
 /**
- * Send SMS via Firebase Cloud Function (avoids CORS, keeps API token server-side)
- * @param {string|string[]} recipients - Single phone or array of phones
- * @param {string} message - SMS message content
- * @returns {Promise<Object>} - Result object
+ * Core SMS dispatcher.
+ * 1. Tries the Firebase Cloud Function `sendSMSNotification` (server-side, no CORS).
+ * 2. Falls back to a direct text.lk API call if the function is unavailable and
+ *    VITE_API_TOKEN + VITE_HTTP_ENDPOINT are configured.
  */
 const sendSMS = async (recipients, message) => {
   try {
@@ -142,7 +154,7 @@ const sendSMS = async (recipients, message) => {
 
     if (formattedPhones.length === 0) {
       throw new Error(
-        `No valid phone numbers provided. Input: ${JSON.stringify(recipientList)}`
+        `No valid phone numbers. Input: ${JSON.stringify(recipientList)}`
       );
     }
 
@@ -150,29 +162,56 @@ const sendSMS = async (recipients, message) => {
       throw new Error("Message too long (max 3000 characters)");
     }
 
-    const { getFunctions, httpsCallable } = await import("firebase/functions");
-    const { app } = await import("../config/firebase");
-    const fns = getFunctions(app);
-    const sendSMSCallable = httpsCallable(fns, "sendSMSNotification");
+    const recipientStr = formattedPhones.join(",");
 
-    const result = await sendSMSCallable({
-      recipient: formattedPhones.join(","),
-      message,
+    // ── Path 1: Firebase Cloud Function ──────────────────────────────────────
+    try {
+      const sendSMSCallable = httpsCallable(firebaseFunctions, "sendSMSNotification");
+      const result = await sendSMSCallable({ recipient: recipientStr, message });
+      console.log("✅ SMS sent via Cloud Function");
+      return { success: true, data: result.data, recipients: formattedPhones, message };
+    } catch (cfError) {
+      // Function not deployed yet or unavailable — log and fall through
+      console.warn(
+        "⚠️ Cloud Function sendSMSNotification unavailable, trying direct API:",
+        cfError.code || cfError.message
+      );
+    }
+
+    // ── Path 2: Direct text.lk API call (fallback) ───────────────────────────
+    if (!DIRECT_API_TOKEN) {
+      throw new Error(
+        "SMS not configured: deploy the sendSMSNotification Cloud Function and set " +
+        "TEXTLK_API_TOKEN, OR set VITE_API_TOKEN and VITE_HTTP_ENDPOINT in your .env file."
+      );
+    }
+
+    const response = await fetch(DIRECT_ENDPOINT, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${DIRECT_API_TOKEN}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        recipient: recipientStr,
+        sender_id: SENDER_ID,
+        type: "plain",
+        message,
+      }),
     });
 
-    return {
-      success: true,
-      data: result.data,
-      recipients: formattedPhones,
-      message,
-    };
+    const data = await response.json();
+
+    if (!response.ok || data.status === "error") {
+      throw new Error(data.message || `SMS API error: ${response.status}`);
+    }
+
+    console.log("✅ SMS sent via direct API");
+    return { success: true, data, recipients: formattedPhones, message };
   } catch (error) {
     console.error("❌ SMS Service Error:", error.message);
-    return {
-      success: false,
-      error: error.message,
-      recipients,
-    };
+    return { success: false, error: error.message, recipients };
   }
 };
 
