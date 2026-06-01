@@ -13,6 +13,8 @@ import {
   Phone,
   Award,
   Search,
+  Copy,
+  Check,
 } from "lucide-react";
 
 const InstructorManagement = () => {
@@ -23,6 +25,8 @@ const InstructorManagement = () => {
   const [showModal, setShowModal] = useState(false);
   const [editingInstructor, setEditingInstructor] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [successData, setSuccessData] = useState(null);
+  const [copiedField, setCopiedField] = useState(null);
 
   const [instructorForm, setInstructorForm] = useState({
     name: "",
@@ -203,6 +207,8 @@ const InstructorManagement = () => {
         });
 
         // Step 3: Send SMS with credentials
+        let smsSent = false;
+        let smsError = null;
         if (instructorForm.phone) {
           try {
             await sendInstructorCredentialsSMS(
@@ -211,14 +217,26 @@ const InstructorManagement = () => {
               instructorForm.password,
               currentUser.gymId
             );
-            alert(`Instructor created successfully! 🎉\n\nMember ID: ${memberCode}\nEmail: ${instructorForm.email}\nUsername: ${instructorForm.username}\nPassword: ${instructorForm.password}\n\nLogin credentials have been sent via SMS to ${instructorForm.phone}.`);
-          } catch (smsError) {
-            console.error("SMS sending failed:", smsError);
-            alert(`Instructor created successfully! 🎉\n\nMember ID: ${memberCode}\nEmail: ${instructorForm.email}\nUsername: ${instructorForm.username}\nPassword: ${instructorForm.password}\n\nNote: SMS could not be sent (${smsError.message}). Please share credentials manually.`);
+            smsSent = true;
+          } catch (err) {
+            console.error("SMS sending failed:", err);
+            smsError = err.message;
           }
-        } else {
-          alert(`Instructor created successfully! 🎉\n\nMember ID: ${memberCode}\nEmail: ${instructorForm.email}\nUsername: ${instructorForm.username}\nPassword: ${instructorForm.password}\n\nPlease share these credentials with the instructor.`);
         }
+
+        setShowModal(false);
+        setSuccessData({
+          name: instructorForm.name,
+          memberCode,
+          email: instructorForm.email,
+          username: instructorForm.username,
+          password: instructorForm.password,
+          phone: instructorForm.phone,
+          smsSent,
+          smsError,
+        });
+        fetchInstructors();
+        return;
       }
 
       setShowModal(false);
@@ -244,6 +262,24 @@ const InstructorManagement = () => {
     } catch (error) {
       console.error("Error deleting instructor:", error);
       alert("Failed to delete instructor. Please try again.");
+    }
+  };
+
+  const copyToClipboard = async (value, field) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopiedField(field);
+      setTimeout(() => setCopiedField(null), 2000);
+    } catch {
+      // fallback for older browsers
+      const el = document.createElement("textarea");
+      el.value = value;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand("copy");
+      document.body.removeChild(el);
+      setCopiedField(field);
+      setTimeout(() => setCopiedField(null), 2000);
     }
   };
 
@@ -427,6 +463,101 @@ const InstructorManagement = () => {
             </div>
           )}
         </div>
+
+        {/* Success Modal */}
+        {successData && (
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+            <div className="bg-gray-800 rounded-xl max-w-md w-full p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-green-500/20 rounded-full flex items-center justify-center">
+                    <Check className="w-5 h-5 text-green-400" />
+                  </div>
+                  <h2 className="text-lg font-bold text-white">Instructor Created</h2>
+                </div>
+                <button
+                  onClick={() => setSuccessData(null)}
+                  className="text-gray-400 hover:text-white transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <p className="text-gray-400 text-sm mb-5">
+                <span className="text-white font-medium">{successData.name}</span> has been registered successfully.
+              </p>
+
+              <div className="space-y-3">
+                {/* Member ID — primary copy target */}
+                <div className="bg-gray-900 border border-green-500/40 rounded-lg p-3">
+                  <p className="text-xs text-gray-400 mb-1">Member ID</p>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-green-400 font-mono font-bold text-lg tracking-widest">
+                      {successData.memberCode}
+                    </span>
+                    <button
+                      onClick={() => copyToClipboard(successData.memberCode, "memberCode")}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs rounded-lg transition"
+                    >
+                      {copiedField === "memberCode" ? (
+                        <><Check className="w-3.5 h-3.5" /> Copied</>
+                      ) : (
+                        <><Copy className="w-3.5 h-3.5" /> Copy ID</>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Credentials */}
+                {[
+                  { label: "Username", value: successData.username, field: "username" },
+                  { label: "Password", value: successData.password, field: "password" },
+                  { label: "Email", value: successData.email, field: "email" },
+                ].map(({ label, value, field }) => (
+                  <div key={field} className="bg-gray-900 rounded-lg p-3 flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-xs text-gray-400">{label}</p>
+                      <p className="text-white text-sm font-mono truncate">{value}</p>
+                    </div>
+                    <button
+                      onClick={() => copyToClipboard(value, field)}
+                      className="shrink-0 p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition"
+                      title={`Copy ${label}`}
+                    >
+                      {copiedField === field ? (
+                        <Check className="w-4 h-4 text-green-400" />
+                      ) : (
+                        <Copy className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {/* SMS status */}
+              <div className="mt-4">
+                {successData.smsSent ? (
+                  <p className="text-xs text-green-400 flex items-center gap-1">
+                    <Check className="w-3.5 h-3.5" /> SMS sent to {successData.phone}
+                  </p>
+                ) : successData.phone && successData.smsError ? (
+                  <p className="text-xs text-yellow-400">
+                    SMS failed ({successData.smsError}). Share credentials manually.
+                  </p>
+                ) : !successData.phone ? (
+                  <p className="text-xs text-gray-500">No phone number — share credentials manually.</p>
+                ) : null}
+              </div>
+
+              <button
+                onClick={() => setSuccessData(null)}
+                className="mt-5 w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Add/Edit Modal */}
         {showModal && (
