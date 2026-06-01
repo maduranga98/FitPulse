@@ -9,6 +9,8 @@
  * - Endpoint: /api/v3/sms/send
  */
 
+import { APP_URL } from "../config/app";
+
 // text.lk API v3 Configuration
 const TEXTLK_HTTP_ENDPOINT = import.meta.env.VITE_HTTP_ENDPOINT;
 const API_TOKEN = import.meta.env.VITE_API_TOKEN;
@@ -272,7 +274,7 @@ export const sendGymRegistrationSMS = async (gymData, username, password) => {
     throw new Error("Gym phone number is required");
   }
 
-  const appLink = "https://gymnex-65440.web.app/login";
+  const appLink = `${APP_URL}/login`;
   const message = buildGymRegistrationMessage(
     gymData.name,
     username,
@@ -323,7 +325,7 @@ export const sendMemberRegistrationSMS = async (
     throw new Error("Member phone number (mobile or whatsapp) is required");
   }
 
-  const appLink = "https://gymnex-65440.web.app/login";
+  const appLink = `${APP_URL}/login`;
   const message = buildMemberRegistrationMessage(
     memberData.name,
     username,
