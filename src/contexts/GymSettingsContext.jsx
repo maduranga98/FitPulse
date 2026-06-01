@@ -11,6 +11,10 @@ const defaultSettings = {
     sms: true,
     whatsapp: false,
   },
+  sms: {
+    apiToken: "",
+    senderId: "",
+  },
 };
 
 const GymSettingsContext = createContext({
@@ -48,6 +52,10 @@ export const GymSettingsProvider = ({ children }) => {
           notifications: {
             ...defaultSettings.notifications,
             ...gymData.settings?.notifications,
+          },
+          sms: {
+            ...defaultSettings.sms,
+            ...gymData.settings?.sms,
           },
         });
       }

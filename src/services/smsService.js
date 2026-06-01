@@ -143,7 +143,7 @@ For any queries, contact your gym.`;
  * 2. Falls back to a direct text.lk API call if the function is unavailable and
  *    VITE_API_TOKEN + VITE_HTTP_ENDPOINT are configured.
  */
-const sendSMS = async (recipients, message) => {
+const sendSMS = async (recipients, message, gymId = null) => {
   try {
     if (!recipients || !message) {
       throw new Error("Recipients and message are required");
@@ -167,7 +167,7 @@ const sendSMS = async (recipients, message) => {
     // ── Path 1: Firebase Cloud Function ──────────────────────────────────────
     try {
       const sendSMSCallable = httpsCallable(firebaseFunctions, "sendSMSNotification");
-      const result = await sendSMSCallable({ recipient: recipientStr, message });
+      const result = await sendSMSCallable({ recipient: recipientStr, message, gymId });
       console.log("✅ SMS sent via Cloud Function");
       return { success: true, data: result.data, recipients: formattedPhones, message };
     } catch (cfError) {
@@ -222,7 +222,7 @@ const sendSMS = async (recipients, message) => {
  * @param {string} password - Admin password
  * @returns {Promise<Object>} - SMS sending result
  */
-export const sendGymRegistrationSMS = async (gymData, username, password) => {
+export const sendGymRegistrationSMS = async (gymData, username, password, gymId = null) => {
   // console.log("🔵 sendGymRegistrationSMS called with:", {
   //   name: gymData.name,
   //   phone: gymData.phone,
@@ -244,7 +244,7 @@ export const sendGymRegistrationSMS = async (gymData, username, password) => {
 
   // console.log("📝 Message prepared, length:", message.length);
 
-  const result = await sendSMS(gymData.phone, message);
+  const result = await sendSMS(gymData.phone, message, gymId);
 
   if (!result.success) {
     console.error("🔴 SMS sending failed:", result.error);
@@ -270,7 +270,8 @@ export const sendGymRegistrationSMS = async (gymData, username, password) => {
 export const sendMemberRegistrationSMS = async (
   memberData,
   username,
-  password
+  password,
+  gymId = null
 ) => {
   console.log("🔵 sendMemberRegistrationSMS called with:", {
     name: memberData.name,
@@ -293,7 +294,7 @@ export const sendMemberRegistrationSMS = async (
     appLink
   );
 
-  const result = await sendSMS(phoneNumber, message);
+  const result = await sendSMS(phoneNumber, message, gymId);
 
   if (!result.success) {
     throw new Error(result.error);
@@ -313,7 +314,7 @@ export const sendMemberRegistrationSMS = async (
  * @param {Object} paymentData - Payment details
  * @returns {Promise<Object>} - SMS sending result
  */
-export const sendPaymentReceiptSMS = async (memberData, paymentData) => {
+export const sendPaymentReceiptSMS = async (memberData, paymentData, gymId = null) => {
   console.log("🔵 sendPaymentReceiptSMS called with:", {
     name: memberData.name,
     mobile: memberData.mobile,
@@ -335,7 +336,7 @@ export const sendPaymentReceiptSMS = async (memberData, paymentData) => {
     paymentData.paymentMethod
   );
 
-  const result = await sendSMS(phoneNumber, message);
+  const result = await sendSMS(phoneNumber, message, gymId);
 
   if (!result.success) {
     throw new Error(result.error);

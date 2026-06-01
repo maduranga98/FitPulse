@@ -1794,10 +1794,32 @@ export const syncMemberToHikCentral = functions.firestore
 // Set env vars: TEXTLK_API_TOKEN, TEXTLK_SENDER_ID (optional), TEXTLK_HTTP_ENDPOINT (optional)
 
 export const sendSMSNotification = functions.https.onCall(async (data) => {
-  const { recipient, message } = data;
+  const { recipient, message, gymId } = data;
 
-  const API_TOKEN = process.env.TEXTLK_API_TOKEN;
-  const SENDER_ID = process.env.TEXTLK_SENDER_ID || "Lumora Tech";
+  if (!recipient || !message) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "recipient and message are required."
+    );
+  }
+
+  // Resolve API token: prefer Firestore gym setting, fall back to env var
+  let API_TOKEN = process.env.TEXTLK_API_TOKEN;
+  let SENDER_ID = process.env.TEXTLK_SENDER_ID || "Lumora Tech";
+
+  if (gymId) {
+    try {
+      const gymSnap = await admin.firestore().collection("gyms").doc(gymId).get();
+      if (gymSnap.exists) {
+        const smsSettings = gymSnap.data()?.settings?.sms || {};
+        if (smsSettings.apiToken) API_TOKEN = smsSettings.apiToken;
+        if (smsSettings.senderId) SENDER_ID = smsSettings.senderId;
+      }
+    } catch (err) {
+      console.warn("⚠️ Could not load gym SMS settings:", err.message);
+    }
+  }
+
   const ENDPOINT =
     process.env.TEXTLK_HTTP_ENDPOINT ||
     "https://app.text.lk/api/v3/sms/send";
@@ -1805,14 +1827,7 @@ export const sendSMSNotification = functions.https.onCall(async (data) => {
   if (!API_TOKEN) {
     throw new functions.https.HttpsError(
       "failed-precondition",
-      "SMS API token not configured. Set TEXTLK_API_TOKEN in Cloud Functions environment."
-    );
-  }
-
-  if (!recipient || !message) {
-    throw new functions.https.HttpsError(
-      "invalid-argument",
-      "recipient and message are required."
+      "SMS API token not configured. Set it in Dashboard → Settings → SMS Configuration."
     );
   }
 
@@ -1844,6 +1859,7 @@ export const sendSMSNotification = functions.https.onCall(async (data) => {
     console.log(`✅ SMS sent to ${recipient}`);
     return { success: true, data: result };
   } catch (err) {
+    if (err instanceof functions.https.HttpsError) throw err;
     console.error("❌ SMS send error:", err);
     throw new functions.https.HttpsError("internal", err.message);
   }
