@@ -160,7 +160,7 @@
 //     throw new Error("Gym phone number is required");
 //   }
 
-//   const appLink = "https://gymnex-65440.web.app/login";
+//   const appLink = `${APP_URL}/login`;
 //   const message = buildGymRegistrationMessage(
 //     gymData.name,
 //     username,
@@ -205,7 +205,7 @@
 //     throw new Error("Member phone number (mobile or whatsapp) is required");
 //   }
 
-//   const appLink = "https://gymnex-65440.web.app/login";
+//   const appLink = `${APP_URL}/login`;
 //   const message = buildMemberRegistrationMessage(
 //     memberData.name,
 //     username,
@@ -323,6 +323,7 @@
 
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { app } from "../config/firebase";
+import { APP_URL } from "../config/app";
 
 const functions = getFunctions(app);
 

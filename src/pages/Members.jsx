@@ -7,6 +7,7 @@ import { calculateBMI, validateBMIInputs } from "../utils/validationUtils";
 import { QRCodeSVG } from "qrcode.react";
 import { useGymSettings } from "../contexts/GymSettingsContext";
 import { supabase } from "../services/supabaseClient";
+import { APP_URL } from "../config/app";
 
 const HikStatus = ({ member, onRetry, retrying }) => {
   if (member.hikCentralSynced === true) {
@@ -1908,7 +1909,7 @@ const Members = () => {
 
             <div className="bg-white rounded-xl p-4 inline-block mb-4">
               <QRCodeSVG
-                value={`${window.location.origin}/register/${currentGymId}?gym=${encodeURIComponent(user?.gymName || user?.name || "PulsedGym")}`}
+                value={`${APP_URL}/register/${currentGymId}?gym=${encodeURIComponent(user?.gymName || user?.name || "PulsedGym")}`}
                 size={200}
                 level="M"
               />
@@ -1917,7 +1918,7 @@ const Members = () => {
             <div className="space-y-3">
               <button
                 onClick={() => {
-                  const url = `${window.location.origin}/register/${currentGymId}?gym=${encodeURIComponent(user?.gymName || user?.name || "PulsedGym")}`;
+                  const url = `${APP_URL}/register/${currentGymId}?gym=${encodeURIComponent(user?.gymName || user?.name || "PulsedGym")}`;
                   navigator.clipboard.writeText(url);
                   showSuccess("Registration link copied to clipboard!");
                 }}
@@ -1942,7 +1943,7 @@ const Members = () => {
               {navigator.share && (
                 <button
                   onClick={async () => {
-                    const url = `${window.location.origin}/register/${currentGymId}?gym=${encodeURIComponent(user?.gymName || user?.name || "PulsedGym")}`;
+                    const url = `${APP_URL}/register/${currentGymId}?gym=${encodeURIComponent(user?.gymName || user?.name || "PulsedGym")}`;
                     try {
                       await navigator.share({
                         title: "Join Our Gym",
