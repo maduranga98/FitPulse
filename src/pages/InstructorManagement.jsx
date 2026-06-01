@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../hooks/useAuth";
+import { sendInstructorCredentialsSMS } from "../services/smsService";
 import AdminLayout from "../components/AdminLayout";
 import {
   Users,
@@ -144,10 +145,27 @@ const InstructorManagement = () => {
             ...instructorData,
             uid: userCredential.user.uid,
             username: instructorForm.username,
+            password: instructorForm.password,
             createdAt: Timestamp.now(),
           });
 
-          alert(`Instructor created successfully! 🎉\n\nEmail: ${instructorForm.email}\nPassword: ${instructorForm.password}\n\nPlease share these credentials with the instructor.`);
+          // Send SMS with credentials if phone number is provided
+          if (instructorForm.phone) {
+            try {
+              await sendInstructorCredentialsSMS(
+                { name: instructorForm.name, phone: instructorForm.phone },
+                instructorForm.username,
+                instructorForm.password,
+                currentUser.gymId
+              );
+              alert(`Instructor created successfully! 🎉\n\nEmail: ${instructorForm.email}\nUsername: ${instructorForm.username}\nPassword: ${instructorForm.password}\n\nLogin credentials have been sent via SMS to ${instructorForm.phone}.`);
+            } catch (smsError) {
+              console.error("SMS sending failed:", smsError);
+              alert(`Instructor created successfully! 🎉\n\nEmail: ${instructorForm.email}\nUsername: ${instructorForm.username}\nPassword: ${instructorForm.password}\n\nNote: SMS could not be sent (${smsError.message}). Please share credentials manually.`);
+            }
+          } else {
+            alert(`Instructor created successfully! 🎉\n\nEmail: ${instructorForm.email}\nUsername: ${instructorForm.username}\nPassword: ${instructorForm.password}\n\nPlease share these credentials with the instructor.`);
+          }
         } catch (authError) {
           if (authError.code === "auth/email-already-in-use") {
             alert("This email is already registered in the system.");

@@ -377,4 +377,63 @@ export const sendBulkSMS = async (phoneNumbers, message) => {
   };
 };
 
+/**
+ * Build SMS message for instructor registration
+ */
+const buildInstructorRegistrationMessage = (instructorName, username, password, appLink) => {
+  return `🏋️ Welcome to PulsedGym, ${instructorName}!
+
+You have been registered as an Instructor/Trainer.
+
+📱 LOGIN DETAILS:
+URL: ${appLink}
+Username: ${username}
+Password: ${password}
+
+⚠️ Keep your credentials safe.
+✓ Do not share with anyone.`;
+};
+
+/**
+ * Send instructor registration credentials via SMS
+ * @param {Object} instructorData - Instructor data with phone
+ * @param {string} username - Instructor username
+ * @param {string} password - Instructor password
+ * @param {string} gymId - Gym ID for SMS config
+ * @returns {Promise<Object>} - SMS sending result
+ */
+export const sendInstructorCredentialsSMS = async (
+  instructorData,
+  username,
+  password,
+  gymId = null
+) => {
+  const phoneNumber = instructorData.phone;
+
+  if (!phoneNumber) {
+    throw new Error("Instructor phone number is required to send SMS");
+  }
+
+  const appLink = `${APP_URL}/login`;
+  const message = buildInstructorRegistrationMessage(
+    instructorData.name,
+    username,
+    password,
+    appLink
+  );
+
+  const result = await sendSMS(phoneNumber, message, gymId);
+
+  if (!result.success) {
+    throw new Error(result.error);
+  }
+
+  return {
+    success: true,
+    message: "Instructor credentials SMS sent successfully",
+    smsId: result.data?.data?.id || null,
+    timestamp: new Date(),
+  };
+};
+
 export { validatePhoneNumber };
