@@ -9,7 +9,7 @@ const Sidebar = ({ isOpen, onClose }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const [settingsOpen, setSettingsOpen] = useState(
-    ["/devices", "/admin-profile"].includes(location.pathname)
+    ["/devices", "/admin-profile", "/gym-settings"].includes(location.pathname)
   );
 
   const userIsAdmin = isAdmin(user);
@@ -372,6 +372,34 @@ const Sidebar = ({ isOpen, onClose }) => {
       ),
       label: "Member Analytics",
     },
+    ...(settings.instructorPermissions?.registerMembers
+      ? [{
+          path: "/instructor/add-member",
+          icon: (
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"
+            />
+          ),
+          label: "Add Members",
+        }]
+      : []),
+    ...(settings.instructorPermissions?.collectPayments
+      ? [{
+          path: "/instructor/payments",
+          icon: (
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"
+            />
+          ),
+          label: "Payments",
+        }]
+      : []),
   ];
 
   // Feature-gated paths — hidden when the feature is disabled
@@ -525,6 +553,21 @@ const Sidebar = ({ isOpen, onClose }) => {
 
                 {settingsOpen && (
                   <div className="ml-4 mt-1 space-y-1">
+                    <Link
+                      to="/gym-settings"
+                      onClick={() => onClose && onClose()}
+                      className={`flex items-center gap-3 px-4 py-2.5 w-full text-left rounded-lg transition text-sm ${
+                        isActiveRoute("/gym-settings")
+                          ? "bg-blue-600 text-white"
+                          : "text-gray-400 hover:bg-gray-700 hover:text-white"
+                      }`}
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                      <span className="font-medium">Gym Settings</span>
+                    </Link>
                     <Link
                       to="/devices"
                       onClick={() => onClose && onClose()}

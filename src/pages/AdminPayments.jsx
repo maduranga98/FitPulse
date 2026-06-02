@@ -52,10 +52,9 @@ const AdminPayments = () => {
         orderBy("name", "asc")
       );
       const membersSnapshot = await getDocs(membersQuery);
-      const membersData = membersSnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
+      const membersData = membersSnapshot.docs
+        .map((doc) => ({ id: doc.id, ...doc.data() }))
+        .filter((m) => !m.role || m.role === "member");
 
       // Fetch payments
       const paymentsQuery = query(

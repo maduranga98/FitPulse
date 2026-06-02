@@ -7,6 +7,10 @@ const defaultSettings = {
     classes: true,
     mealPlans: true,
   },
+  instructorPermissions: {
+    registerMembers: false,
+    collectPayments: false,
+  },
   notifications: {
     sms: true,
     whatsapp: false,
@@ -48,6 +52,10 @@ export const GymSettingsProvider = ({ children }) => {
           features: {
             ...defaultSettings.features,
             ...gymData.settings?.features,
+          },
+          instructorPermissions: {
+            ...defaultSettings.instructorPermissions,
+            ...gymData.settings?.instructorPermissions,
           },
           notifications: {
             ...defaultSettings.notifications,
