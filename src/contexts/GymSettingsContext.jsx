@@ -10,6 +10,7 @@ const defaultSettings = {
   instructorPermissions: {
     registerMembers: false,
     collectPayments: false,
+    viewSupplements: false,
   },
   notifications: {
     sms: true,
