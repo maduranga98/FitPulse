@@ -215,15 +215,16 @@ const InstructorPayments = () => {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           {[
             { label: "Total Members", value: members.length, color: "blue" },
             { label: "Paid This Month", value: paidCount, color: "green" },
             { label: "Unpaid", value: members.length - paidCount, color: "red" },
+            { label: "Collected", value: `Rs. ${totalCollected.toLocaleString()}`, color: "purple" },
           ].map(({ label, value, color }) => (
             <div key={label} className="bg-gray-800 border border-gray-700 rounded-xl p-4">
               <div className="text-gray-400 text-xs mb-1">{label}</div>
-              <div className={`text-2xl font-bold text-${color}-400`}>{value}</div>
+              <div className={`text-xl font-bold text-${color}-400`}>{value}</div>
             </div>
           ))}
         </div>
@@ -253,66 +254,104 @@ const InstructorPayments = () => {
           </select>
         </div>
 
-        {/* Members List */}
+        {/* Members Grid */}
         {loading ? (
           <div className="flex justify-center py-12">
             <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredMembers.map((member) => {
               const isPaid = checkPaymentStatus(member.id);
               const memberPayments = getMemberPayments(member.id);
               const isExpanded = expandedMember === member.id;
 
+              const nextDate = member.nextPaymentDate ? new Date(member.nextPaymentDate) : null;
+              const today = new Date(); today.setHours(0,0,0,0);
+              const diffDays = nextDate ? Math.ceil((nextDate - today) / (1000 * 60 * 60 * 24)) : null;
+              const dueDateColor = diffDays === null ? "text-gray-400" : diffDays < 0 ? "text-red-500" : diffDays <= 7 ? "text-yellow-400" : "text-green-400";
+
               return (
-                <div key={member.id} className="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
-                  <div className="flex items-center gap-4 p-4">
-                    <div className="w-10 h-10 rounded-full bg-blue-600/20 flex items-center justify-center text-blue-400 font-bold flex-shrink-0">
+                <div key={member.id} className="bg-gray-800 border border-gray-700 rounded-xl p-5 hover:border-gray-600 transition">
+                  <div className="flex items-start gap-3 mb-4">
+                    <div className="w-12 h-12 rounded-full bg-blue-600/20 flex items-center justify-center text-blue-400 font-bold text-lg flex-shrink-0">
                       {member.name?.[0]?.toUpperCase() || "?"}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="text-white font-medium text-sm">{member.name}</div>
-                      <div className="text-gray-400 text-xs">{member.mobile || member.email || "—"}</div>
-                    </div>
-                    <span className={`text-xs px-2.5 py-1 rounded-full font-medium flex-shrink-0 ${isPaid ? "bg-green-600/20 text-green-400" : "bg-red-600/20 text-red-400"}`}>
-                      {isPaid ? "Paid" : "Unpaid"}
-                    </span>
-                    <div className="flex items-center gap-2">
-                      {!isPaid && (
-                        <button
-                          onClick={() => handleOpenPaymentModal(member)}
-                          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium transition"
-                        >
-                          Record
-                        </button>
-                      )}
-                      {memberPayments.length > 0 && (
-                        <button
-                          onClick={() => setExpandedMember(isExpanded ? null : member.id)}
-                          className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition"
-                        >
-                          <svg className={`w-4 h-4 transition-transform ${isExpanded ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                          </svg>
-                        </button>
-                      )}
+                      <div className="text-white font-bold truncate">{member.name}</div>
+                      <div className="text-gray-400 text-xs truncate">{member.email || member.mobile || "—"}</div>
                     </div>
                   </div>
 
+                  <div className="space-y-2 mb-4 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Package Fee:</span>
+                      <span className="text-white font-medium">
+                        {member.membershipFee ? `Rs. ${member.membershipFee}` : "N/A"}
+                      </span>
+                    </div>
+                    {member.packageDuration && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-400">Duration:</span>
+                        <span className="text-white font-medium">{member.packageDuration} Month{member.packageDuration > 1 ? "s" : ""}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Status:</span>
+                      <span className={`font-medium ${isPaid ? "text-green-400" : "text-red-400"}`}>
+                        {isPaid ? "Paid" : "Unpaid"}
+                      </span>
+                    </div>
+                    {nextDate && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-400">Next Due:</span>
+                        <span className={`font-medium ${dueDateColor}`}>
+                          {nextDate.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Payments:</span>
+                      <span className="text-white font-medium">{memberPayments.length}</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <button
+                      onClick={() => !isPaid && handleOpenPaymentModal(member)}
+                      disabled={isPaid}
+                      className={`w-full py-2 rounded-lg font-medium text-sm transition ${
+                        isPaid
+                          ? "bg-gray-700 text-gray-500 cursor-not-allowed"
+                          : "bg-blue-600 hover:bg-blue-700 text-white active:scale-95"
+                      }`}
+                    >
+                      {isPaid ? "Already Paid" : "Mark as Paid"}
+                    </button>
+                    {memberPayments.length > 0 && (
+                      <button
+                        onClick={() => setExpandedMember(isExpanded ? null : member.id)}
+                        className="w-full py-2 rounded-lg font-medium text-sm transition bg-blue-600/10 text-blue-400 hover:bg-blue-600/20 border border-blue-600/30"
+                      >
+                        {isExpanded ? "Hide History" : "View Payment History"}
+                      </button>
+                    )}
+                  </div>
+
                   {isExpanded && memberPayments.length > 0 && (
-                    <div className="border-t border-gray-700 p-4 space-y-2">
+                    <div className="mt-4 pt-4 border-t border-gray-700 space-y-2">
                       <div className="text-xs font-medium text-gray-400 mb-2">Payment History</div>
                       {memberPayments.slice(0, 6).map((p) => (
-                        <div key={p.id} className="flex items-center justify-between text-xs bg-gray-900 rounded-lg px-3 py-2">
-                          <div>
-                            <span className="text-white font-medium">{formatMonth(p.month)}</span>
-                            <span className="text-gray-500 ml-2">{p.paymentMethod}</span>
+                        <div key={p.id} className="bg-gray-900 rounded-lg px-3 py-2">
+                          <div className="flex items-center justify-between mb-0.5">
+                            <span className="text-white text-xs font-medium">{formatMonth(p.month)}</span>
+                            <span className="text-green-400 text-xs font-medium">Rs. {p.amount?.toFixed(2)}</span>
                           </div>
-                          <div className="text-right">
-                            <div className="text-green-400 font-medium">${p.amount?.toFixed(2)}</div>
-                            <div className="text-gray-500">{formatDate(p.paidAt)}</div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-gray-500 text-xs">{p.paymentMethod}</span>
+                            <span className="text-gray-500 text-xs">{formatDate(p.paidAt)}</span>
                           </div>
+                          {p.notes && <div className="text-gray-500 text-xs mt-1">{p.notes}</div>}
                         </div>
                       ))}
                     </div>
@@ -321,7 +360,7 @@ const InstructorPayments = () => {
               );
             })}
             {filteredMembers.length === 0 && (
-              <div className="text-center py-12 text-gray-400">No members found.</div>
+              <div className="col-span-full text-center py-12 text-gray-400">No members found.</div>
             )}
           </div>
         )}

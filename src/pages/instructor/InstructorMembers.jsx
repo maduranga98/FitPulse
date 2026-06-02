@@ -355,10 +355,10 @@ const InstructorMembers = () => {
                 </div>
 
                 {/* Health Information */}
-                {(selectedMember.height || selectedMember.weight || selectedMember.bmi) && (
-                  <div className="bg-gray-900 rounded-lg p-4">
-                    <h3 className="text-white font-semibold mb-3 text-sm uppercase tracking-wide text-gray-400">Health</h3>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div className="bg-gray-900 rounded-lg p-4">
+                  <h3 className="text-white font-semibold mb-3 text-sm uppercase tracking-wide text-gray-400">Health & Body</h3>
+                  {(selectedMember.height || selectedMember.weight) ? (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
                       {selectedMember.height && (
                         <div>
                           <p className="text-gray-500 text-xs">Height</p>
@@ -384,25 +384,31 @@ const InstructorMembers = () => {
                         );
                       })()}
                     </div>
-                    {selectedMember.diseases && (
-                      <div className="mt-3 pt-3 border-t border-gray-700">
-                        <p className="text-gray-500 text-xs mb-1.5">Medical Conditions</p>
-                        <p className="text-white text-sm">{Array.isArray(selectedMember.diseases) ? selectedMember.diseases.join(", ") : selectedMember.diseases || "None"}</p>
-                      </div>
-                    )}
-                    {selectedMember.allergies && (
-                      <div className="mt-3 pt-3 border-t border-gray-700">
-                        <p className="text-gray-500 text-xs mb-1.5">Allergies</p>
-                        <p className="text-white text-sm">{Array.isArray(selectedMember.allergies) ? selectedMember.allergies.join(", ") : selectedMember.allergies || "None"}</p>
+                  ) : (
+                    <p className="text-gray-500 text-xs mb-3">No body measurements recorded</p>
+                  )}
+                  <div className="space-y-3">
+                    <div className="pt-3 border-t border-gray-700">
+                      <p className="text-gray-500 text-xs mb-1.5">Medical Conditions</p>
+                      <p className="text-white text-sm">{selectedMember.diseases ? (Array.isArray(selectedMember.diseases) ? selectedMember.diseases.join(", ") : selectedMember.diseases) : "None"}</p>
+                    </div>
+                    <div className="pt-3 border-t border-gray-700">
+                      <p className="text-gray-500 text-xs mb-1.5">Allergies</p>
+                      <p className="text-white text-sm">{selectedMember.allergies ? (Array.isArray(selectedMember.allergies) ? selectedMember.allergies.join(", ") : selectedMember.allergies) : "None"}</p>
+                    </div>
+                    {selectedMember.bloodType && (
+                      <div className="pt-3 border-t border-gray-700">
+                        <p className="text-gray-500 text-xs mb-1.5">Blood Type</p>
+                        <p className="text-white text-sm font-medium">{selectedMember.bloodType}</p>
                       </div>
                     )}
                   </div>
-                )}
+                </div>
 
                 {/* Emergency Contact */}
-                {(selectedMember.emergencyName || selectedMember.emergencyContactName || selectedMember.emergencyContact) && (
-                  <div className="bg-gray-900 rounded-lg p-4">
-                    <h3 className="text-white font-semibold mb-3 text-sm uppercase tracking-wide text-gray-400">Emergency Contact</h3>
+                <div className="bg-gray-900 rounded-lg p-4">
+                  <h3 className="text-white font-semibold mb-3 text-sm uppercase tracking-wide text-gray-400">Emergency Contact</h3>
+                  {(selectedMember.emergencyName || selectedMember.emergencyContactName || selectedMember.emergencyContact || selectedMember.emergencyRelation) ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {(selectedMember.emergencyName || selectedMember.emergencyContactName) && (
                         <div>
@@ -416,9 +422,17 @@ const InstructorMembers = () => {
                           <p className="text-white text-sm font-medium">{selectedMember.emergencyContact}</p>
                         </div>
                       )}
+                      {selectedMember.emergencyRelation && (
+                        <div>
+                          <p className="text-gray-500 text-xs">Relationship</p>
+                          <p className="text-white text-sm font-medium">{selectedMember.emergencyRelation}</p>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                )}
+                  ) : (
+                    <p className="text-gray-500 text-sm">No emergency contact recorded</p>
+                  )}
+                </div>
 
                 {/* Notes */}
                 {selectedMember.notes && (

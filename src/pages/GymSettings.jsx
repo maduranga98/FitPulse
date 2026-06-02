@@ -30,6 +30,7 @@ const GymSettings = () => {
     instructorPermissions: {
       registerMembers: false,
       collectPayments: false,
+      viewSupplements: false,
       ...settings.instructorPermissions,
     },
     notifications: { ...settings.notifications },
@@ -137,6 +138,12 @@ const GymSettings = () => {
               description="Allow instructors to record member payments"
               checked={localSettings.instructorPermissions.collectPayments === true}
               onChange={(v) => updateInstructorPerm("collectPayments", v)}
+            />
+            <ToggleRow
+              label="Supplement Management"
+              description="Allow instructors to view supplement inventory and approve/reject member supplement requests"
+              checked={localSettings.instructorPermissions.viewSupplements === true}
+              onChange={(v) => updateInstructorPerm("viewSupplements", v)}
             />
           </div>
 
