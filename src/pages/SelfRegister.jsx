@@ -4,7 +4,25 @@ import { useParams, useSearchParams } from "react-router-dom";
 const SelfRegister = () => {
   const { gymId } = useParams();
   const [searchParams] = useSearchParams();
-  const gymName = searchParams.get("gym") || "Gym";
+  const [gymName, setGymName] = useState(searchParams.get("gym") || "");
+
+  // Fetch gym name from Firestore so we always show the real gym name
+  useEffect(() => {
+    if (!gymId) return;
+    (async () => {
+      try {
+        const { db } = await import("../config/firebase");
+        const { doc, getDoc } = await import("firebase/firestore");
+        const gymDoc = await getDoc(doc(db, "gyms", gymId));
+        if (gymDoc.exists()) {
+          const name = gymDoc.data().name;
+          if (name) setGymName(name);
+        }
+      } catch {
+        // keep fallback value
+      }
+    })();
+  }, [gymId]);
 
   const [form, setForm] = useState({
     name: "",
