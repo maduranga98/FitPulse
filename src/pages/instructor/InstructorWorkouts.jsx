@@ -145,10 +145,9 @@ const InstructorWorkouts = () => {
           where("status", "==", "active")
         )
       );
-      const membersData = membersSnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
+      const membersData = membersSnapshot.docs
+        .map((doc) => ({ id: doc.id, ...doc.data() }))
+        .filter((m) => m.role === "member" || (!m.role && m.membershipType));
 
       setTemplates(templatesData);
       setExercises(allExercises);
@@ -398,7 +397,7 @@ const InstructorWorkouts = () => {
 
   return (
     <AdminLayout>
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-black p-6">
+      <div className="p-6">
         {/* Header */}
         <div className="mb-8">
           <div className="flex items-center justify-between mb-4">

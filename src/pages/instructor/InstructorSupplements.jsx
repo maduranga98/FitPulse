@@ -20,6 +20,14 @@ const InstructorSupplements = () => {
   const [adminNotes, setAdminNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState(null);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [editingSupplement, setEditingSupplement] = useState(null);
+  const [supplementForm, setSupplementForm] = useState({
+    name: "", availableQuantity: "", price: "", scoopPrice: "",
+    details: "", notes: "", category: "", imageURLs: [""],
+  });
+
+  const supplementCategories = ["Protein", "Pre-Workout", "Post-Workout", "Vitamins", "Mass Gainer", "Creatine", "BCAA", "Fat Burner", "Energy", "Other"];
 
   const canAccessSupplements = settings.instructorPermissions?.viewSupplements !== false;
 
@@ -52,6 +60,111 @@ const InstructorSupplements = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const resetSupplementForm = () => {
+    setShowAddModal(false);
+    setEditingSupplement(null);
+    setSupplementForm({ name: "", availableQuantity: "", price: "", scoopPrice: "", details: "", notes: "", category: "", imageURLs: [""] });
+  };
+
+  const handleSaveSupplement = async () => {
+    if (!supplementForm.name || !supplementForm.availableQuantity || !supplementForm.price) {
+      showToast("Please fill in Name, Quantity, and Price.", "error");
+      return;
+    }
+    try {
+      const { db } = await import("../../config/firebase");
+      const { collection, addDoc, updateDoc, doc, Timestamp } = await import("firebase/firestore");
+      const data = {
+        ...supplementForm,
+        gymId: currentGymId,
+        availableQuantity: parseInt(supplementForm.availableQuantity),
+        price: parseFloat(supplementForm.price),
+        scoopPrice: supplementForm.scoopPrice ? parseFloat(supplementForm.scoopPrice) : 0,
+        imageURLs: supplementForm.imageURLs.filter((u) => u.trim()),
+        updatedAt: Timestamp.now(),
+      };
+      if (editingSupplement) {
+        await updateDoc(doc(db, "supplements", editingSupplement.id), data);
+        showToast("Supplement updated!");
+      } else {
+        await addDoc(collection(db, "supplements"), { ...data, createdAt: Timestamp.now(), createdBy: user?.id });
+        showToast("Supplement added!");
+      }
+      resetSupplementForm();
+      fetchData();
+    } catch (err) {
+      console.error(err);
+      showToast("Failed to save supplement.", "error");
+    }
+  };
+
+  const handleEditSupplement = (supp) => {
+    setEditingSupplement(supp);
+    setSupplementForm({
+      name: supp.name || "",
+      availableQuantity: String(supp.availableQuantity ?? ""),
+      price: String(supp.price ?? ""),
+      scoopPrice: supp.scoopPrice ? String(supp.scoopPrice) : "",
+      details: supp.details || "",
+      notes: supp.notes || "",
+      category: supp.category || "",
+      imageURLs: supp.imageURLs?.length ? supp.imageURLs : [""],
+    });
+    setShowAddModal(true);
+  };
+
+  const handleDeleteSupplement = async (id) => {
+    if (!confirm("Delete this supplement?")) return;
+    try {
+      const { db } = await import("../../config/firebase");
+      const { doc, deleteDoc } = await import("firebase/firestore");
+      await deleteDoc(doc(db, "supplements", id));
+      showToast("Supplement deleted.");
+      fetchData();
+    } catch (err) {
+      console.error(err);
+      showToast("Failed to delete supplement.", "error");
+    }
+  };
+
+  const handleUpdateStock = async (supp) => {
+    const val = prompt(`Update stock for ${supp.name}\nCurrent: ${supp.availableQuantity}`, supp.availableQuantity);
+    if (val === null) return;
+    const qty = parseInt(val);
+    if (isNaN(qty) || qty < 0) { alert("Invalid quantity"); return; }
+    try {
+      const { db } = await import("../../config/firebase");
+      const { doc, updateDoc } = await import("firebase/firestore");
+      await updateDoc(doc(db, "supplements", supp.id), { availableQuantity: qty });
+      showToast("Stock updated!");
+      fetchData();
+    } catch (err) {
+      showToast("Failed to update stock.", "error");
+    }
+  };
+
+  const handleImageUpload = async (e, index) => {
+    const file = e.target.files[0];
+    if (!file || !file.type.startsWith("image/")) { alert("Please select an image file"); return; }
+    if (file.size > 5 * 1024 * 1024) { alert("File must be under 5MB"); return; }
+    try {
+      const { storage } = await import("../../config/firebase");
+      const { ref, uploadBytesResumable, getDownloadURL } = await import("firebase/storage");
+      const fileName = `supplements/${currentGymId}/${Date.now()}_${file.name}`;
+      const task = uploadBytesResumable(ref(storage, fileName), file);
+      task.on("state_changed", null,
+        (err) => { console.error(err); showToast("Upload failed", "error"); },
+        async () => {
+          const url = await getDownloadURL(task.snapshot.ref);
+          const urls = [...supplementForm.imageURLs];
+          urls[index] = url;
+          setSupplementForm((f) => ({ ...f, imageURLs: urls }));
+          showToast("Image uploaded!");
+        }
+      );
+    } catch (err) { console.error(err); showToast("Upload failed", "error"); }
   };
 
   const getMemberName = (memberId) =>
@@ -192,9 +305,18 @@ const InstructorSupplements = () => {
         )}
 
         {/* Header */}
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-white">Supplements</h1>
-          <p className="text-gray-400 text-sm">View supplement inventory and manage member requests</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-bold text-white">Supplements</h1>
+            <p className="text-gray-400 text-sm">Manage supplement inventory and member requests</p>
+          </div>
+          <button
+            onClick={() => { resetSupplementForm(); setShowAddModal(true); }}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition flex items-center gap-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+            Add Supplement
+          </button>
         </div>
 
         {/* Stats */}
@@ -282,6 +404,11 @@ const InstructorSupplements = () => {
                       </div>
                     )}
                   </div>
+                  <div className="flex gap-2 mt-3 pt-3 border-t border-gray-700">
+                    <button onClick={() => handleUpdateStock(supp)} className="flex-1 py-1.5 bg-green-600/20 hover:bg-green-600/30 text-green-400 rounded-lg text-xs font-medium transition">Stock</button>
+                    <button onClick={() => handleEditSupplement(supp)} className="flex-1 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 rounded-lg text-xs font-medium transition">Edit</button>
+                    <button onClick={() => handleDeleteSupplement(supp.id)} className="flex-1 py-1.5 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-lg text-xs font-medium transition">Delete</button>
+                  </div>
                 </div>
               ))}
               {filteredSupplements.length === 0 && (
@@ -345,6 +472,87 @@ const InstructorSupplements = () => {
               )}
             </div>
           </>
+        )}
+
+        {/* Add/Edit Supplement Modal */}
+        {showAddModal && (
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+            <div className="bg-gray-800 border border-gray-700 rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
+                <h2 className="text-lg font-bold text-white">{editingSupplement ? "Edit Supplement" : "Add Supplement"}</h2>
+                <button onClick={resetSupplementForm} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+              <div className="p-6 space-y-4">
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1.5">Name *</label>
+                  <input type="text" value={supplementForm.name} onChange={(e) => setSupplementForm((f) => ({ ...f, name: e.target.value }))} className="w-full px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Supplement name" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1.5">Quantity *</label>
+                    <input type="number" value={supplementForm.availableQuantity} onChange={(e) => setSupplementForm((f) => ({ ...f, availableQuantity: e.target.value }))} className="w-full px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="100" min="0" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1.5">Price (Rs.) *</label>
+                    <input type="number" value={supplementForm.price} onChange={(e) => setSupplementForm((f) => ({ ...f, price: e.target.value }))} className="w-full px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="2500" min="0" step="0.01" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1.5">Scoop Price (Rs.)</label>
+                    <input type="number" value={supplementForm.scoopPrice} onChange={(e) => setSupplementForm((f) => ({ ...f, scoopPrice: e.target.value }))} className="w-full px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Optional" min="0" step="0.01" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1.5">Category</label>
+                    <select value={supplementForm.category} onChange={(e) => setSupplementForm((f) => ({ ...f, category: e.target.value }))} className="w-full px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                      <option value="">Select category</option>
+                      {supplementCategories.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1.5">Details</label>
+                  <textarea value={supplementForm.details} onChange={(e) => setSupplementForm((f) => ({ ...f, details: e.target.value }))} className="w-full px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" rows={2} placeholder="Product description..." />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1.5">Notes</label>
+                  <textarea value={supplementForm.notes} onChange={(e) => setSupplementForm((f) => ({ ...f, notes: e.target.value }))} className="w-full px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" rows={2} placeholder="Internal notes..." />
+                </div>
+                {/* Images */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs text-gray-400">Images</label>
+                    <button type="button" onClick={() => setSupplementForm((f) => ({ ...f, imageURLs: [...f.imageURLs, ""] }))} className="text-xs text-blue-400 hover:text-blue-300">+ Add</button>
+                  </div>
+                  <div className="space-y-2">
+                    {supplementForm.imageURLs.map((url, i) => (
+                      <div key={i} className="flex gap-2 items-center">
+                        <input type="text" value={url} onChange={(e) => { const u = [...supplementForm.imageURLs]; u[i] = e.target.value; setSupplementForm((f) => ({ ...f, imageURLs: u })); }} className="flex-1 px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Image URL" />
+                        <label className="cursor-pointer px-2 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded text-xs">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                          <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, i)} />
+                        </label>
+                        {supplementForm.imageURLs.length > 1 && (
+                          <button type="button" onClick={() => setSupplementForm((f) => ({ ...f, imageURLs: f.imageURLs.filter((_, j) => j !== i) }))} className="text-red-400 hover:text-red-300">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                          </button>
+                        )}
+                        {url && url.startsWith("http") && <img src={url} alt="" className="h-8 w-8 object-cover rounded" onError={(e) => e.target.style.display = "none"} />}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex gap-3 pt-2">
+                  <button onClick={resetSupplementForm} className="flex-1 py-2.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition">Cancel</button>
+                  <button onClick={handleSaveSupplement} className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">
+                    {editingSupplement ? "Update" : "Add Supplement"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* Approval Modal */}

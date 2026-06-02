@@ -40,6 +40,8 @@ const InstructorExercises = () => {
   const [selectedMembers, setSelectedMembers] = useState([]);
   const [uploadingFiles, setUploadingFiles] = useState(false);
   const [uploadProgress, setUploadProgress] = useState({});
+  const [showCreateCategoryModal, setShowCreateCategoryModal] = useState(false);
+  const [categoryForm, setCategoryForm] = useState({ name: "", description: "", icon: "💪" });
 
   // Form state for creating exercise
   const [exerciseForm, setExerciseForm] = useState({
@@ -139,10 +141,9 @@ const InstructorExercises = () => {
           where("status", "==", "active")
         )
       );
-      const membersData = membersSnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
+      const membersData = membersSnapshot.docs
+        .map((doc) => ({ id: doc.id, ...doc.data() }))
+        .filter((m) => m.role === "member" || (!m.role && m.membershipType));
 
       setCategories(categoriesData);
       setExercises(allExercises);
@@ -300,6 +301,79 @@ const InstructorExercises = () => {
     });
   };
 
+  const handleCreateCategory = async (e) => {
+    e.preventDefault();
+    if (!categoryForm.name.trim()) return;
+    try {
+      const { db } = await import("../../config/firebase");
+      const { collection, addDoc, Timestamp } = await import("firebase/firestore");
+      await addDoc(collection(db, "exerciseCategories"), {
+        ...categoryForm,
+        gymId: currentGymId,
+        createdBy: user.id,
+        createdAt: Timestamp.now(),
+      });
+      setShowCreateCategoryModal(false);
+      setCategoryForm({ name: "", description: "", icon: "💪" });
+      fetchData();
+    } catch (error) {
+      console.error("Error creating category:", error);
+      alert("Failed to create category.");
+    }
+  };
+
+  const handlePhotoUpload = async (e, index) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { alert("Please select an image file"); return; }
+    if (file.size > 5 * 1024 * 1024) { alert("File size must be less than 5MB"); return; }
+    try {
+      setUploadingFiles(true);
+      const { storage } = await import("../../config/firebase");
+      const { ref, uploadBytesResumable, getDownloadURL } = await import("firebase/storage");
+      const fileName = `exercises/${currentGymId}/photos/${Date.now()}_${file.name}`;
+      const uploadTask = uploadBytesResumable(ref(storage, fileName), file);
+      uploadTask.on("state_changed",
+        (snap) => setUploadProgress((p) => ({ ...p, [`photo_${index}`]: (snap.bytesTransferred / snap.totalBytes) * 100 })),
+        (err) => { console.error(err); alert("Upload failed"); setUploadingFiles(false); },
+        async () => {
+          const url = await getDownloadURL(uploadTask.snapshot.ref);
+          const newURLs = [...exerciseForm.photoURLs];
+          newURLs[index] = url;
+          setExerciseForm((f) => ({ ...f, photoURLs: newURLs }));
+          setUploadingFiles(false);
+          setUploadProgress((p) => { const n = { ...p }; delete n[`photo_${index}`]; return n; });
+        }
+      );
+    } catch (err) { console.error(err); alert("Upload failed"); setUploadingFiles(false); }
+  };
+
+  const handleVideoUpload = async (e, index) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (!file.type.startsWith("video/")) { alert("Please select a video file"); return; }
+    if (file.size > 100 * 1024 * 1024) { alert("File size must be less than 100MB"); return; }
+    try {
+      setUploadingFiles(true);
+      const { storage } = await import("../../config/firebase");
+      const { ref, uploadBytesResumable, getDownloadURL } = await import("firebase/storage");
+      const fileName = `exercises/${currentGymId}/videos/${Date.now()}_${file.name}`;
+      const uploadTask = uploadBytesResumable(ref(storage, fileName), file);
+      uploadTask.on("state_changed",
+        (snap) => setUploadProgress((p) => ({ ...p, [`video_${index}`]: (snap.bytesTransferred / snap.totalBytes) * 100 })),
+        (err) => { console.error(err); alert("Upload failed"); setUploadingFiles(false); },
+        async () => {
+          const url = await getDownloadURL(uploadTask.snapshot.ref);
+          const newURLs = [...exerciseForm.videoURLs];
+          newURLs[index] = url;
+          setExerciseForm((f) => ({ ...f, videoURLs: newURLs }));
+          setUploadingFiles(false);
+          setUploadProgress((p) => { const n = { ...p }; delete n[`video_${index}`]; return n; });
+        }
+      );
+    } catch (err) { console.error(err); alert("Upload failed"); setUploadingFiles(false); }
+  };
+
   const addStep = () => {
     setExerciseForm({
       ...exerciseForm,
@@ -399,22 +473,29 @@ const InstructorExercises = () => {
                 Browse exercises and assign them to your members
               </p>
             </div>
-            <div className="flex gap-3">
-            <button
-              onClick={() => setShowBrowseModal(true)}
-              className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition flex items-center gap-2"
-            >
-              <Search className="w-5 h-5" />
-              Browse Library
-            </button>
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition flex items-center gap-2"
-            >
-              <Plus className="w-5 h-5" />
-              Create Exercise
-            </button>
-          </div>
+            <div className="flex gap-3 flex-wrap">
+              <button
+                onClick={() => setShowCreateCategoryModal(true)}
+                className="px-4 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-medium transition flex items-center gap-2"
+              >
+                <Plus className="w-5 h-5" />
+                Category
+              </button>
+              <button
+                onClick={() => setShowBrowseModal(true)}
+                className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition flex items-center gap-2"
+              >
+                <Search className="w-5 h-5" />
+                Browse Library
+              </button>
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition flex items-center gap-2"
+              >
+                <Plus className="w-5 h-5" />
+                Create Exercise
+              </button>
+            </div>
           </div>
         </div>
 
@@ -940,6 +1021,79 @@ const InstructorExercises = () => {
                   />
                 </div>
 
+                {/* Photos */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-medium text-gray-300">Photos</label>
+                    <button type="button" onClick={() => setExerciseForm((f) => ({ ...f, photoURLs: [...f.photoURLs, ""] }))} className="text-sm text-blue-400 hover:text-blue-300">+ Add Photo</button>
+                  </div>
+                  <div className="space-y-2">
+                    {exerciseForm.photoURLs.map((url, index) => (
+                      <div key={index} className="space-y-1">
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={url}
+                            onChange={(e) => { const n = [...exerciseForm.photoURLs]; n[index] = e.target.value; setExerciseForm((f) => ({ ...f, photoURLs: n })); }}
+                            className="flex-1 px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            placeholder="Photo URL or upload below"
+                          />
+                          {exerciseForm.photoURLs.length > 1 && (
+                            <button type="button" onClick={() => setExerciseForm((f) => ({ ...f, photoURLs: f.photoURLs.filter((_, i) => i !== index) }))} className="p-2 text-red-400 hover:text-red-300"><X className="w-4 h-4" /></button>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <label className="cursor-pointer px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded text-xs flex items-center gap-1">
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                            Upload Image
+                            <input type="file" accept="image/*" className="hidden" onChange={(e) => handlePhotoUpload(e, index)} />
+                          </label>
+                          {uploadProgress[`photo_${index}`] !== undefined && (
+                            <span className="text-xs text-blue-400">{Math.round(uploadProgress[`photo_${index}`])}%</span>
+                          )}
+                          {url && url.startsWith("http") && <img src={url} alt="" className="h-8 w-8 object-cover rounded" onError={(e) => e.target.style.display = "none"} />}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Videos */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-medium text-gray-300">Videos</label>
+                    <button type="button" onClick={() => setExerciseForm((f) => ({ ...f, videoURLs: [...f.videoURLs, ""] }))} className="text-sm text-blue-400 hover:text-blue-300">+ Add Video</button>
+                  </div>
+                  <div className="space-y-2">
+                    {exerciseForm.videoURLs.map((url, index) => (
+                      <div key={index} className="space-y-1">
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={url}
+                            onChange={(e) => { const n = [...exerciseForm.videoURLs]; n[index] = e.target.value; setExerciseForm((f) => ({ ...f, videoURLs: n })); }}
+                            className="flex-1 px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            placeholder="Video URL (YouTube, Vimeo) or upload below"
+                          />
+                          {exerciseForm.videoURLs.length > 1 && (
+                            <button type="button" onClick={() => setExerciseForm((f) => ({ ...f, videoURLs: f.videoURLs.filter((_, i) => i !== index) }))} className="p-2 text-red-400 hover:text-red-300"><X className="w-4 h-4" /></button>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <label className="cursor-pointer px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded text-xs flex items-center gap-1">
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                            Upload Video
+                            <input type="file" accept="video/*" className="hidden" onChange={(e) => handleVideoUpload(e, index)} />
+                          </label>
+                          {uploadProgress[`video_${index}`] !== undefined && (
+                            <span className="text-xs text-blue-400">{Math.round(uploadProgress[`video_${index}`])}%</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="flex gap-3 pt-4">
                   <button
                     type="button"
@@ -1250,6 +1404,61 @@ const InstructorExercises = () => {
             </div>
           </div>
         )}
+      {/* Create Category Modal */}
+      {showCreateCategoryModal && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-800 rounded-xl max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-bold text-white">Create Category</h2>
+              <button onClick={() => { setShowCreateCategoryModal(false); setCategoryForm({ name: "", description: "", icon: "💪" }); }} className="text-gray-400 hover:text-white transition">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <form onSubmit={handleCreateCategory} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Icon (emoji)</label>
+                <input
+                  type="text"
+                  value={categoryForm.icon}
+                  onChange={(e) => setCategoryForm({ ...categoryForm, icon: e.target.value })}
+                  className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="💪"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Category Name *</label>
+                <input
+                  type="text"
+                  value={categoryForm.name}
+                  onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })}
+                  className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g., Upper Body, Cardio"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Description</label>
+                <textarea
+                  value={categoryForm.description}
+                  onChange={(e) => setCategoryForm({ ...categoryForm, description: e.target.value })}
+                  className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Brief description..."
+                  rows={2}
+                />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => { setShowCreateCategoryModal(false); setCategoryForm({ name: "", description: "", icon: "💪" }); }} className="flex-1 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-medium transition">
+                  Cancel
+                </button>
+                <button type="submit" className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition flex items-center justify-center gap-2">
+                  <Save className="w-4 h-4" />
+                  Create
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
       </div>
     </AdminLayout>
   );
