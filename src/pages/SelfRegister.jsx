@@ -57,6 +57,10 @@ const SelfRegister = () => {
       setError("Name is required");
       return;
     }
+    if (!form.age || parseInt(form.age) < 10 || parseInt(form.age) > 100) {
+      setError("A valid age (10–100) is required");
+      return;
+    }
     if (!form.mobile && !form.whatsapp) {
       setError("At least one phone number (Mobile or WhatsApp) is required");
       return;
@@ -75,10 +79,12 @@ const SelfRegister = () => {
       if (profileImageFile) {
         try {
           const { ref, uploadBytesResumable, getDownloadURL } = await import("firebase/storage");
-          const fileName = `self_reg_${gymId}_${Date.now()}.jpg`;
+          const ext = profileImageFile.name.split(".").pop() || "jpg";
+          const fileName = `self_reg_${gymId}_${Date.now()}.${ext}`;
           const imgRef = ref(storage, `temp-captures/${fileName}`);
+          const metadata = { contentType: profileImageFile.type };
           await new Promise((resolve, reject) => {
-            const task = uploadBytesResumable(imgRef, profileImageFile);
+            const task = uploadBytesResumable(imgRef, profileImageFile, metadata);
             task.on("state_changed", null, reject, () => resolve(task.snapshot));
           });
           profileImageUrl = await getDownloadURL(imgRef);
@@ -229,13 +235,14 @@ const SelfRegister = () => {
             {/* Age */}
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-1">
-                Age
+                Age <span className="text-red-500">*</span>
               </label>
               <input
                 type="number"
                 name="age"
                 value={form.age}
                 onChange={handleChange}
+                required
                 min="10"
                 max="100"
                 className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2.5 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"

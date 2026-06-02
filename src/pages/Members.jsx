@@ -357,8 +357,9 @@ const Members = () => {
       if (profileImageFile) {
         try {
           const imgRef = ref(storage, `members/${currentGymId}/${memberRef.id}/profile.jpg`);
+          const imgMetadata = { contentType: profileImageFile.type };
           await new Promise((resolve, reject) => {
-            const uploadTask = uploadBytesResumable(imgRef, profileImageFile);
+            const uploadTask = uploadBytesResumable(imgRef, profileImageFile, imgMetadata);
             uploadTask.on("state_changed", null, reject, () => resolve(uploadTask.snapshot));
           });
           profileImageUrl = await getDownloadURL(imgRef);
