@@ -1,10 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { useNotification } from "../contexts/NotificationContext";
 import Sidebar from "../components/Sidebar";
 import { isAdmin, validateGymId } from "../utils/authUtils";
 import { calculateBMI, validateBMIInputs } from "../utils/validationUtils";
-import { QRCodeSVG } from "qrcode.react";
+import { QRCodeSVG, QRCodeCanvas } from "qrcode.react";
 import { useGymSettings } from "../contexts/GymSettingsContext";
 import { supabase } from "../services/supabaseClient";
 import { APP_URL } from "../config/app";
@@ -76,6 +76,7 @@ const Members = () => {
   const [showQRModal, setShowQRModal] = useState(false);
   const [pendingRegistrations, setPendingRegistrations] = useState([]);
   const [hikSyncingId, setHikSyncingId] = useState(null);
+  const qrCanvasRef = useRef(null);
 
   const userIsAdmin = isAdmin(user);
   const gymValidation = validateGymId(user);
@@ -443,6 +444,103 @@ const Members = () => {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleDownloadQR = async () => {
+    const qrCanvas = qrCanvasRef.current?.querySelector("canvas");
+    if (!qrCanvas) return;
+
+    const gymName = user?.gymName || user?.name || "PulsedGym";
+    const appName = "PulsedGym";
+
+    // Card dimensions
+    const W = 600;
+    const H = 780;
+    const canvas = document.createElement("canvas");
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext("2d");
+
+    // Background gradient
+    ctx.fillStyle = "#111827"; // gray-900
+    ctx.fillRect(0, 0, W, H);
+
+    // Top accent bar
+    const grad = ctx.createLinearGradient(0, 0, W, 0);
+    grad.addColorStop(0, "#7c3aed"); // purple-600
+    grad.addColorStop(1, "#db2777"); // pink-600
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, 8);
+
+    // Draw logo
+    await new Promise((resolve) => {
+      const logo = new Image();
+      logo.onload = () => {
+        const logoSize = 72;
+        ctx.drawImage(logo, (W - logoSize) / 2, 36, logoSize, logoSize);
+        resolve();
+      };
+      logo.onerror = resolve;
+      logo.src = "/logo.png";
+    });
+
+    // App name
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 28px system-ui, -apple-system, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(appName, W / 2, 140);
+
+    // Divider
+    ctx.strokeStyle = "#374151"; // gray-700
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(60, 158);
+    ctx.lineTo(W - 60, 158);
+    ctx.stroke();
+
+    // Instruction label
+    ctx.fillStyle = "#9ca3af"; // gray-400
+    ctx.font = "16px system-ui, -apple-system, sans-serif";
+    ctx.fillText("Scan to register as a member", W / 2, 186);
+
+    // QR code on white card
+    const qrSize = 260;
+    const qrX = (W - qrSize) / 2;
+    const qrY = 210;
+    const radius = 16;
+    // White rounded rect behind QR
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.roundRect(qrX - 20, qrY - 20, qrSize + 40, qrSize + 40, radius);
+    ctx.fill();
+    ctx.drawImage(qrCanvas, qrX, qrY, qrSize, qrSize);
+
+    // Second divider
+    ctx.strokeStyle = "#374151";
+    ctx.beginPath();
+    ctx.moveTo(60, qrY + qrSize + 60);
+    ctx.lineTo(W - 60, qrY + qrSize + 60);
+    ctx.stroke();
+
+    // Gym name
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 26px system-ui, -apple-system, sans-serif";
+    ctx.fillText(gymName, W / 2, qrY + qrSize + 100);
+
+    // Footer tagline
+    ctx.fillStyle = "#6b7280"; // gray-500
+    ctx.font = "14px system-ui, -apple-system, sans-serif";
+    ctx.fillText("Track your progress • View schedules • Stay fit", W / 2, qrY + qrSize + 132);
+
+    // Bottom accent bar
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, H - 8, W, 8);
+
+    // Trigger download
+    const link = document.createElement("a");
+    link.download = `${gymName.replace(/\s+/g, "_")}_registration_qr.png`;
+    link.href = canvas.toDataURL("image/png");
+    link.click();
   };
 
   const handleSyncToHikCentral = async (member) => {
@@ -1939,27 +2037,21 @@ const Members = () => {
               onClick={() => setShowQRModal(false)}
               className="absolute top-3 right-3 p-1 text-gray-400 hover:text-white"
             >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18L18 6M6 6l12 12"
-                />
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
 
-            <h3 className="text-lg font-bold text-white mb-1">
-              Member Self-Registration
+            {/* Branding header */}
+            <div className="flex items-center justify-center gap-2 mb-1">
+              <img src="/logo.png" alt="PulsedGym" className="w-7 h-7 object-contain" />
+              <span className="text-white font-bold text-base">PulsedGym</span>
+            </div>
+            <h3 className="text-lg font-bold text-white mb-0.5">
+              {user?.gymName || user?.name || "Your Gym"}
             </h3>
-            <p className="text-sm text-gray-400 mb-5">
-              Share this QR code with new members. They can scan it to fill in
-              their own details.
+            <p className="text-sm text-gray-400 mb-4">
+              Share this QR code with new members. They can scan it to fill in their own details.
             </p>
 
             <div className="bg-white rounded-xl p-4 inline-block mb-4">
@@ -1970,7 +2062,27 @@ const Members = () => {
               />
             </div>
 
+            {/* Hidden canvas-based QR for download */}
+            <div ref={qrCanvasRef} className="hidden">
+              <QRCodeCanvas
+                value={`${APP_URL}/register/${currentGymId}?gym=${encodeURIComponent(user?.gymName || user?.name || "PulsedGym")}`}
+                size={500}
+                level="M"
+              />
+            </div>
+
             <div className="space-y-3">
+              {/* Download for print */}
+              <button
+                onClick={handleDownloadQR}
+                className="w-full py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-lg text-sm font-medium transition flex items-center justify-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Download for Print
+              </button>
+
               <button
                 onClick={() => {
                   const url = `${APP_URL}/register/${currentGymId}?gym=${encodeURIComponent(user?.gymName || user?.name || "PulsedGym")}`;
@@ -1979,18 +2091,8 @@ const Members = () => {
                 }}
                 className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition flex items-center justify-center gap-2"
               >
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"
-                  />
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
                 </svg>
                 Copy Registration Link
               </button>
@@ -2000,31 +2102,15 @@ const Members = () => {
                   onClick={async () => {
                     const url = `${APP_URL}/register/${currentGymId}?gym=${encodeURIComponent(user?.gymName || user?.name || "PulsedGym")}`;
                     try {
-                      await navigator.share({
-                        title: "Join Our Gym",
-                        text: "Register as a member by filling in your details:",
-                        url,
-                      });
+                      await navigator.share({ title: "Join Our Gym", text: "Register as a member by filling in your details:", url });
                     } catch (err) {
-                      if (err.name !== "AbortError") {
-                        console.error("Share failed:", err);
-                      }
+                      if (err.name !== "AbortError") console.error("Share failed:", err);
                     }
                   }}
                   className="w-full py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition flex items-center justify-center gap-2"
                 >
-                  <svg
-                    className="w-4 h-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
-                    />
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
                   </svg>
                   Share Link
                 </button>
@@ -2032,8 +2118,7 @@ const Members = () => {
             </div>
 
             <p className="text-xs text-gray-500 mt-4">
-              Submitted registrations will appear in a pending list for your
-              approval.
+              Submitted registrations will appear in a pending list for your approval.
             </p>
           </div>
         </div>
