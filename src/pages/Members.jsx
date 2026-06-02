@@ -103,6 +103,10 @@ const Members = () => {
 
   const [generatedCredentials, setGeneratedCredentials] = useState(null);
   const [bmiInfo, setBmiInfo] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [profileImageFile, setProfileImageFile] = useState(null);
+  const [profileImagePreview, setProfileImagePreview] = useState(null);
+  const [profileImageUrlOverride, setProfileImageUrlOverride] = useState(null);
 
   useEffect(() => {
     fetchMembers();
@@ -204,6 +208,11 @@ const Members = () => {
       emergencyName: registration.emergencyName || "",
       notes: `Self-registered`,
     });
+    // Pre-fill profile image preview from self-registration
+    if (registration.profileImageUrl) {
+      setProfileImagePreview(registration.profileImageUrl);
+      setProfileImageUrlOverride(registration.profileImageUrl);
+    }
     setShowAddMember(true);
 
     // Mark as processed
@@ -260,6 +269,23 @@ const Members = () => {
     return password;
   };
 
+  const handleProfileImageChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      showError("Please select an image file");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      showError("Image must be smaller than 5MB");
+      return;
+    }
+    setProfileImageFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => setProfileImagePreview(reader.result);
+    reader.readAsDataURL(file);
+  };
+
   const handleAddMember = async (e) => {
     e.preventDefault();
 
@@ -288,6 +314,7 @@ const Members = () => {
       }
     }
 
+    setIsSubmitting(true);
     try {
       const { db, storage } = await import("../config/firebase");
       const { collection, addDoc, Timestamp, updateDoc, doc } =
@@ -323,10 +350,27 @@ const Members = () => {
 
       const memberCode = generateMemberCode(memberRef.id);
       const devicePIN = generateDevicePIN();
+
+      // Upload profile image if provided, or keep existing URL from self-registration
+      let profileImageUrl = profileImageUrlOverride || null;
+      if (profileImageFile) {
+        try {
+          const imgRef = ref(storage, `members/${currentGymId}/${memberRef.id}/profile.jpg`);
+          await new Promise((resolve, reject) => {
+            const uploadTask = uploadBytesResumable(imgRef, profileImageFile);
+            uploadTask.on("state_changed", null, reject, () => resolve(uploadTask.snapshot));
+          });
+          profileImageUrl = await getDownloadURL(imgRef);
+        } catch (imgErr) {
+          console.warn("Profile image upload failed:", imgErr);
+        }
+      }
+
       await updateDoc(doc(db, "members", memberRef.id), {
         memberCode,
         firestoreId: memberRef.id,
         devicePIN,
+        ...(profileImageUrl ? { profileImageUrl } : {}),
       });
       if (supabase) {
         const { error: supabaseError } = await supabase.from("members").insert({
@@ -362,61 +406,10 @@ const Members = () => {
         name: memberForm.name,
         memberCode,
         devicePIN,
+        profileImageUrl,
       });
 
-      // Send SMS notification (if enabled)
-      if (settings.notifications.sms !== false) {
-        try {
-          const { sendMemberRegistrationSMS } =
-            await import("../services/smsService");
-
-          await sendMemberRegistrationSMS(
-            {
-              name: memberForm.name,
-              mobile: memberForm.mobile,
-              whatsapp: memberForm.whatsapp,
-            },
-            username,
-            password,
-            currentGymId,
-          );
-
-          console.log("✅ SMS sent successfully");
-        } catch (smsError) {
-          console.error("⚠️ SMS sending failed:", smsError);
-          showWarning(
-            `Member added, but SMS sending failed: ${smsError.message}. Manually share credentials with the member.`,
-          );
-        }
-      }
-
-      // Send Welcome WhatsApp notification (if enabled)
-      if (settings.notifications.whatsapp !== false) {
-        try {
-          const { sendWelcomeMemberWhatsApp } =
-            await import("../services/whatsappService");
-
-          const { doc, getDoc } = await import("firebase/firestore");
-          const { db } = await import("../config/firebase");
-          const gymDoc = await getDoc(doc(db, "gyms", currentGymId));
-          const gymName = gymDoc.exists() ? gymDoc.data().name : "Your Gym";
-
-          await sendWelcomeMemberWhatsApp(
-            {
-              name: memberForm.name,
-              mobile: memberForm.mobile,
-              whatsapp: memberForm.whatsapp,
-              id: username,
-            },
-            gymName,
-            memberForm.joinDate || new Date().toLocaleDateString(),
-          );
-
-          console.log("✅ Welcome WhatsApp sent successfully");
-        } catch (whatsappError) {
-          console.warn("⚠️ Welcome WhatsApp sending failed:", whatsappError);
-        }
-      }
+      // SMS and WhatsApp are sent automatically by the onMemberCreated Cloud Function
 
       // Reset form
       setMemberForm({
@@ -439,11 +432,16 @@ const Members = () => {
         emergencyName: "",
         notes: "",
       });
+      setProfileImageFile(null);
+      setProfileImagePreview(null);
+      setProfileImageUrlOverride(null);
 
       fetchMembers();
     } catch (error) {
       console.error("❌ Error adding member:", error);
       showError("Failed to add member: " + error.message);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -758,8 +756,14 @@ const Members = () => {
                     className="flex items-center justify-between bg-gray-900 rounded-lg p-3 gap-3"
                   >
                     <div className="flex items-center gap-3 min-w-0 flex-1">
-                      <div className="w-9 h-9 bg-purple-600/20 rounded-full flex items-center justify-center text-purple-400 font-bold text-sm flex-shrink-0">
-                        {reg.name?.charAt(0)?.toUpperCase() || "?"}
+                      <div className="w-9 h-9 rounded-full overflow-hidden flex-shrink-0">
+                        {reg.profileImageUrl ? (
+                          <img src={reg.profileImageUrl} alt={reg.name} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full bg-purple-600/20 flex items-center justify-center text-purple-400 font-bold text-sm">
+                            {reg.name?.charAt(0)?.toUpperCase() || "?"}
+                          </div>
+                        )}
                       </div>
                       <div className="min-w-0">
                         <p className="text-white font-medium text-sm truncate">
@@ -847,8 +851,14 @@ const Members = () => {
                 >
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold text-lg">
-                        {member.name?.charAt(0).toUpperCase()}
+                      <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0">
+                        {member.profileImageUrl ? (
+                          <img src={member.profileImageUrl} alt={member.name} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full bg-blue-600 flex items-center justify-center text-white font-bold text-lg">
+                            {member.name?.charAt(0).toUpperCase()}
+                          </div>
+                        )}
                       </div>
                       <div>
                         <h3 className="text-lg font-bold text-white">
@@ -973,6 +983,45 @@ const Members = () => {
                   <h3 className="text-lg font-bold text-white mb-4">
                     Personal Information
                   </h3>
+                </div>
+
+                {/* Profile Image */}
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Profile Photo (optional)
+                  </label>
+                  <div className="flex items-center gap-4">
+                    <div className="w-20 h-20 rounded-full overflow-hidden bg-gray-700 flex items-center justify-center flex-shrink-0">
+                      {profileImagePreview ? (
+                        <img src={profileImagePreview} alt="Preview" className="w-full h-full object-cover" />
+                      ) : (
+                        <svg className="w-8 h-8 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                        </svg>
+                      )}
+                    </div>
+                    <div>
+                      <label className="cursor-pointer px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition inline-block">
+                        {profileImagePreview ? "Change Photo" : "Upload Photo"}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleProfileImageChange}
+                          className="hidden"
+                        />
+                      </label>
+                      {profileImagePreview && (
+                        <button
+                          type="button"
+                          onClick={() => { setProfileImageFile(null); setProfileImagePreview(null); setProfileImageUrlOverride(null); }}
+                          className="ml-2 text-sm text-red-400 hover:text-red-300"
+                        >
+                          Remove
+                        </button>
+                      )}
+                      <p className="text-xs text-gray-500 mt-1">JPEG, PNG or WebP, max 5MB</p>
+                    </div>
+                  </div>
                 </div>
 
                 <div>
@@ -1350,16 +1399,28 @@ const Members = () => {
               <div className="flex gap-3 mt-6">
                 <button
                   type="submit"
-                  className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition"
+                  disabled={isSubmitting}
+                  className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition flex items-center justify-center gap-2"
                 >
-                  Add Member & Generate Credentials
+                  {isSubmitting ? (
+                    <>
+                      <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      Adding Member...
+                    </>
+                  ) : (
+                    "Add Member & Generate Credentials"
+                  )}
                 </button>
                 <button
                   type="button"
+                  disabled={isSubmitting}
                   onClick={() => {
                     setShowAddMember(false);
                   }}
-                  className="px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-medium transition"
+                  className="px-6 py-3 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white rounded-lg font-medium transition"
                 >
                   Cancel
                 </button>
@@ -1539,8 +1600,14 @@ const Members = () => {
           <div className="bg-gray-800 rounded-2xl border border-gray-700 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-gray-800 border-b border-gray-700 p-6 flex items-center justify-between z-10">
               <div className="flex items-center gap-4">
-                <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold text-2xl">
-                  {viewMember.name?.charAt(0).toUpperCase()}
+                <div className="w-16 h-16 rounded-full overflow-hidden flex-shrink-0">
+                  {viewMember.profileImageUrl ? (
+                    <img src={viewMember.profileImageUrl} alt={viewMember.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full bg-blue-600 flex items-center justify-center text-white font-bold text-2xl">
+                      {viewMember.name?.charAt(0).toUpperCase()}
+                    </div>
+                  )}
                 </div>
                 <div>
                   <h2 className="text-2xl font-bold text-white">

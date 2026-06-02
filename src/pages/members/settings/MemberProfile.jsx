@@ -10,6 +10,56 @@ const MemberProfile = () => {
   const [saving, setSaving] = useState(false);
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
   const [bmiInfo, setBmiInfo] = useState(null);
+  const [profileImageFile, setProfileImageFile] = useState(null);
+  const [profileImagePreview, setProfileImagePreview] = useState(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+
+  const handleProfileImageChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      alert("Please select an image file");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert("Image must be smaller than 5MB");
+      return;
+    }
+    setProfileImageFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => setProfileImagePreview(reader.result);
+    reader.readAsDataURL(file);
+  };
+
+  const handleUpdateProfileImage = async () => {
+    if (!profileImageFile) return;
+    setUploadingImage(true);
+    try {
+      const { storage } = await import("../../../config/firebase");
+      const { ref, uploadBytesResumable, getDownloadURL } = await import("firebase/storage");
+      const { db } = await import("../../../config/firebase");
+      const { doc, updateDoc } = await import("firebase/firestore");
+
+      const imgRef = ref(storage, `members/${memberData.gymId}/${currentUser.id}/profile.jpg`);
+      await new Promise((resolve, reject) => {
+        const task = uploadBytesResumable(imgRef, profileImageFile);
+        task.on("state_changed", null, reject, () => resolve(task.snapshot));
+      });
+      const url = await getDownloadURL(imgRef);
+
+      await updateDoc(doc(db, "members", currentUser.id), { profileImageUrl: url });
+      setMemberData({ ...memberData, profileImageUrl: url });
+      setProfileImageFile(null);
+      setProfileImagePreview(null);
+      setShowSuccessMessage(true);
+      setTimeout(() => setShowSuccessMessage(false), 3000);
+    } catch (err) {
+      console.error("Profile image upload failed:", err);
+      alert("Failed to upload profile image. Please try again.");
+    } finally {
+      setUploadingImage(false);
+    }
+  };
 
   const [editForm, setEditForm] = useState({
     name: "",
@@ -190,6 +240,63 @@ const MemberProfile = () => {
           </p>
         </div>
       )}
+
+      {/* Profile Photo */}
+      <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 sm:p-6">
+        <h3 className="text-base sm:text-lg font-bold text-white mb-4">Profile Photo</h3>
+        <div className="flex items-center gap-4">
+          <div className="w-24 h-24 rounded-full overflow-hidden bg-gray-700 flex items-center justify-center flex-shrink-0 ring-2 ring-purple-500/30">
+            {(profileImagePreview || memberData?.profileImageUrl) ? (
+              <img
+                src={profileImagePreview || memberData.profileImageUrl}
+                alt={memberData?.name}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="w-full h-full bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center text-white font-bold text-3xl">
+                {memberData?.name?.charAt(0)?.toUpperCase()}
+              </div>
+            )}
+          </div>
+          <div className="flex-1">
+            <label className="cursor-pointer px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition inline-block">
+              {profileImagePreview ? "Change Photo" : "Update Photo"}
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleProfileImageChange}
+                className="hidden"
+              />
+            </label>
+            {profileImagePreview && (
+              <div className="flex gap-2 mt-2">
+                <button
+                  onClick={handleUpdateProfileImage}
+                  disabled={uploadingImage}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition flex items-center gap-2"
+                >
+                  {uploadingImage ? (
+                    <>
+                      <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      Saving...
+                    </>
+                  ) : "Save Photo"}
+                </button>
+                <button
+                  onClick={() => { setProfileImageFile(null); setProfileImagePreview(null); }}
+                  className="px-3 py-2 text-sm text-red-400 hover:text-red-300"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+            <p className="text-xs text-gray-500 mt-2">JPEG, PNG or WebP, max 5MB</p>
+          </div>
+        </div>
+      </div>
 
       {/* Edit Button */}
       {!isEditing && (

@@ -23,6 +23,26 @@ const SelfRegister = () => {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState("");
+  const [profileImageFile, setProfileImageFile] = useState(null);
+  const [profileImagePreview, setProfileImagePreview] = useState(null);
+
+  const handleProfileImageChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setError("Please select an image file");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setError("Image must be smaller than 5MB");
+      return;
+    }
+    setError("");
+    setProfileImageFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => setProfileImagePreview(reader.result);
+    reader.readAsDataURL(file);
+  };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -45,10 +65,27 @@ const SelfRegister = () => {
     setSubmitting(true);
 
     try {
-      const { db } = await import("../config/firebase");
+      const { db, storage } = await import("../config/firebase");
       const { collection, addDoc, Timestamp } = await import(
         "firebase/firestore"
       );
+
+      // Upload profile image to temp-captures (public write allowed)
+      let profileImageUrl = null;
+      if (profileImageFile) {
+        try {
+          const { ref, uploadBytesResumable, getDownloadURL } = await import("firebase/storage");
+          const fileName = `self_reg_${gymId}_${Date.now()}.jpg`;
+          const imgRef = ref(storage, `temp-captures/${fileName}`);
+          await new Promise((resolve, reject) => {
+            const task = uploadBytesResumable(imgRef, profileImageFile);
+            task.on("state_changed", null, reject, () => resolve(task.snapshot));
+          });
+          profileImageUrl = await getDownloadURL(imgRef);
+        } catch (imgErr) {
+          console.warn("Profile image upload failed:", imgErr);
+        }
+      }
 
       const registrationData = {
         ...form,
@@ -57,6 +94,7 @@ const SelfRegister = () => {
         source: "self_registration",
         createdAt: Timestamp.now(),
         submittedAt: Timestamp.now(),
+        ...(profileImageUrl ? { profileImageUrl } : {}),
       };
 
       await addDoc(collection(db, "self_registrations"), registrationData);
@@ -128,6 +166,45 @@ const SelfRegister = () => {
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Profile Photo */}
+          <div className="bg-gray-800 border border-gray-700 rounded-xl p-5">
+            <h3 className="text-white font-semibold text-sm uppercase tracking-wider mb-4">
+              Profile Photo <span className="text-gray-500 normal-case font-normal">(optional)</span>
+            </h3>
+            <div className="flex items-center gap-4">
+              <div className="w-20 h-20 rounded-full overflow-hidden bg-gray-700 flex items-center justify-center flex-shrink-0">
+                {profileImagePreview ? (
+                  <img src={profileImagePreview} alt="Preview" className="w-full h-full object-cover" />
+                ) : (
+                  <svg className="w-8 h-8 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                )}
+              </div>
+              <div>
+                <label className="cursor-pointer px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition inline-block">
+                  {profileImagePreview ? "Change Photo" : "Upload Photo"}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleProfileImageChange}
+                    className="hidden"
+                  />
+                </label>
+                {profileImagePreview && (
+                  <button
+                    type="button"
+                    onClick={() => { setProfileImageFile(null); setProfileImagePreview(null); }}
+                    className="ml-2 text-sm text-red-400 hover:text-red-300"
+                  >
+                    Remove
+                  </button>
+                )}
+                <p className="text-xs text-gray-500 mt-1">JPEG, PNG or WebP, max 5MB</p>
+              </div>
+            </div>
+          </div>
+
           <div className="bg-gray-800 border border-gray-700 rounded-xl p-5 space-y-4">
             <h3 className="text-white font-semibold text-sm uppercase tracking-wider">
               Personal Information
