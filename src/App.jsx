@@ -51,6 +51,9 @@ import InstructorMembers from "./pages/instructor/InstructorMembers";
 import InstructorMealPlans from "./pages/instructor/InstructorMealPlans";
 import InstructorMemberAnalytics from "./pages/instructor/InstructorMemberAnalytics";
 import InstructorClasses from "./pages/instructor/InstructorClasses";
+import InstructorAddMember from "./pages/instructor/InstructorAddMember";
+import InstructorPayments from "./pages/instructor/InstructorPayments";
+import GymSettings from "./pages/GymSettings";
 import SelfRegister from "./pages/SelfRegister";
 import DeviceManagement from "./pages/DeviceManagement";
 import Devices from "./pages/Devices";
@@ -481,6 +484,23 @@ function App() {
                 }
               />
               <Route
+                path="/gym-settings"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute
+                      allowedRoles={[
+                        "admin",
+                        "manager",
+                        "gym_admin",
+                        "gym_manager",
+                      ]}
+                    >
+                      <GymSettings />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
                 path="/meal-plans"
                 element={
                   <ProtectedRoute>
@@ -617,6 +637,26 @@ function App() {
                   <ProtectedRoute>
                     <RoleRoute allowedRoles={["trainer"]}>
                       <InstructorClasses />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/instructor/add-member"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute allowedRoles={["trainer"]}>
+                      <InstructorAddMember />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/instructor/payments"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute allowedRoles={["trainer"]}>
+                      <InstructorPayments />
                     </RoleRoute>
                   </ProtectedRoute>
                 }

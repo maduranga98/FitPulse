@@ -148,10 +148,9 @@ const Members = () => {
         orderBy("joinDate", "desc"),
       );
       const snapshot = await getDocs(membersQuery);
-      const membersData = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
+      const membersData = snapshot.docs
+        .map((doc) => ({ id: doc.id, ...doc.data() }))
+        .filter((m) => !m.role || m.role === "member");
 
       setMembers(membersData);
       setLoading(false);

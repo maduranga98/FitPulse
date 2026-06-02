@@ -1,0 +1,498 @@
+import { useState, useEffect } from "react";
+import { useAuth } from "../../hooks/useAuth";
+import { useNotification } from "../../contexts/NotificationContext";
+import { useGymSettings } from "../../contexts/GymSettingsContext";
+import AdminLayout from "../../components/AdminLayout";
+import { QRCodeSVG } from "qrcode.react";
+import { APP_URL } from "../../config/app";
+import { calculateBMI, validateBMIInputs } from "../../utils/validationUtils";
+import { supabase } from "../../services/supabaseClient";
+
+const InstructorAddMember = () => {
+  const { user } = useAuth();
+  const { showSuccess, showError, showWarning } = useNotification();
+  const { settings } = useGymSettings();
+  const currentGymId = user?.gymId;
+
+  const [members, setMembers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [showQRModal, setShowQRModal] = useState(false);
+  const [gymName, setGymName] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [generatedCredentials, setGeneratedCredentials] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const canRegisterMembers = settings.instructorPermissions?.registerMembers !== false;
+
+  const [memberForm, setMemberForm] = useState({
+    name: "",
+    age: "",
+    mobile: "",
+    whatsapp: "",
+    email: "",
+    weight: "",
+    height: "",
+    allergies: "",
+    diseases: "",
+    level: "beginner",
+    status: "active",
+    joinDate: new Date().toISOString().split("T")[0],
+    membershipFee: "",
+    packageDuration: 1,
+    nextPaymentDate: "",
+    emergencyContact: "",
+    emergencyName: "",
+    notes: "",
+  });
+
+  const bmiInfo =
+    memberForm.weight && memberForm.height
+      ? calculateBMI(memberForm.weight, memberForm.height)
+      : null;
+
+  useEffect(() => {
+    fetchData();
+  }, [currentGymId]);
+
+  useEffect(() => {
+    if (memberForm.joinDate && memberForm.packageDuration) {
+      const join = new Date(memberForm.joinDate);
+      join.setMonth(join.getMonth() + parseInt(memberForm.packageDuration));
+      setMemberForm((prev) => ({
+        ...prev,
+        nextPaymentDate: join.toISOString().split("T")[0],
+      }));
+    }
+  }, [memberForm.joinDate, memberForm.packageDuration]);
+
+  const fetchData = async () => {
+    if (!currentGymId) { setLoading(false); return; }
+    try {
+      const { db } = await import("../../config/firebase");
+      const { collection, getDocs, query, where, orderBy, doc, getDoc } = await import("firebase/firestore");
+
+      const snap = await getDocs(query(
+        collection(db, "members"),
+        where("gymId", "==", currentGymId),
+        where("status", "==", "active"),
+        orderBy("name", "asc")
+      ));
+      setMembers(
+        snap.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .filter((m) => !m.role || m.role === "member")
+      );
+
+      const gymSnap = await getDoc(doc(db, "gyms", currentGymId));
+      if (gymSnap.exists()) setGymName(gymSnap.data().name || "");
+    } catch (err) {
+      console.error("Error fetching data:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const generateUsername = (name) => {
+    const cleanName = name.toLowerCase().replace(/\s+/g, "");
+    return `${cleanName}${Math.floor(1000 + Math.random() * 9000)}`;
+  };
+
+  const generatePassword = () => {
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    return Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+  };
+
+  const generateMemberCode = (docId) => `PG${docId.substring(0, 6).toUpperCase()}`;
+  const generateDevicePIN = () => Math.floor(100000 + Math.random() * 900000).toString();
+
+  const handleAddMember = async (e) => {
+    e.preventDefault();
+    if (!canRegisterMembers) {
+      showError("You don't have permission to register members");
+      return;
+    }
+    if (!memberForm.mobile && !memberForm.whatsapp) {
+      showError("At least one phone number is required");
+      return;
+    }
+    if (memberForm.weight && memberForm.height) {
+      const v = validateBMIInputs(memberForm.weight, memberForm.height);
+      if (!v.isValid) { showError("Invalid measurements: " + v.errors.join(", ")); return; }
+    }
+
+    setSubmitting(true);
+    try {
+      const { db } = await import("../../config/firebase");
+      const { collection, addDoc, Timestamp, updateDoc, doc } = await import("firebase/firestore");
+
+      const username = generateUsername(memberForm.name);
+      const password = generatePassword();
+      const hikvisionUserId = `${currentGymId.slice(-4).toUpperCase()}${Date.now().toString().slice(-6)}`;
+
+      const memberData = {
+        ...memberForm,
+        gymId: currentGymId,
+        username,
+        password,
+        membershipFee: memberForm.membershipFee ? parseFloat(memberForm.membershipFee) : 0,
+        packageDuration: parseInt(memberForm.packageDuration) || 1,
+        nextPaymentDate: memberForm.nextPaymentDate || "",
+        bmi: bmiInfo?.bmi || null,
+        bmiCategory: bmiInfo?.category || null,
+        role: "member",
+        hikvisionUserId,
+        enrolledDevices: [],
+        createdAt: Timestamp.now(),
+        joinDate: Timestamp.fromDate(new Date(memberForm.joinDate)),
+        addedBy: user?.id || "",
+        addedByName: user?.name || user?.username || "Instructor",
+      };
+
+      const memberRef = await addDoc(collection(db, "members"), memberData);
+      const memberCode = generateMemberCode(memberRef.id);
+      const devicePIN = generateDevicePIN();
+      await updateDoc(doc(db, "members", memberRef.id), { memberCode, firestoreId: memberRef.id, devicePIN });
+
+      if (supabase) {
+        await supabase.from("members").insert({
+          employee_no: memberCode,
+          name: memberForm.name,
+          gym_id: currentGymId,
+          pin: devicePIN,
+        }).catch((err) => console.error("Supabase error:", err));
+      }
+
+      if (settings.notifications.sms !== false) {
+        try {
+          const { sendMemberRegistrationSMS } = await import("../../services/smsService");
+          await sendMemberRegistrationSMS(
+            { name: memberForm.name, mobile: memberForm.mobile, whatsapp: memberForm.whatsapp },
+            username, password, currentGymId
+          );
+        } catch (smsErr) {
+          showWarning(`Member added, but SMS failed: ${smsErr.message}`);
+        }
+      }
+
+      setGeneratedCredentials({ username, password, name: memberForm.name, memberCode, devicePIN });
+      setMemberForm({
+        name: "", age: "", mobile: "", whatsapp: "", email: "",
+        weight: "", height: "", allergies: "", diseases: "",
+        level: "beginner", status: "active",
+        joinDate: new Date().toISOString().split("T")[0],
+        membershipFee: "", packageDuration: 1, nextPaymentDate: "",
+        emergencyContact: "", emergencyName: "", notes: "",
+      });
+      fetchData();
+    } catch (err) {
+      console.error("Error adding member:", err);
+      showError("Failed to add member: " + err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const filteredMembers = members.filter((m) =>
+    m.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    m.mobile?.includes(searchTerm)
+  );
+
+  const selfRegUrl = `${APP_URL}/register/${currentGymId}?gym=${encodeURIComponent(gymName)}`;
+
+  const inputClass = "w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500";
+
+  if (!canRegisterMembers) {
+    return (
+      <AdminLayout>
+        <div className="p-6 flex items-center justify-center h-full">
+          <div className="bg-gray-800 border border-gray-700 rounded-xl p-8 text-center max-w-md">
+            <div className="w-16 h-16 bg-red-600/20 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <h2 className="text-xl font-bold text-white mb-2">Access Restricted</h2>
+            <p className="text-gray-400 text-sm">Member registration is not enabled for instructors. Please contact your gym admin.</p>
+          </div>
+        </div>
+      </AdminLayout>
+    );
+  }
+
+  return (
+    <AdminLayout>
+      <div className="p-4 sm:p-6 space-y-6">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-bold text-white">Members</h1>
+            <p className="text-gray-400 text-sm">{members.length} active members</p>
+          </div>
+          <div className="flex gap-3">
+            <button
+              onClick={() => setShowQRModal(true)}
+              className="flex items-center gap-2 px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+              </svg>
+              Share QR
+            </button>
+            <button
+              onClick={() => setShowAddForm(true)}
+              className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+              </svg>
+              Add Member
+            </button>
+          </div>
+        </div>
+
+        {/* Search */}
+        <div className="relative">
+          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input
+            type="text"
+            placeholder="Search members..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+
+        {/* Members List */}
+        {loading ? (
+          <div className="flex justify-center py-12">
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
+          </div>
+        ) : filteredMembers.length === 0 ? (
+          <div className="text-center py-12 text-gray-400">No members found.</div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredMembers.map((member) => (
+              <div key={member.id} className="bg-gray-800 border border-gray-700 rounded-xl p-4">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-10 h-10 rounded-full bg-blue-600/20 flex items-center justify-center text-blue-400 font-bold text-sm flex-shrink-0">
+                    {member.name?.[0]?.toUpperCase() || "?"}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-white font-medium text-sm truncate">{member.name}</div>
+                    <div className="text-gray-400 text-xs capitalize">{member.level || "beginner"}</div>
+                  </div>
+                  <span className={`ml-auto text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${member.status === "active" ? "bg-green-600/20 text-green-400" : "bg-red-600/20 text-red-400"}`}>
+                    {member.status}
+                  </span>
+                </div>
+                {member.mobile && (
+                  <div className="text-gray-400 text-xs">{member.mobile}</div>
+                )}
+                {member.memberCode && (
+                  <div className="text-gray-500 text-xs mt-1">#{member.memberCode}</div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* QR Modal */}
+        {showQRModal && (
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+            <div className="bg-gray-800 border border-gray-700 rounded-xl p-6 w-full max-w-sm">
+              <div className="flex items-center justify-between mb-5">
+                <h2 className="text-lg font-bold text-white">Self-Registration QR</h2>
+                <button onClick={() => setShowQRModal(false)} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="flex flex-col items-center gap-4">
+                <div className="bg-white p-4 rounded-xl">
+                  <QRCodeSVG value={selfRegUrl} size={200} />
+                </div>
+                <p className="text-gray-400 text-sm text-center">Members can scan this QR to self-register</p>
+                <button
+                  onClick={() => { navigator.clipboard.writeText(selfRegUrl); showSuccess("Link copied!"); }}
+                  className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition"
+                >
+                  Copy Registration Link
+                </button>
+                {navigator.share && (
+                  <button
+                    onClick={() => navigator.share({ title: "Join the gym", url: selfRegUrl })}
+                    className="w-full py-2.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition"
+                  >
+                    Share Link
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Add Member Modal */}
+        {showAddForm && (
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+            <div className="bg-gray-800 border border-gray-700 rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+              <div className="sticky top-0 bg-gray-800 border-b border-gray-700 px-6 py-4 flex items-center justify-between">
+                <h2 className="text-lg font-bold text-white">Add New Member</h2>
+                <button onClick={() => setShowAddForm(false)} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <form onSubmit={handleAddMember} className="p-6 space-y-5">
+                {/* Personal Info */}
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-300 mb-3">Personal Information</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1.5">Full Name *</label>
+                      <input required type="text" value={memberForm.name} onChange={(e) => setMemberForm((p) => ({ ...p, name: e.target.value }))} className={inputClass} placeholder="John Doe" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1.5">Age</label>
+                      <input type="number" value={memberForm.age} onChange={(e) => setMemberForm((p) => ({ ...p, age: e.target.value }))} className={inputClass} placeholder="25" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1.5">Mobile</label>
+                      <input type="tel" value={memberForm.mobile} onChange={(e) => setMemberForm((p) => ({ ...p, mobile: e.target.value }))} className={inputClass} placeholder="+1234567890" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1.5">WhatsApp</label>
+                      <input type="tel" value={memberForm.whatsapp} onChange={(e) => setMemberForm((p) => ({ ...p, whatsapp: e.target.value }))} className={inputClass} placeholder="+1234567890" />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs text-gray-400 mb-1.5">Email</label>
+                      <input type="email" value={memberForm.email} onChange={(e) => setMemberForm((p) => ({ ...p, email: e.target.value }))} className={inputClass} placeholder="john@example.com" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Membership */}
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-300 mb-3">Membership Details</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1.5">Join Date</label>
+                      <input type="date" value={memberForm.joinDate} onChange={(e) => setMemberForm((p) => ({ ...p, joinDate: e.target.value }))} className={inputClass} />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1.5">Level</label>
+                      <select value={memberForm.level} onChange={(e) => setMemberForm((p) => ({ ...p, level: e.target.value }))} className={inputClass}>
+                        <option value="beginner">Beginner</option>
+                        <option value="intermediate">Intermediate</option>
+                        <option value="advanced">Advanced</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1.5">Membership Fee</label>
+                      <input type="number" value={memberForm.membershipFee} onChange={(e) => setMemberForm((p) => ({ ...p, membershipFee: e.target.value }))} className={inputClass} placeholder="0.00" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1.5">Package Duration (months)</label>
+                      <input type="number" min="1" value={memberForm.packageDuration} onChange={(e) => setMemberForm((p) => ({ ...p, packageDuration: e.target.value }))} className={inputClass} />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Physical Info */}
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-300 mb-3">Physical Info</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1.5">Weight (kg)</label>
+                      <input type="number" value={memberForm.weight} onChange={(e) => setMemberForm((p) => ({ ...p, weight: e.target.value }))} className={inputClass} placeholder="70" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1.5">Height (cm)</label>
+                      <input type="number" value={memberForm.height} onChange={(e) => setMemberForm((p) => ({ ...p, height: e.target.value }))} className={inputClass} placeholder="175" />
+                    </div>
+                  </div>
+                  {bmiInfo && (
+                    <div className="mt-2 p-2 bg-gray-900 rounded-lg text-xs text-gray-400">
+                      BMI: <span className="text-white font-medium">{bmiInfo.bmi}</span> — {bmiInfo.category}
+                    </div>
+                  )}
+                </div>
+
+                {/* Notes */}
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1.5">Notes</label>
+                  <textarea value={memberForm.notes} onChange={(e) => setMemberForm((p) => ({ ...p, notes: e.target.value }))} className={inputClass} rows={2} placeholder="Any additional notes..." />
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button type="button" onClick={() => setShowAddForm(false)} className="flex-1 py-2.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition">
+                    Cancel
+                  </button>
+                  <button type="submit" disabled={submitting} className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition disabled:opacity-50 flex items-center justify-center gap-2">
+                    {submitting ? (
+                      <><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> Adding...</>
+                    ) : "Add Member"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Credentials Modal */}
+        {generatedCredentials && (
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+            <div className="bg-gray-800 border border-gray-700 rounded-xl p-6 w-full max-w-sm">
+              <div className="flex items-center gap-3 mb-5">
+                <div className="w-10 h-10 bg-green-600/20 rounded-full flex items-center justify-center">
+                  <svg className="w-5 h-5 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-white font-bold">Member Added!</h3>
+                  <p className="text-gray-400 text-xs">{generatedCredentials.name}</p>
+                </div>
+              </div>
+              <div className="space-y-3 bg-gray-900 rounded-lg p-4 mb-4">
+                {[
+                  { label: "Member Code", value: generatedCredentials.memberCode },
+                  { label: "Username", value: generatedCredentials.username },
+                  { label: "Password", value: generatedCredentials.password },
+                  { label: "Device PIN", value: generatedCredentials.devicePIN },
+                ].map(({ label, value }) => (
+                  <div key={label} className="flex items-center justify-between">
+                    <div>
+                      <div className="text-xs text-gray-400">{label}</div>
+                      <div className="text-white text-sm font-mono font-medium">{value}</div>
+                    </div>
+                    <button
+                      onClick={() => { navigator.clipboard.writeText(value); showSuccess(`${label} copied!`); }}
+                      className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <button
+                onClick={() => setGeneratedCredentials(null)}
+                className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </AdminLayout>
+  );
+};
+
+export default InstructorAddMember;
