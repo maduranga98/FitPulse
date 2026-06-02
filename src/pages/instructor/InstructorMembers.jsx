@@ -53,10 +53,9 @@ const InstructorMembers = () => {
           where("status", "==", "active")
         )
       );
-      const membersData = membersSnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
+      const membersData = membersSnapshot.docs
+        .map((doc) => ({ id: doc.id, ...doc.data() }))
+        .filter((m) => !m.role || m.role === "member");
 
       // Fetch all exercise assignments for this gym
       const exerciseAssignmentsSnapshot = await getDocs(
@@ -226,18 +225,28 @@ const InstructorMembers = () => {
                 >
                   {/* Member Info */}
                   <div className="mb-4">
-                    <h3 className="text-xl font-bold text-white mb-2">
-                      {member.name}
-                    </h3>
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="w-10 h-10 rounded-full bg-purple-600/20 flex items-center justify-center text-purple-400 font-bold flex-shrink-0">
+                        {member.name?.[0]?.toUpperCase() || "?"}
+                      </div>
+                      <div className="min-w-0">
+                        <h3 className="text-base font-bold text-white truncate">{member.name}</h3>
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium capitalize ${member.level === "advanced" ? "bg-red-600/20 text-red-400" : member.level === "intermediate" ? "bg-yellow-600/20 text-yellow-400" : "bg-green-600/20 text-green-400"}`}>
+                          {member.level || "beginner"}
+                        </span>
+                      </div>
+                    </div>
                     <div className="space-y-1">
-                      <p className="text-gray-400 text-sm flex items-center gap-2">
-                        <Mail className="w-4 h-4" />
-                        {member.email}
-                      </p>
-                      {member.phone && (
+                      {member.email && (
                         <p className="text-gray-400 text-sm flex items-center gap-2">
-                          <Phone className="w-4 h-4" />
-                          {member.phone}
+                          <Mail className="w-4 h-4 flex-shrink-0" />
+                          <span className="truncate">{member.email}</span>
+                        </p>
+                      )}
+                      {(member.mobile || member.phone) && (
+                        <p className="text-gray-400 text-sm flex items-center gap-2">
+                          <Phone className="w-4 h-4 flex-shrink-0" />
+                          {member.mobile || member.phone}
                         </p>
                       )}
                     </div>
@@ -264,15 +273,6 @@ const InstructorMembers = () => {
                       </p>
                     </div>
                   </div>
-
-                  {/* Membership Badge */}
-                  {member.membershipTier && (
-                    <div className="mb-4">
-                      <span className="px-3 py-1 bg-purple-500/20 text-purple-400 text-xs rounded-full border border-purple-500">
-                        {member.membershipTier}
-                      </span>
-                    </div>
-                  )}
 
                   {/* View Details Button */}
                   <button
@@ -317,132 +317,116 @@ const InstructorMembers = () => {
               <div className="space-y-4 mb-6">
                 {/* Personal Information */}
                 <div className="bg-gray-900 rounded-lg p-4">
-                  <h3 className="text-white font-bold mb-3">Personal Information</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-gray-400 text-sm">Email</p>
-                      <p className="text-white break-words">{selectedMember.email}</p>
-                    </div>
-                    {selectedMember.phone && (
-                      <div>
-                        <p className="text-gray-400 text-sm">Phone</p>
-                        <p className="text-white">{selectedMember.phone}</p>
+                  <h3 className="text-white font-semibold mb-3 text-sm uppercase tracking-wide text-gray-400">Personal Information</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {[
+                      { label: "Age", value: selectedMember.age ? `${selectedMember.age} yrs` : null },
+                      { label: "Mobile", value: selectedMember.mobile || selectedMember.phone },
+                      { label: "WhatsApp", value: selectedMember.whatsapp },
+                      { label: "Email", value: selectedMember.email },
+                      { label: "Level", value: selectedMember.level ? selectedMember.level.charAt(0).toUpperCase() + selectedMember.level.slice(1) : null },
+                      { label: "Status", value: selectedMember.status ? selectedMember.status.charAt(0).toUpperCase() + selectedMember.status.slice(1) : null },
+                    ].filter(f => f.value).map(({ label, value }) => (
+                      <div key={label}>
+                        <p className="text-gray-500 text-xs">{label}</p>
+                        <p className="text-white text-sm font-medium break-words">{value}</p>
                       </div>
-                    )}
-                    {selectedMember.membershipTier && (
-                      <div>
-                        <p className="text-gray-400 text-sm">Membership</p>
-                        <p className="text-white">{selectedMember.membershipTier}</p>
-                      </div>
-                    )}
-                    {selectedMember.joinedAt && (
-                      <div>
-                        <p className="text-gray-400 text-sm">Joined</p>
-                        <p className="text-white">
-                          {formatDate(selectedMember.joinedAt)}
-                        </p>
-                      </div>
-                    )}
+                    ))}
                   </div>
                 </div>
 
-                {/* Emergency Contact */}
-                {(selectedMember.emergencyContactName || selectedMember.emergencyContact) && (
+                {/* Membership Details */}
+                <div className="bg-gray-900 rounded-lg p-4">
+                  <h3 className="text-white font-semibold mb-3 text-sm uppercase tracking-wide text-gray-400">Membership</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {[
+                      { label: "Member Code", value: selectedMember.memberCode },
+                      { label: "Join Date", value: selectedMember.joinDate ? formatDate(selectedMember.joinDate) : null },
+                      { label: "Membership Fee", value: selectedMember.membershipFee ? `$${selectedMember.membershipFee}` : null },
+                      { label: "Package Duration", value: selectedMember.packageDuration ? `${selectedMember.packageDuration} month(s)` : null },
+                      { label: "Next Payment", value: selectedMember.nextPaymentDate },
+                    ].filter(f => f.value).map(({ label, value }) => (
+                      <div key={label}>
+                        <p className="text-gray-500 text-xs">{label}</p>
+                        <p className="text-white text-sm font-medium">{value}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Health Information */}
+                {(selectedMember.height || selectedMember.weight || selectedMember.bmi) && (
                   <div className="bg-gray-900 rounded-lg p-4">
-                    <h3 className="text-white font-bold mb-3">Emergency Contact</h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {selectedMember.emergencyContactName && (
+                    <h3 className="text-white font-semibold mb-3 text-sm uppercase tracking-wide text-gray-400">Health</h3>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {selectedMember.height && (
                         <div>
-                          <p className="text-gray-400 text-sm">Contact Name</p>
-                          <p className="text-white">{selectedMember.emergencyContactName}</p>
+                          <p className="text-gray-500 text-xs">Height</p>
+                          <p className="text-white text-sm font-medium">{selectedMember.height} cm</p>
+                        </div>
+                      )}
+                      {selectedMember.weight && (
+                        <div>
+                          <p className="text-gray-500 text-xs">Weight</p>
+                          <p className="text-white text-sm font-medium">{selectedMember.weight} kg</p>
+                        </div>
+                      )}
+                      {(selectedMember.weight && selectedMember.height) && (() => {
+                        const bmi = calculateBMI(selectedMember.weight, selectedMember.height);
+                        const cat = getBMICategory(parseFloat(bmi));
+                        return (
+                          <div>
+                            <p className="text-gray-500 text-xs">BMI</p>
+                            <p className="text-white text-sm font-medium">
+                              {bmi} {cat && <span className={`text-xs ${cat.color}`}>({cat.label})</span>}
+                            </p>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                    {selectedMember.diseases && (
+                      <div className="mt-3 pt-3 border-t border-gray-700">
+                        <p className="text-gray-500 text-xs mb-1.5">Medical Conditions</p>
+                        <p className="text-white text-sm">{Array.isArray(selectedMember.diseases) ? selectedMember.diseases.join(", ") : selectedMember.diseases || "None"}</p>
+                      </div>
+                    )}
+                    {selectedMember.allergies && (
+                      <div className="mt-3 pt-3 border-t border-gray-700">
+                        <p className="text-gray-500 text-xs mb-1.5">Allergies</p>
+                        <p className="text-white text-sm">{Array.isArray(selectedMember.allergies) ? selectedMember.allergies.join(", ") : selectedMember.allergies || "None"}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Emergency Contact */}
+                {(selectedMember.emergencyName || selectedMember.emergencyContactName || selectedMember.emergencyContact) && (
+                  <div className="bg-gray-900 rounded-lg p-4">
+                    <h3 className="text-white font-semibold mb-3 text-sm uppercase tracking-wide text-gray-400">Emergency Contact</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {(selectedMember.emergencyName || selectedMember.emergencyContactName) && (
+                        <div>
+                          <p className="text-gray-500 text-xs">Name</p>
+                          <p className="text-white text-sm font-medium">{selectedMember.emergencyName || selectedMember.emergencyContactName}</p>
                         </div>
                       )}
                       {selectedMember.emergencyContact && (
                         <div>
-                          <p className="text-gray-400 text-sm">Contact Number</p>
-                          <p className="text-white">{selectedMember.emergencyContact}</p>
+                          <p className="text-gray-500 text-xs">Phone</p>
+                          <p className="text-white text-sm font-medium">{selectedMember.emergencyContact}</p>
                         </div>
                       )}
                     </div>
                   </div>
                 )}
 
-                {/* Health Information */}
-                <div className="bg-gray-900 rounded-lg p-4">
-                  <h3 className="text-white font-bold mb-3">Health Information</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {/* Height */}
-                    {selectedMember.height && (
-                      <div>
-                        <p className="text-gray-400 text-sm">Height</p>
-                        <p className="text-white">{selectedMember.height} cm</p>
-                      </div>
-                    )}
-                    
-                    {/* Weight */}
-                    {selectedMember.weight && (
-                      <div>
-                        <p className="text-gray-400 text-sm">Weight</p>
-                        <p className="text-white">{selectedMember.weight} kg</p>
-                      </div>
-                    )}
-                    
-                    {/* BMI */}
-                    {selectedMember.weight && selectedMember.height && (
-                      <div>
-                        <p className="text-gray-400 text-sm">BMI</p>
-                        <div className="flex items-center gap-2">
-                          <p className="text-white font-bold">
-                            {calculateBMI(selectedMember.weight, selectedMember.height)}
-                          </p>
-                          {(() => {
-                            const bmi = calculateBMI(selectedMember.weight, selectedMember.height);
-                            const category = getBMICategory(parseFloat(bmi));
-                            return category ? (
-                              <span className={`text-xs ${category.color}`}>
-                                ({category.label})
-                              </span>
-                            ) : null;
-                          })()}
-                        </div>
-                      </div>
-                    )}
+                {/* Notes */}
+                {selectedMember.notes && (
+                  <div className="bg-gray-900 rounded-lg p-4">
+                    <h3 className="text-white font-semibold mb-2 text-sm uppercase tracking-wide text-gray-400">Notes</h3>
+                    <p className="text-white text-sm">{selectedMember.notes}</p>
                   </div>
-
-                  {/* Diseases */}
-                  {selectedMember.diseases && Array.isArray(selectedMember.diseases) && selectedMember.diseases.length > 0 && (
-                    <div className="mt-4 pt-4 border-t border-gray-700">
-                      <p className="text-gray-400 text-sm mb-2">Medical Conditions</p>
-                      <div className="flex flex-wrap gap-2">
-                        {selectedMember.diseases.map((disease, idx) => (
-                          <span
-                            key={idx}
-                            className="px-3 py-1 bg-red-500/20 text-red-400 text-sm rounded-full border border-red-500"
-                          >
-                            {disease}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Allergies */}
-                  {selectedMember.allergies && Array.isArray(selectedMember.allergies) && selectedMember.allergies.length > 0 && (
-                    <div className="mt-4 pt-4 border-t border-gray-700">
-                      <p className="text-gray-400 text-sm mb-2">Allergies</p>
-                      <div className="flex flex-wrap gap-2">
-                        {selectedMember.allergies.map((allergy, idx) => (
-                          <span
-                            key={idx}
-                            className="px-3 py-1 bg-orange-500/20 text-orange-400 text-sm rounded-full border border-orange-500"
-                          >
-                            {allergy}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
+                )}
               </div>
 
               {/* Assigned Workout Templates */}
