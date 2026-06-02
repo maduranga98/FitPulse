@@ -88,10 +88,9 @@ const InstructorMealPlans = () => {
           where("status", "==", "active")
         )
       );
-      const membersData = membersSnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
+      const membersData = membersSnapshot.docs
+        .map((doc) => ({ id: doc.id, ...doc.data() }))
+        .filter((m) => m.role === "member" || (!m.role && m.membershipType));
 
       // Fetch assignments
       const assignmentsSnapshot = await getDocs(
