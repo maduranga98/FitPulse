@@ -6,6 +6,8 @@ import {
 } from "../services/attendanceService";
 import { useAuth } from "../hooks/useAuth";
 import Sidebar from "../components/Sidebar";
+import { db } from "../config/firebase";
+import { collection, query, where, getDocs } from "firebase/firestore";
 
 const Attendance = () => {
   const { user } = useAuth();
@@ -14,14 +16,14 @@ const Attendance = () => {
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [attendance, setAttendance] = useState([]);
+  const [instructorIds, setInstructorIds] = useState(new Set());
   const [loading, setLoading] = useState(true);
-  const [liveCount, setLiveCount] = useState(0);
   const [selectedDate, setSelectedDate] = useState(
     new Date().toISOString().split("T")[0],
   );
   const [isToday, setIsToday] = useState(true);
+  const [activeTab, setActiveTab] = useState("members");
 
-  // Format time to readable string
   const formatTime = (timestamp) => {
     return new Date(timestamp).toLocaleTimeString("en-LK", {
       hour: "2-digit",
@@ -31,7 +33,6 @@ const Attendance = () => {
     });
   };
 
-  // Format date
   const formatDate = (timestamp) => {
     return new Date(timestamp).toLocaleDateString("en-LK", {
       weekday: "short",
@@ -40,7 +41,6 @@ const Attendance = () => {
     });
   };
 
-  // Get verify mode label — verifyMode lives inside rawEvent
   const getVerifyMode = (record) => {
     const mode = record.rawEvent?.verifyMode || record.verifyMode;
     const modes = {
@@ -57,14 +57,45 @@ const Attendance = () => {
     );
   };
 
-  // Resolve check-in time from record
   const getCheckInTime = (record) => {
     if (record.checkInTime?.toDate) return record.checkInTime.toDate();
     if (record.checkInTime?.seconds) return new Date(record.checkInTime.seconds * 1000);
     return null;
   };
 
-  // Load attendance for selected date
+  // Fetch instructor IDs from members collection
+  const loadInstructorIds = async () => {
+    if (!gymId) return;
+    try {
+      const q = query(
+        collection(db, "members"),
+        where("gymId", "==", gymId),
+        where("role", "==", "trainer"),
+      );
+      const snapshot = await getDocs(q);
+      const ids = new Set(snapshot.docs.map((d) => d.id));
+      setInstructorIds(ids);
+    } catch (err) {
+      console.error("Error fetching instructor IDs:", err);
+    }
+  };
+
+  // Deduplicate records — one row per member, earliest check-in wins, count tracked
+  const deduplicateByMember = (records) => {
+    const map = new Map();
+    // Records are ordered desc, so reverse to process oldest first
+    [...records].reverse().forEach((record) => {
+      const key = record.memberId || record.rawEvent?.employeeNo || record.employeeNo || record.id;
+      if (map.has(key)) {
+        map.get(key).checkInCount += 1;
+      } else {
+        map.set(key, { ...record, checkInCount: 1 });
+      }
+    });
+    // Return sorted by earliest check-in (desc) — map preserves insertion order (oldest first), reverse it
+    return Array.from(map.values()).reverse();
+  };
+
   const loadAttendance = async () => {
     if (!gymId) return;
     setLoading(true);
@@ -85,7 +116,6 @@ const Attendance = () => {
       }
 
       setAttendance(data || []);
-      setLiveCount(data?.length || 0);
     } catch (err) {
       console.error("Error loading attendance:", err);
     } finally {
@@ -93,7 +123,10 @@ const Attendance = () => {
     }
   };
 
-  // Initial load
+  useEffect(() => {
+    loadInstructorIds();
+  }, [gymId]);
+
   useEffect(() => {
     loadAttendance();
   }, [gymId, selectedDate]);
@@ -104,18 +137,80 @@ const Attendance = () => {
 
     const unsubscribe = subscribeToAttendance(gymId, (newEvent) => {
       setAttendance((prev) => {
-        // Avoid duplicates
         const exists = prev.find((e) => e.id === newEvent.id);
         if (exists) {
           return prev.map((e) => (e.id === newEvent.id ? newEvent : e));
         }
         return [newEvent, ...prev];
       });
-      setLiveCount((prev) => prev + 1);
     });
 
     return unsubscribe;
   }, [gymId, isToday]);
+
+  // Split and deduplicate
+  const memberRecords = deduplicateByMember(
+    attendance.filter((a) => !instructorIds.has(a.memberId))
+  );
+  const instructorRecords = deduplicateByMember(
+    attendance.filter((a) => instructorIds.has(a.memberId))
+  );
+
+  const displayRecords = activeTab === "members" ? memberRecords : instructorRecords;
+
+  const renderRow = (record, index) => {
+    const verifyMode = getVerifyMode(record);
+    const empNo = record.rawEvent?.employeeNo || record.employeeNo;
+    const name = record.memberName || empNo || "Unknown";
+    const initial = name.charAt(0).toUpperCase();
+    const checkInTime = getCheckInTime(record);
+    const evtType = record.rawEvent?.eventType || record.eventType || "check_in";
+
+    return (
+      <div
+        key={record.id}
+        className="flex items-center justify-between p-4 hover:bg-gray-800/50 transition-colors"
+      >
+        <div className="flex items-center gap-4">
+          <span className="text-gray-600 text-sm w-6 text-right">{index + 1}</span>
+
+          <div className="w-11 h-11 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center flex-shrink-0">
+            <span className="text-white font-bold text-lg">{initial}</span>
+          </div>
+
+          <div>
+            <p className="text-white font-medium">
+              {record.memberName || (
+                <span className="text-gray-500 italic">Unidentified</span>
+              )}
+            </p>
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-gray-500 text-xs">{empNo}</span>
+              <span className="text-gray-700">•</span>
+              <span className={`text-xs px-2 py-0.5 rounded-full ${verifyMode.color}`}>
+                {verifyMode.label}
+              </span>
+              {record.checkInCount > 1 && (
+                <>
+                  <span className="text-gray-700">•</span>
+                  <span className="text-xs px-2 py-0.5 rounded-full text-orange-400 bg-orange-400/10">
+                    {record.checkInCount}× today
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="text-right">
+          <p className="text-blue-400 font-bold text-lg">
+            {checkInTime ? formatTime(checkInTime) : "—"}
+          </p>
+          <p className="text-gray-600 text-xs mt-1">{evtType}</p>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="h-screen w-screen overflow-hidden bg-gray-950 text-white flex">
@@ -130,18 +225,8 @@ const Attendance = () => {
                 onClick={() => setSidebarOpen(true)}
                 className="lg:hidden p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition"
               >
-                <svg
-                  className="w-6 h-6"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M4 6h16M4 12h16M4 18h16"
-                  />
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
                 </svg>
               </button>
               <div>
@@ -154,7 +239,6 @@ const Attendance = () => {
               </div>
             </div>
 
-            {/* Live indicator */}
             {isToday && (
               <div className="flex items-center gap-2 bg-green-500/10 border border-green-500/20 rounded-full px-4 py-2">
                 <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
@@ -166,23 +250,18 @@ const Attendance = () => {
           {/* Stats Row */}
           <div className="grid grid-cols-3 gap-4 mb-8">
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
-              <p className="text-3xl font-bold text-white">{liveCount}</p>
-              <p className="text-gray-400 text-sm mt-1">Total Check-ins</p>
+              <p className="text-3xl font-bold text-white">
+                {memberRecords.length + instructorRecords.length}
+              </p>
+              <p className="text-gray-400 text-sm mt-1">Unique Check-ins</p>
             </div>
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
-              <p className="text-3xl font-bold text-green-400">
-                {attendance.filter((a) => {
-                  const vm = a.rawEvent?.verifyMode || a.verifyMode || "";
-                  return vm.toLowerCase().includes("face");
-                }).length}
-              </p>
-              <p className="text-gray-400 text-sm mt-1">Face Verified</p>
+              <p className="text-3xl font-bold text-green-400">{memberRecords.length}</p>
+              <p className="text-gray-400 text-sm mt-1">Members</p>
             </div>
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
-              <p className="text-3xl font-bold text-blue-400">
-                {attendance.filter((a) => a.memberName).length}
-              </p>
-              <p className="text-gray-400 text-sm mt-1">Identified</p>
+              <p className="text-3xl font-bold text-purple-400">{instructorRecords.length}</p>
+              <p className="text-gray-400 text-sm mt-1">Instructors</p>
             </div>
           </div>
 
@@ -196,12 +275,40 @@ const Attendance = () => {
               className="bg-gray-900 border border-gray-700 text-white rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-blue-500"
             />
             <button
-              onClick={() =>
-                setSelectedDate(new Date().toISOString().split("T")[0])
-              }
+              onClick={() => setSelectedDate(new Date().toISOString().split("T")[0])}
               className="text-sm text-blue-400 hover:text-blue-300 transition-colors"
             >
               Back to Today
+            </button>
+          </div>
+
+          {/* Tabs */}
+          <div className="flex gap-1 mb-4 bg-gray-900 border border-gray-800 rounded-xl p-1 w-fit">
+            <button
+              onClick={() => setActiveTab("members")}
+              className={`px-5 py-2 rounded-lg text-sm font-medium transition-colors ${
+                activeTab === "members"
+                  ? "bg-blue-600 text-white"
+                  : "text-gray-400 hover:text-white"
+              }`}
+            >
+              Members
+              <span className="ml-2 text-xs bg-gray-800 text-gray-300 px-1.5 py-0.5 rounded-full">
+                {memberRecords.length}
+              </span>
+            </button>
+            <button
+              onClick={() => setActiveTab("instructors")}
+              className={`px-5 py-2 rounded-lg text-sm font-medium transition-colors ${
+                activeTab === "instructors"
+                  ? "bg-purple-600 text-white"
+                  : "text-gray-400 hover:text-white"
+              }`}
+            >
+              Instructors
+              <span className="ml-2 text-xs bg-gray-800 text-gray-300 px-1.5 py-0.5 rounded-full">
+                {instructorRecords.length}
+              </span>
             </button>
           </div>
 
@@ -210,101 +317,25 @@ const Attendance = () => {
             {loading ? (
               <div className="text-center py-16">
                 <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500 mx-auto"></div>
-                <p className="text-gray-400 mt-4 text-sm">
-                  Loading attendance...
-                </p>
+                <p className="text-gray-400 mt-4 text-sm">Loading attendance...</p>
               </div>
-            ) : attendance.length === 0 ? (
+            ) : displayRecords.length === 0 ? (
               <div className="text-center py-16">
                 <div className="w-16 h-16 bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <svg
-                    className="w-8 h-8 text-gray-600"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
-                    />
+                  <svg className="w-8 h-8 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
                   </svg>
                 </div>
                 <p className="text-gray-400">
-                  No attendance records for this date
+                  No {activeTab === "members" ? "member" : "instructor"} attendance for this date
                 </p>
                 <p className="text-gray-600 text-sm mt-1">
-                  Records will appear here when members check in
+                  Records will appear here when {activeTab === "members" ? "members" : "instructors"} check in
                 </p>
               </div>
             ) : (
               <div className="divide-y divide-gray-800">
-                {attendance.map((record, index) => {
-                  const verifyMode = getVerifyMode(record);
-                  const empNoTop = record.rawEvent?.employeeNo || record.employeeNo;
-                  const name =
-                    record.memberName || empNoTop || "Unknown";
-                  const initial = name.charAt(0).toUpperCase();
-
-                  const checkInTime = getCheckInTime(record);
-                  const empNo = record.rawEvent?.employeeNo || record.employeeNo;
-                  const evtType = record.rawEvent?.eventType || record.eventType || "check_in";
-
-                  return (
-                    <div
-                      key={record.id}
-                      className="flex items-center justify-between p-4 hover:bg-gray-800/50 transition-colors"
-                    >
-                      {/* Left — Avatar + Info */}
-                      <div className="flex items-center gap-4">
-                        {/* Index number */}
-                        <span className="text-gray-600 text-sm w-6 text-right">
-                          {index + 1}
-                        </span>
-
-                        {/* Avatar */}
-                        <div className="w-11 h-11 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center flex-shrink-0">
-                          <span className="text-white font-bold text-lg">
-                            {initial}
-                          </span>
-                        </div>
-
-                        {/* Name + Code */}
-                        <div>
-                          <p className="text-white font-medium">
-                            {record.memberName || (
-                              <span className="text-gray-500 italic">
-                                Unidentified
-                              </span>
-                            )}
-                          </p>
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className="text-gray-500 text-xs">
-                              {empNo}
-                            </span>
-                            <span className="text-gray-700">•</span>
-                            <span
-                              className={`text-xs px-2 py-0.5 rounded-full ${verifyMode.color}`}
-                            >
-                              {verifyMode.label}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Right — Time */}
-                      <div className="text-right">
-                        <p className="text-blue-400 font-bold text-lg">
-                          {checkInTime ? formatTime(checkInTime) : "—"}
-                        </p>
-                        <p className="text-gray-600 text-xs mt-1">
-                          {evtType}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })}
+                {displayRecords.map((record, index) => renderRow(record, index))}
               </div>
             )}
           </div>
