@@ -855,6 +855,9 @@ const Members = () => {
                           {member.name}
                         </h3>
                         <p className="text-sm text-gray-400">{member.mobile}</p>
+                        {member.memberCode && (
+                          <p className="text-xs text-blue-400 font-mono mt-0.5">#{member.memberCode}</p>
+                        )}
                       </div>
                     </div>
                     <span
@@ -1544,6 +1547,9 @@ const Members = () => {
                     {viewMember.name}
                   </h2>
                   <p className="text-gray-400">Member ID: {viewMember.id}</p>
+                  {viewMember.memberCode && (
+                    <p className="text-blue-400 font-mono text-sm mt-0.5">#{viewMember.memberCode}</p>
+                  )}
                 </div>
               </div>
               <button
@@ -1599,6 +1605,12 @@ const Members = () => {
                   Personal Information
                 </h3>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                  {viewMember.memberCode && (
+                    <div className="bg-gray-900 rounded-lg p-4">
+                      <div className="text-gray-400 text-sm mb-1">Member Code</div>
+                      <div className="text-blue-400 font-mono font-medium">#{viewMember.memberCode}</div>
+                    </div>
+                  )}
                   <div className="bg-gray-900 rounded-lg p-4">
                     <div className="text-gray-400 text-sm mb-1">Age</div>
                     <div className="text-white font-medium">
