@@ -59,6 +59,7 @@ export const AuthProvider = ({ children }) => {
         }
 
         // Check if gym is active (if user belongs to a gym)
+        let gymName = null;
         if (userData.gymId) {
           const { doc, getDoc } = await import("firebase/firestore");
           const gymDoc = await getDoc(doc(db, "gyms", userData.gymId));
@@ -71,6 +72,7 @@ export const AuthProvider = ({ children }) => {
                 error: "This gym has been deactivated. Please contact the super admin.",
               };
             }
+            gymName = gymData.name || null;
           }
         }
 
@@ -91,6 +93,7 @@ export const AuthProvider = ({ children }) => {
           email: userData.email,
           role: role,
           gymId: userData.gymId || null,
+          gymName: gymName,
         };
 
         localStorage.setItem("gymUser", JSON.stringify(userToStore));
