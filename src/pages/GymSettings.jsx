@@ -87,7 +87,7 @@ const GymSettings = () => {
           </div>
         )}
 
-        <div className="space-y-6 max-w-2xl">
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
           {/* App Features */}
           <div className="bg-gray-800 border border-gray-700 rounded-xl p-5">
             <h2 className="text-base font-bold text-white mb-1 flex items-center gap-2">
@@ -162,7 +162,9 @@ const GymSettings = () => {
               onChange={(v) => updateNotification("whatsapp", v)}
             />
           </div>
+        </div>
 
+        <div className="mt-6">
           <button
             onClick={handleSave}
             disabled={saving}
