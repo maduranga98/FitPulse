@@ -711,6 +711,36 @@ const Members = () => {
     }
   };
 
+  // Mark/unmark an existing member as VIP (no fee collected, excluded from
+  // payment reminders) — used for special-case members the gym doesn't charge.
+  const handleToggleVipExisting = async (member) => {
+    if (!userIsAdmin) {
+      showError("You don't have permission to update members");
+      return;
+    }
+    const newVip = !member.isVip;
+    try {
+      const { db } = await import("../config/firebase");
+      const { doc, updateDoc } = await import("firebase/firestore");
+      await updateDoc(doc(db, "members", member.id), {
+        isVip: newVip,
+        ...(newVip ? { membershipFee: 0 } : {}),
+      });
+      showSuccess(
+        newVip
+          ? `${member.name} marked as VIP — no fee or payment reminders`
+          : `${member.name} is no longer VIP`,
+      );
+      fetchMembers();
+      if (viewMember && viewMember.id === member.id) {
+        setViewMember({ ...viewMember, isVip: newVip, ...(newVip ? { membershipFee: 0 } : {}) });
+      }
+    } catch (error) {
+      console.error("Error updating VIP status:", error);
+      showError("Failed to update VIP status");
+    }
+  };
+
   const filteredMembers = members.filter((member) => {
     const matchesSearch =
       member.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -1989,30 +2019,52 @@ const Members = () => {
 
             <div className="p-6">
               {userIsAdmin && (
-                <div className="mb-6 flex gap-3">
-                  <button
-                    onClick={() => handleUpdateStatus(viewMember.id, "active")}
-                    className={`flex-1 px-4 py-2 rounded-lg font-medium transition ${
-                      viewMember.status === "active"
-                        ? "bg-green-600 text-white"
-                        : "bg-gray-700 text-gray-300 hover:bg-gray-600"
-                    }`}
-                  >
-                    Active
-                  </button>
-                  <button
-                    onClick={() =>
-                      handleUpdateStatus(viewMember.id, "inactive")
-                    }
-                    className={`flex-1 px-4 py-2 rounded-lg font-medium transition ${
-                      viewMember.status === "inactive"
-                        ? "bg-red-600 text-white"
-                        : "bg-gray-700 text-gray-300 hover:bg-gray-600"
-                    }`}
-                  >
-                    Inactive
-                  </button>
-                </div>
+                <>
+                  <div className="mb-4 flex gap-3">
+                    <button
+                      onClick={() => handleUpdateStatus(viewMember.id, "active")}
+                      className={`flex-1 px-4 py-2 rounded-lg font-medium transition ${
+                        viewMember.status === "active"
+                          ? "bg-green-600 text-white"
+                          : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                      }`}
+                    >
+                      Active
+                    </button>
+                    <button
+                      onClick={() =>
+                        handleUpdateStatus(viewMember.id, "inactive")
+                      }
+                      className={`flex-1 px-4 py-2 rounded-lg font-medium transition ${
+                        viewMember.status === "inactive"
+                          ? "bg-red-600 text-white"
+                          : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                      }`}
+                    >
+                      Inactive
+                    </button>
+                  </div>
+                  <div className="mb-6 flex items-center justify-between bg-gray-900 border border-gray-700 rounded-lg px-4 py-3">
+                    <div>
+                      <div className="text-sm font-medium text-white flex items-center gap-2">
+                        VIP / Fee Exempt
+                        {viewMember.isVip && (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400">VIP</span>
+                        )}
+                      </div>
+                      <div className="text-xs text-gray-400 mt-0.5">
+                        No membership fee is collected and no payment reminders are sent.
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleVipExisting(viewMember)}
+                      className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors ${viewMember.isVip ? "bg-amber-500" : "bg-gray-600"}`}
+                    >
+                      <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition ${viewMember.isVip ? "translate-x-5" : "translate-x-0"}`} />
+                    </button>
+                  </div>
+                </>
               )}
 
               <div className="mb-6">

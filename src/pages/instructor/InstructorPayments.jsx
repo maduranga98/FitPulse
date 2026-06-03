@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { useGymSettings } from "../../contexts/GymSettingsContext";
 import AdminLayout from "../../components/AdminLayout";
+import MemberAvatar from "../../components/MemberAvatar";
 
 const InstructorPayments = () => {
   const { user } = useAuth();
@@ -284,9 +285,7 @@ const InstructorPayments = () => {
               return (
                 <div key={member.id} className="bg-gray-800 border border-gray-700 rounded-xl p-5 hover:border-gray-600 transition">
                   <div className="flex items-start gap-3 mb-4">
-                    <div className="w-12 h-12 rounded-full bg-blue-600/20 flex items-center justify-center text-blue-400 font-bold text-lg flex-shrink-0">
-                      {member.name?.[0]?.toUpperCase() || "?"}
-                    </div>
+                    <MemberAvatar name={member.name} imageUrl={member.profileImageUrl} sizeClass="w-12 h-12" />
                     <div className="flex-1 min-w-0">
                       <div className="text-white font-bold truncate flex items-center gap-2">
                         <span className="truncate">{member.name}</span>

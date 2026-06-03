@@ -5,6 +5,7 @@ import Sidebar from "../components/Sidebar";
 import { isAdmin, validateGymId } from "../utils/authUtils";
 import { useGymSettings } from "../contexts/GymSettingsContext";
 import AttendanceLiveWidget from "../components/AttendanceLiveWidget";
+import MemberAvatar from "../components/MemberAvatar";
 
 const Dashboard = () => {
   const { user, logout } = useAuth();
@@ -434,9 +435,7 @@ const Dashboard = () => {
                       className="flex items-center justify-between p-3 sm:p-4 bg-gray-900 rounded-lg gap-2"
                     >
                       <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
-                        <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
-                          {member.name.charAt(0).toUpperCase()}
-                        </div>
+                        <MemberAvatar name={member.name} imageUrl={member.profileImageUrl} sizeClass="w-8 h-8 sm:w-10 sm:h-10" textClass="text-sm" />
                         <div className="min-w-0 flex-1">
                           <p className="text-white font-medium text-sm sm:text-base truncate">
                             {member.name}
