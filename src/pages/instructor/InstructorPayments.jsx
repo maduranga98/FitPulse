@@ -22,6 +22,7 @@ const InstructorPayments = () => {
     month: new Date().toISOString().slice(0, 7),
     paymentMethod: "Cash",
     notes: "",
+    fullyPaid: true,
   });
 
   const canCollectPayments = settings.instructorPermissions?.collectPayments !== false;
@@ -86,6 +87,7 @@ const InstructorPayments = () => {
       month: getCurrentMonth(),
       paymentMethod: "Cash",
       notes: "",
+      fullyPaid: true,
     });
     setShowPaymentModal(true);
   };
@@ -105,15 +107,23 @@ const InstructorPayments = () => {
       const { db } = await import("../../config/firebase");
       const { collection, addDoc, Timestamp, doc, getDoc, updateDoc } = await import("firebase/firestore");
 
+      const expectedFee = parseFloat(selectedMember.membershipFee) || 0;
+      const paidAmount = parseFloat(paymentForm.amount);
+      const remaining = Math.max(expectedFee - paidAmount, 0);
+      const isFullPayment = paymentForm.fullyPaid || remaining <= 0;
+
       const paymentData = {
         memberId: selectedMember.id,
         gymId: currentGymId,
         memberName: selectedMember.name,
-        amount: parseFloat(paymentForm.amount),
+        amount: paidAmount,
+        expectedFee,
+        remaining,
+        isFullPayment,
+        status: isFullPayment ? "completed" : "partial",
         month: paymentForm.month,
         paymentMethod: paymentForm.paymentMethod,
         notes: paymentForm.notes,
-        status: "completed",
         paidAt: Timestamp.now(),
         recordedBy: user?.name || user?.username || "Instructor",
         recordedById: user?.id || "",
@@ -278,7 +288,12 @@ const InstructorPayments = () => {
                       {member.name?.[0]?.toUpperCase() || "?"}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="text-white font-bold truncate">{member.name}</div>
+                      <div className="text-white font-bold truncate flex items-center gap-2">
+                        <span className="truncate">{member.name}</span>
+                        {member.isVip && (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400 flex-shrink-0">VIP</span>
+                        )}
+                      </div>
                       <div className="text-gray-400 text-xs truncate">{member.email || member.mobile || "—"}</div>
                     </div>
                   </div>
@@ -287,7 +302,7 @@ const InstructorPayments = () => {
                     <div className="flex justify-between">
                       <span className="text-gray-400">Package Fee:</span>
                       <span className="text-white font-medium">
-                        {member.membershipFee ? `Rs. ${member.membershipFee}` : "N/A"}
+                        {member.isVip ? "VIP — No Fee" : member.membershipFee ? `Rs. ${member.membershipFee}` : "N/A"}
                       </span>
                     </div>
                     {member.packageDuration && (
@@ -326,7 +341,7 @@ const InstructorPayments = () => {
                           : "bg-blue-600 hover:bg-blue-700 text-white active:scale-95"
                       }`}
                     >
-                      {isPaid ? "Already Paid" : "Mark as Paid"}
+                      {isPaid ? "Already Paid" : member.isVip ? "VIP — Record (optional)" : "Mark as Paid"}
                     </button>
                     {memberPayments.length > 0 && (
                       <button
@@ -381,15 +396,54 @@ const InstructorPayments = () => {
                 </button>
               </div>
               <form onSubmit={handleSubmitPayment} className="p-6 space-y-4">
+                {selectedMember.isVip && (
+                  <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 text-amber-400 text-xs">
+                    This member is a <span className="font-semibold">VIP</span> — no membership fee is collected. You can still record an optional payment below.
+                  </div>
+                )}
+                {selectedMember.membershipFee ? (
+                  <div className="bg-gray-900 border border-gray-700 rounded-lg p-3 flex items-center justify-between text-sm">
+                    <span className="text-gray-400">Member Package Fee</span>
+                    <span className="text-white font-semibold">Rs. {Number(selectedMember.membershipFee).toLocaleString()}</span>
+                  </div>
+                ) : null}
+                {selectedMember.membershipFee ? (
+                  <label className="flex items-center gap-3 cursor-pointer bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5">
+                    <input
+                      type="checkbox"
+                      checked={paymentForm.fullyPaid}
+                      onChange={(e) => setPaymentForm((p) => ({
+                        ...p,
+                        fullyPaid: e.target.checked,
+                        amount: e.target.checked ? selectedMember.membershipFee : p.amount,
+                      }))}
+                      className="w-4 h-4 accent-green-600"
+                    />
+                    <span className="text-sm font-medium text-white">
+                      Fully paid
+                      <span className="text-gray-400 font-normal ml-2">(collect the full package fee)</span>
+                    </span>
+                  </label>
+                ) : null}
                 <div>
                   <label className="block text-xs text-gray-400 mb-1.5">Amount *</label>
                   <input
                     required type="number" step="0.01" min="0"
                     value={paymentForm.amount}
+                    disabled={paymentForm.fullyPaid && !!selectedMember.membershipFee}
                     onChange={(e) => setPaymentForm((p) => ({ ...p, amount: e.target.value }))}
-                    className="w-full px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
                     placeholder="0.00"
                   />
+                  {!paymentForm.fullyPaid && selectedMember.membershipFee ? (
+                    <p className="text-xs mt-2 text-yellow-500">
+                      Remaining: Rs.{" "}
+                      {Math.max(
+                        (parseFloat(selectedMember.membershipFee) || 0) - (parseFloat(paymentForm.amount) || 0),
+                        0,
+                      ).toLocaleString()}
+                    </p>
+                  ) : null}
                 </div>
                 <div>
                   <label className="block text-xs text-gray-400 mb-1.5">Month *</label>

@@ -34,7 +34,38 @@ const GymSettings = () => {
       ...settings.instructorPermissions,
     },
     notifications: { ...settings.notifications },
+    packages: Array.isArray(settings.packages) ? settings.packages : [],
+    payment: {
+      dueDay: 10,
+      reminderDays: [3, 1],
+      ...settings.payment,
+    },
   });
+
+  const [newPackage, setNewPackage] = useState({ name: "", price: "", duration: 1 });
+
+  const addPackage = () => {
+    const name = newPackage.name.trim();
+    const price = parseFloat(newPackage.price);
+    if (!name || isNaN(price) || price < 0) return;
+    const pkg = {
+      id: `pkg_${Date.now()}`,
+      name,
+      price,
+      duration: parseInt(newPackage.duration) || 1,
+    };
+    setLocalSettings((prev) => ({ ...prev, packages: [...prev.packages, pkg] }));
+    setNewPackage({ name: "", price: "", duration: 1 });
+  };
+
+  const removePackage = (id) =>
+    setLocalSettings((prev) => ({
+      ...prev,
+      packages: prev.packages.filter((p) => p.id !== id),
+    }));
+
+  const updatePayment = (key, value) =>
+    setLocalSettings((prev) => ({ ...prev, payment: { ...prev.payment, [key]: value } }));
 
   const updateFeature = (key, value) =>
     setLocalSettings((prev) => ({ ...prev, features: { ...prev.features, [key]: value } }));
@@ -168,6 +199,128 @@ const GymSettings = () => {
               checked={localSettings.notifications.whatsapp === true}
               onChange={(v) => updateNotification("whatsapp", v)}
             />
+          </div>
+        </div>
+
+        {/* Membership Packages */}
+        <div className="mt-6 bg-gray-800 border border-gray-700 rounded-xl p-5">
+          <h2 className="text-base font-bold text-white mb-1 flex items-center gap-2">
+            <svg className="w-5 h-5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+            </svg>
+            Membership Packages
+          </h2>
+          <p className="text-gray-400 text-xs mb-4">
+            Define packages with a name and price. When registering a member, staff can pick a package and the fee is filled in automatically.
+          </p>
+
+          {localSettings.packages.length > 0 && (
+            <div className="space-y-2 mb-4">
+              {localSettings.packages.map((pkg) => (
+                <div key={pkg.id} className="flex items-center justify-between bg-gray-900 rounded-lg px-4 py-3">
+                  <div>
+                    <span className="text-white font-medium text-sm">{pkg.name}</span>
+                    <span className="text-gray-400 text-xs ml-2">
+                      Rs. {Number(pkg.price).toLocaleString()} · {pkg.duration} Month{pkg.duration > 1 ? "s" : ""}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removePackage(pkg.id)}
+                    className="text-red-400 hover:text-red-300 text-sm"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+            <input
+              type="text"
+              value={newPackage.name}
+              onChange={(e) => setNewPackage((p) => ({ ...p, name: e.target.value }))}
+              placeholder="Package name (e.g. Gold)"
+              className="sm:col-span-5 px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <input
+              type="number"
+              value={newPackage.price}
+              onChange={(e) => setNewPackage((p) => ({ ...p, price: e.target.value }))}
+              placeholder="Price (Rs.)"
+              min="0"
+              step="0.01"
+              className="sm:col-span-3 px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <select
+              value={newPackage.duration}
+              onChange={(e) => setNewPackage((p) => ({ ...p, duration: parseInt(e.target.value) }))}
+              className="sm:col-span-2 px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value={1}>1 Month</option>
+              <option value={2}>2 Months</option>
+              <option value={3}>3 Months</option>
+              <option value={6}>6 Months</option>
+              <option value={12}>12 Months</option>
+            </select>
+            <button
+              type="button"
+              onClick={addPackage}
+              className="sm:col-span-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition"
+            >
+              Add
+            </button>
+          </div>
+        </div>
+
+        {/* Payment Collection */}
+        <div className="mt-6 bg-gray-800 border border-gray-700 rounded-xl p-5">
+          <h2 className="text-base font-bold text-white mb-1 flex items-center gap-2">
+            <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            Payment Collection
+          </h2>
+          <p className="text-gray-400 text-xs mb-4">
+            Set the day of the month payments are due and how many days before to send reminders.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-1">Payment Due Day</label>
+              <select
+                value={localSettings.payment.dueDay}
+                onChange={(e) => updatePayment("dueDay", parseInt(e.target.value))}
+                className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
+                  <option key={d} value={d}>
+                    Before {d}{d === 1 ? "st" : d === 2 ? "nd" : d === 3 ? "rd" : "th"} of the month
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-1">
+                Reminder Days (comma separated)
+              </label>
+              <input
+                type="text"
+                value={(localSettings.payment.reminderDays || []).join(", ")}
+                onChange={(e) =>
+                  updatePayment(
+                    "reminderDays",
+                    e.target.value
+                      .split(",")
+                      .map((n) => parseInt(n.trim()))
+                      .filter((n) => !isNaN(n) && n >= 0),
+                  )
+                }
+                placeholder="e.g. 3, 1"
+                className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="text-xs text-gray-500 mt-1">Days before the due date to remind members.</p>
+            </div>
           </div>
         </div>
 

@@ -20,6 +20,13 @@ const defaultSettings = {
     apiToken: "",
     senderId: "",
   },
+  // Membership packages: [{ id, name, price, duration }]
+  packages: [],
+  // Payment collection config
+  payment: {
+    dueDay: 10, // Day of month payments are expected (1-28)
+    reminderDays: [3, 1], // Days before due date to send reminders
+  },
 };
 
 const GymSettingsContext = createContext({
@@ -65,6 +72,11 @@ export const GymSettingsProvider = ({ children }) => {
           sms: {
             ...defaultSettings.sms,
             ...gymData.settings?.sms,
+          },
+          packages: gymData.settings?.packages || defaultSettings.packages,
+          payment: {
+            ...defaultSettings.payment,
+            ...gymData.settings?.payment,
           },
         });
       }

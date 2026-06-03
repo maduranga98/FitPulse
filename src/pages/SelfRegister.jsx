@@ -80,8 +80,12 @@ const SelfRegister = () => {
         try {
           const { ref, uploadBytesResumable, getDownloadURL } = await import("firebase/storage");
           const ext = profileImageFile.name.split(".").pop() || "jpg";
-          const fileName = `self_reg_${gymId}_${Date.now()}.${ext}`;
-          const imgRef = ref(storage, `temp-captures/${fileName}`);
+          const fileName = `self_reg_${Date.now()}.${ext}`;
+          // Upload to a dedicated, persistent folder. (Previously used
+          // temp-captures/, but the recognizeFace Cloud Function deletes
+          // any image there that doesn't match a registered face, which
+          // wiped out self-registration profile photos before approval.)
+          const imgRef = ref(storage, `self-registrations/${gymId}/${fileName}`);
           const metadata = { contentType: profileImageFile.type };
           await new Promise((resolve, reject) => {
             const task = uploadBytesResumable(imgRef, profileImageFile, metadata);

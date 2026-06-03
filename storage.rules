@@ -140,6 +140,18 @@ service firebase.storage {
     }
 
     // ============================================
+    // SELF-REGISTRATION PROFILE IMAGES
+    // ============================================
+    // Path: self-registrations/{gymId}/{fileName}
+    // Public create (unauthenticated self-registration form) + public read.
+    match /self-registrations/{gymId}/{fileName} {
+      allow create: if isValidImage() &&
+                      isWithinSizeLimit(5 * 1024 * 1024);
+      allow read: if true;
+      allow delete: if true;
+    }
+
+    // ============================================
     // GYM PROFILE IMAGES
     // ============================================
     // Path: gyms/{gymId}/{fileName}

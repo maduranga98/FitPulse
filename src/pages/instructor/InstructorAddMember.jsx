@@ -40,11 +40,39 @@ const InstructorAddMember = () => {
     joinDate: new Date().toISOString().split("T")[0],
     membershipFee: "",
     packageDuration: 1,
+    packageId: "",
+    packageName: "",
+    isVip: false,
     nextPaymentDate: "",
     emergencyContact: "",
     emergencyName: "",
     notes: "",
   });
+
+  const handleSelectPackage = (packageId) => {
+    const pkg = (settings.packages || []).find((p) => p.id === packageId);
+    if (!pkg) {
+      setMemberForm((prev) => ({ ...prev, packageId: "", packageName: "" }));
+      return;
+    }
+    setMemberForm((prev) => ({
+      ...prev,
+      packageId: pkg.id,
+      packageName: pkg.name,
+      membershipFee: prev.isVip ? "" : String(pkg.price),
+      packageDuration: pkg.duration || prev.packageDuration,
+    }));
+  };
+
+  const handleToggleVip = (isVip) => {
+    setMemberForm((prev) => ({
+      ...prev,
+      isVip,
+      membershipFee: isVip
+        ? "0"
+        : (settings.packages || []).find((p) => p.id === prev.packageId)?.price?.toString() || prev.membershipFee,
+    }));
+  };
 
   const bmiInfo =
     memberForm.weight && memberForm.height
@@ -181,7 +209,7 @@ const InstructorAddMember = () => {
         weight: "", height: "", allergies: "", diseases: "",
         level: "beginner", status: "active",
         joinDate: new Date().toISOString().split("T")[0],
-        membershipFee: "", packageDuration: 1, nextPaymentDate: "",
+        membershipFee: "", packageDuration: 1, packageId: "", packageName: "", isVip: false, nextPaymentDate: "",
         emergencyContact: "", emergencyName: "", notes: "",
       });
       fetchData();
@@ -281,7 +309,12 @@ const InstructorAddMember = () => {
                     {member.name?.[0]?.toUpperCase() || "?"}
                   </div>
                   <div className="min-w-0">
-                    <div className="text-white font-medium text-sm truncate">{member.name}</div>
+                    <div className="text-white font-medium text-sm truncate flex items-center gap-1.5">
+                      <span className="truncate">{member.name}</span>
+                      {member.isVip && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400 flex-shrink-0">VIP</span>
+                      )}
+                    </div>
                     <div className="text-gray-400 text-xs capitalize">{member.level || "beginner"}</div>
                   </div>
                   <span className={`ml-auto text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${member.status === "active" ? "bg-green-600/20 text-green-400" : "bg-red-600/20 text-red-400"}`}>
@@ -378,6 +411,31 @@ const InstructorAddMember = () => {
                 {/* Membership */}
                 <div>
                   <h3 className="text-sm font-semibold text-gray-300 mb-3">Membership Details</h3>
+                  <label className="flex items-center gap-3 cursor-pointer bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 mb-4">
+                    <input
+                      type="checkbox"
+                      checked={memberForm.isVip}
+                      onChange={(e) => handleToggleVip(e.target.checked)}
+                      className="w-4 h-4 accent-amber-500"
+                    />
+                    <span className="text-sm font-medium text-white">
+                      VIP Member
+                      <span className="text-gray-400 font-normal ml-2">(no membership fee is collected)</span>
+                    </span>
+                  </label>
+                  {(settings.packages || []).length > 0 && (
+                    <div className="mb-4">
+                      <label className="block text-xs text-gray-400 mb-1.5">Package</label>
+                      <select value={memberForm.packageId} onChange={(e) => handleSelectPackage(e.target.value)} className={inputClass}>
+                        <option value="">Custom (enter fee manually)</option>
+                        {(settings.packages || []).map((pkg) => (
+                          <option key={pkg.id} value={pkg.id}>
+                            {pkg.name} — Rs. {Number(pkg.price).toLocaleString()} ({pkg.duration} Month{pkg.duration > 1 ? "s" : ""})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs text-gray-400 mb-1.5">Join Date</label>
@@ -392,8 +450,8 @@ const InstructorAddMember = () => {
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs text-gray-400 mb-1.5">Membership Fee</label>
-                      <input type="number" value={memberForm.membershipFee} onChange={(e) => setMemberForm((p) => ({ ...p, membershipFee: e.target.value }))} className={inputClass} placeholder="0.00" />
+                      <label className="block text-xs text-gray-400 mb-1.5">Membership Fee {memberForm.isVip && "(VIP — no fee)"}</label>
+                      <input type="number" value={memberForm.isVip ? "" : memberForm.membershipFee} disabled={memberForm.isVip} onChange={(e) => setMemberForm((p) => ({ ...p, membershipFee: e.target.value }))} className={`${inputClass} disabled:opacity-50`} placeholder={memberForm.isVip ? "VIP — no fee" : "0.00"} />
                     </div>
                     <div>
                       <label className="block text-xs text-gray-400 mb-1.5">Package Duration (months)</label>

@@ -21,6 +21,7 @@ const AdminPayments = () => {
     month: "",
     paymentMethod: "Cash",
     notes: "",
+    fullyPaid: true,
   });
   const [submitting, setSubmitting] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -108,6 +109,7 @@ const AdminPayments = () => {
       month: getCurrentMonth(),
       paymentMethod: "Cash",
       notes: "",
+      fullyPaid: true,
     });
     setShowPaymentModal(true);
   };
@@ -121,6 +123,7 @@ const AdminPayments = () => {
       month: payment.month || "",
       paymentMethod: payment.paymentMethod || "Cash",
       notes: payment.notes || "",
+      fullyPaid: !member.membershipFee || parseFloat(payment.amount) >= parseFloat(member.membershipFee),
     });
     setShowPaymentModal(true);
   };
@@ -153,6 +156,7 @@ const AdminPayments = () => {
           month: getCurrentMonth(),
           paymentMethod: "Cash",
           notes: "",
+          fullyPaid: true,
         });
 
         setShowPaymentModal(false);
@@ -177,15 +181,23 @@ const AdminPayments = () => {
         return;
       }
 
+      const expectedFee = parseFloat(selectedMember.membershipFee) || 0;
+      const paidAmount = parseFloat(paymentForm.amount);
+      const remaining = Math.max(expectedFee - paidAmount, 0);
+      const isFullPayment = paymentForm.fullyPaid || remaining <= 0;
+
       const paymentData = {
         memberId: selectedMember.id,
         gymId: currentGymId,
         memberName: selectedMember.name,
-        amount: parseFloat(paymentForm.amount),
+        amount: paidAmount,
+        expectedFee,
+        remaining,
+        isFullPayment,
+        status: isFullPayment ? "completed" : "partial",
         month: paymentForm.month,
         paymentMethod: paymentForm.paymentMethod,
         notes: paymentForm.notes,
-        status: "completed",
         paidAt: Timestamp.now(),
         recordedBy: user?.name || user?.username || user?.email || "Admin",
         recordedById: user?.id || user?.uid || "",
@@ -257,6 +269,7 @@ const AdminPayments = () => {
         month: getCurrentMonth(),
         paymentMethod: "Cash",
         notes: "",
+        fullyPaid: true,
       });
 
       setShowPaymentModal(false);
@@ -550,8 +563,13 @@ const AdminPayments = () => {
                         </span>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <h3 className="text-lg font-bold text-white mb-1 truncate">
-                          {member.name}
+                        <h3 className="text-lg font-bold text-white mb-1 truncate flex items-center gap-2">
+                          <span className="truncate">{member.name}</span>
+                          {member.isVip && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400 flex-shrink-0">
+                              VIP
+                            </span>
+                          )}
                         </h3>
                         <p className="text-sm text-gray-400 truncate">
                           {member.email}
@@ -563,7 +581,9 @@ const AdminPayments = () => {
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-400">Package Fee:</span>
                         <span className="text-white font-medium">
-                          Rs. {member.membershipFee || "N/A"}
+                          {member.isVip
+                            ? "VIP — No Fee"
+                            : `Rs. ${member.membershipFee || "N/A"}`}
                         </span>
                       </div>
                       {member.packageDuration && (
@@ -617,7 +637,11 @@ const AdminPayments = () => {
                             : "bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white active:scale-95"
                         }`}
                       >
-                        {isPaid ? "Already Paid" : "Record Payment"}
+                        {isPaid
+                          ? "Already Paid"
+                          : member.isVip
+                            ? "VIP — Record (optional)"
+                            : "Record Payment"}
                       </button>
 
                       {memberPayments.length > 0 && (
@@ -771,6 +795,48 @@ const AdminPayments = () => {
             </div>
 
             <form onSubmit={handleSubmitPayment} className="p-6 space-y-4">
+              {selectedMember.isVip && (
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 text-amber-400 text-sm">
+                  This member is a <span className="font-semibold">VIP</span> — no membership fee is collected. You can still record an optional payment below if needed.
+                </div>
+              )}
+
+              {/* Member fee summary */}
+              {selectedMember.membershipFee ? (
+                <div className="bg-gray-900 border border-gray-700 rounded-lg p-3 flex items-center justify-between text-sm">
+                  <span className="text-gray-400">Member Package Fee</span>
+                  <span className="text-white font-semibold">
+                    Rs. {Number(selectedMember.membershipFee).toLocaleString()}
+                  </span>
+                </div>
+              ) : null}
+
+              {/* Fully paid toggle */}
+              {selectedMember.membershipFee && !isEditMode ? (
+                <label className="flex items-center gap-3 cursor-pointer bg-gray-900 border border-gray-700 rounded-lg px-4 py-3">
+                  <input
+                    type="checkbox"
+                    checked={paymentForm.fullyPaid}
+                    onChange={(e) =>
+                      setPaymentForm({
+                        ...paymentForm,
+                        fullyPaid: e.target.checked,
+                        amount: e.target.checked
+                          ? selectedMember.membershipFee
+                          : paymentForm.amount,
+                      })
+                    }
+                    className="w-4 h-4 accent-green-600"
+                  />
+                  <span className="text-sm font-medium text-white">
+                    Fully paid
+                    <span className="text-gray-400 font-normal ml-2">
+                      (collect the full package fee)
+                    </span>
+                  </span>
+                </label>
+              ) : null}
+
               {/* Amount */}
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">
@@ -782,12 +848,24 @@ const AdminPayments = () => {
                   onChange={(e) =>
                     setPaymentForm({ ...paymentForm, amount: e.target.value })
                   }
-                  className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-600"
+                  disabled={paymentForm.fullyPaid && !!selectedMember.membershipFee && !isEditMode}
+                  className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-600 disabled:opacity-60"
                   placeholder="Enter amount"
                   required
                   min="0"
                   step="0.01"
                 />
+                {/* Remaining for partial payments */}
+                {!paymentForm.fullyPaid && selectedMember.membershipFee ? (
+                  <p className="text-xs mt-2 text-yellow-500">
+                    Remaining: Rs.{" "}
+                    {Math.max(
+                      (parseFloat(selectedMember.membershipFee) || 0) -
+                        (parseFloat(paymentForm.amount) || 0),
+                      0,
+                    ).toLocaleString()}
+                  </p>
+                ) : null}
               </div>
 
               {/* Month */}
