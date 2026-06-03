@@ -1057,37 +1057,74 @@ export const onPaymentCreated = functions.firestore
 
     // Skip if no memberId
     if (!payment.memberId || !payment.gymId) {
-      console.log("⏭️ Payment missing memberId or gymId, skipping WhatsApp");
+      console.log("⏭️ Payment missing memberId or gymId, skipping notifications");
       return null;
     }
 
+    const db = admin.firestore();
+
+    // Load member + gym once (shared by SMS and WhatsApp)
+    const memberDoc = await db.collection("members").doc(payment.memberId).get();
+    if (!memberDoc.exists) {
+      console.warn(`⚠️ Member ${payment.memberId} not found`);
+      return null;
+    }
+    const member = memberDoc.data();
+    const gymDoc = await db.collection("gyms").doc(payment.gymId).get();
+    const gymData = gymDoc.exists ? gymDoc.data() : {};
+    const gymName = gymData.name || "Your Gym";
+
+    // ── SMS receipt ───────────────────────────────────────────────────────────
+    try {
+      const smsEnabled = gymData.settings?.notifications?.sms !== false;
+      const smsSettings = gymData.settings?.sms || {};
+      const apiToken = smsSettings.apiToken || process.env.TEXTLK_API_TOKEN;
+      const senderId =
+        smsSettings.senderId || process.env.TEXTLK_SENDER_ID || "Lumora Tech";
+      const phone = member.mobile || member.whatsapp || member.phone;
+
+      if (smsEnabled && apiToken && phone) {
+        const receiptId = context.params.paymentId.slice(0, 8).toUpperCase();
+        const dateStr = new Date().toLocaleDateString("en-GB");
+        const message =
+          `💪 ${gymName} payment received\n\n` +
+          `Hi ${member.name || "Member"}, we received your payment of ` +
+          `Rs. ${Number(payment.amount || 0).toLocaleString()}` +
+          `${payment.remaining > 0 ? ` (remaining Rs. ${Number(payment.remaining).toLocaleString()})` : ""}` +
+          `.\n\nReceipt: ${receiptId}\nDate: ${dateStr}\n\nThank you!`;
+
+        const sent = await sendPlainSMS(apiToken, senderId, phone, message);
+        if (sent) {
+          console.log(`✅ Payment receipt SMS sent for member ${payment.memberId}`);
+          await db.collection("notifications").add({
+            gymId: payment.gymId,
+            memberId: payment.memberId,
+            memberName: member.name || "",
+            type: "payment_received",
+            channel: "sms",
+            status: "sent",
+            amount: payment.amount,
+            sentAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        }
+      } else if (!apiToken) {
+        console.warn(`⚠️ No SMS token for gym ${payment.gymId}, skipping payment SMS`);
+      }
+    } catch (smsErr) {
+      console.error("❌ onPaymentCreated SMS error:", smsErr);
+    }
+
+    // ── WhatsApp receipt ────────────────────────────────────────────────────────
     if (!metaWhatsAppService.isConfigured()) {
-      console.warn("⚠️ WhatsApp not configured, skipping payment notification");
+      console.warn("⚠️ WhatsApp not configured, skipping payment WhatsApp");
       return null;
     }
 
     try {
-      const db = admin.firestore();
-
-      // Get member details
-      const memberDoc = await db
-        .collection("members")
-        .doc(payment.memberId)
-        .get();
-      if (!memberDoc.exists) {
-        console.warn(`⚠️ Member ${payment.memberId} not found`);
-        return null;
-      }
-      const member = memberDoc.data();
-
       if (!member.phone) {
-        console.log(`⏭️ Member ${payment.memberId} has no phone`);
+        console.log(`⏭️ Member ${payment.memberId} has no phone for WhatsApp`);
         return null;
       }
-
-      // Get gym name
-      const gymDoc = await db.collection("gyms").doc(payment.gymId).get();
-      const gymName = gymDoc.exists ? gymDoc.data().name : "Your Gym";
 
       const components = metaWhatsAppService.buildTemplateComponents(
         "payment_received",
@@ -2070,7 +2107,9 @@ export const sendPaymentReminders = functions.pubsub
       for (const memberDoc of membersSnap.docs) {
         const member = memberDoc.data();
         if (member.role && member.role !== "member") continue;
-        if (member.isVip) continue; // VIP members don't pay
+        if (member.isVip) continue; // VIP / fee-exempt members don't pay
+        // Skip special-case members with no fee to collect (fee 0 or unset)
+        if (!(Number(member.membershipFee) > 0)) continue;
         if (paidMemberIds.has(memberDoc.id)) continue;
 
         const phone = member.mobile || member.whatsapp || member.phone;

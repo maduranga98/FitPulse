@@ -7,6 +7,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { APP_URL } from "../../config/app";
 import { calculateBMI, validateBMIInputs } from "../../utils/validationUtils";
 import { supabase } from "../../services/supabaseClient";
+import MemberAvatar from "../../components/MemberAvatar";
 
 const InstructorAddMember = () => {
   const { user } = useAuth();
@@ -305,9 +306,7 @@ const InstructorAddMember = () => {
             {filteredMembers.map((member) => (
               <div key={member.id} className="bg-gray-800 border border-gray-700 rounded-xl p-4">
                 <div className="flex items-center gap-3 mb-3">
-                  <div className="w-10 h-10 rounded-full bg-blue-600/20 flex items-center justify-center text-blue-400 font-bold text-sm flex-shrink-0">
-                    {member.name?.[0]?.toUpperCase() || "?"}
-                  </div>
+                  <MemberAvatar name={member.name} imageUrl={member.profileImageUrl} sizeClass="w-10 h-10" textClass="text-sm" />
                   <div className="min-w-0">
                     <div className="text-white font-medium text-sm truncate flex items-center gap-1.5">
                       <span className="truncate">{member.name}</span>

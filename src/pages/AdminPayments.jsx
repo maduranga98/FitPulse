@@ -3,6 +3,7 @@ import { useAuth } from "../hooks/useAuth";
 import Sidebar from "../components/Sidebar";
 import { where } from "firebase/firestore";
 import { useGymSettings } from "../contexts/GymSettingsContext";
+import MemberAvatar from "../components/MemberAvatar";
 
 const AdminPayments = () => {
   const { user } = useAuth();
@@ -557,11 +558,12 @@ const AdminPayments = () => {
                     className="bg-gray-800 border border-gray-700 rounded-xl p-6 hover:border-gray-600 transition"
                   >
                     <div className="flex items-start gap-4 mb-4">
-                      <div className="w-14 h-14 bg-gradient-to-br from-purple-600 to-pink-600 rounded-full flex items-center justify-center flex-shrink-0">
-                        <span className="text-white font-bold text-lg">
-                          {member.name.charAt(0).toUpperCase()}
-                        </span>
-                      </div>
+                      <MemberAvatar
+                        name={member.name}
+                        imageUrl={member.profileImageUrl}
+                        sizeClass="w-14 h-14"
+                        fallbackClass="bg-gradient-to-br from-purple-600 to-pink-600"
+                      />
                       <div className="flex-1 min-w-0">
                         <h3 className="text-lg font-bold text-white mb-1 truncate flex items-center gap-2">
                           <span className="truncate">{member.name}</span>

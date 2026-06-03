@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import AdminLayout from "../../components/AdminLayout";
+import MemberAvatar from "../../components/MemberAvatar";
 import {
   Users,
   Search,
@@ -226,9 +227,7 @@ const InstructorMembers = () => {
                   {/* Member Info */}
                   <div className="mb-4">
                     <div className="flex items-center gap-3 mb-2">
-                      <div className="w-10 h-10 rounded-full bg-purple-600/20 flex items-center justify-center text-purple-400 font-bold flex-shrink-0">
-                        {member.name?.[0]?.toUpperCase() || "?"}
-                      </div>
+                      <MemberAvatar name={member.name} imageUrl={member.profileImageUrl} sizeClass="w-10 h-10" textClass="text-base" />
                       <div className="min-w-0">
                         <h3 className="text-base font-bold text-white truncate">{member.name}</h3>
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium capitalize ${member.level === "advanced" ? "bg-red-600/20 text-red-400" : member.level === "intermediate" ? "bg-yellow-600/20 text-yellow-400" : "bg-green-600/20 text-green-400"}`}>

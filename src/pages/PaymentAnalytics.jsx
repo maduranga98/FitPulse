@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../hooks/useAuth";
 import AdminLayout from "../components/AdminLayout";
 import { where } from "firebase/firestore";
+import MemberAvatar from "../components/MemberAvatar";
 
 const PaymentAnalytics = () => {
   const { user } = useAuth();
@@ -493,11 +494,13 @@ const PaymentAnalytics = () => {
                   className="bg-gray-900 rounded-lg border border-gray-700 p-4"
                 >
                   <div className="flex items-center gap-3 mb-3">
-                    <div className="w-10 h-10 bg-gradient-to-br from-purple-600 to-pink-600 rounded-full flex items-center justify-center flex-shrink-0">
-                      <span className="text-white font-bold text-sm">
-                        {member.name.charAt(0).toUpperCase()}
-                      </span>
-                    </div>
+                    <MemberAvatar
+                      name={member.name}
+                      imageUrl={member.profileImageUrl}
+                      sizeClass="w-10 h-10"
+                      textClass="text-sm"
+                      fallbackClass="bg-gradient-to-br from-purple-600 to-pink-600"
+                    />
                     <div className="flex-1 min-w-0">
                       <h4 className="text-white font-medium truncate">
                         {member.name}
