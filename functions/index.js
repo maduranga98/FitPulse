@@ -909,7 +909,9 @@ export const onMemberCreated = functions.firestore
     // Resolve phone: members store mobile/whatsapp, not phone
     const phoneNumber = member.mobile || member.whatsapp || member.phone;
     if (!phoneNumber) {
-      console.log(`⏭️ Member ${snap.id} has no phone number, skipping notifications`);
+      console.log(
+        `⏭️ Member ${snap.id} has no phone number, skipping notifications`,
+      );
       return null;
     }
 
@@ -942,7 +944,9 @@ export const onMemberCreated = functions.firestore
         else if (cleaned.length === 9) cleaned = "94" + cleaned;
 
         if (/^94\d{9}$/.test(cleaned)) {
-          const ENDPOINT = process.env.TEXTLK_HTTP_ENDPOINT || "https://app.text.lk/api/v3/sms/send";
+          const ENDPOINT =
+            process.env.TEXTLK_HTTP_ENDPOINT ||
+            "https://app.text.lk/api/v3/sms/send";
           const smsResponse = await fetch(ENDPOINT, {
             method: "POST",
             headers: {
@@ -970,13 +974,20 @@ export const onMemberCreated = functions.firestore
               sentAt: admin.firestore.FieldValue.serverTimestamp(),
             });
           } else {
-            console.error(`❌ SMS API error for member ${snap.id}:`, smsResult.message);
+            console.error(
+              `❌ SMS API error for member ${snap.id}:`,
+              smsResult.message,
+            );
           }
         } else {
-          console.warn(`⚠️ Invalid phone number for member ${snap.id}: ${phoneNumber}`);
+          console.warn(
+            `⚠️ Invalid phone number for member ${snap.id}: ${phoneNumber}`,
+          );
         }
       } else {
-        console.warn(`⚠️ No SMS API token configured for gym ${member.gymId}, skipping SMS`);
+        console.warn(
+          `⚠️ No SMS API token configured for gym ${member.gymId}, skipping SMS`,
+        );
       }
     } catch (smsError) {
       console.error("❌ onMemberCreated SMS error:", smsError);
@@ -984,7 +995,9 @@ export const onMemberCreated = functions.firestore
 
     // ── WhatsApp ──────────────────────────────────────────────────────────────
     if (!metaWhatsAppService.isConfigured()) {
-      console.warn("⚠️ WhatsApp not configured, skipping WhatsApp notification");
+      console.warn(
+        "⚠️ WhatsApp not configured, skipping WhatsApp notification",
+      );
       return null;
     }
 
@@ -1022,7 +1035,10 @@ export const onMemberCreated = functions.firestore
           sentAt: admin.firestore.FieldValue.serverTimestamp(),
         });
       } else {
-        console.error(`❌ Failed to send member registration WhatsApp:`, result.error);
+        console.error(
+          `❌ Failed to send member registration WhatsApp:`,
+          result.error,
+        );
       }
     } catch (error) {
       console.error("❌ onMemberCreated WhatsApp error:", error);
@@ -1864,7 +1880,7 @@ export const sendSMSNotification = functions.https.onCall(async (data) => {
   if (!recipient || !message) {
     throw new functions.https.HttpsError(
       "invalid-argument",
-      "recipient and message are required."
+      "recipient and message are required.",
     );
   }
 
@@ -1874,7 +1890,11 @@ export const sendSMSNotification = functions.https.onCall(async (data) => {
 
   if (gymId) {
     try {
-      const gymSnap = await admin.firestore().collection("gyms").doc(gymId).get();
+      const gymSnap = await admin
+        .firestore()
+        .collection("gyms")
+        .doc(gymId)
+        .get();
       if (gymSnap.exists) {
         const smsSettings = gymSnap.data()?.settings?.sms || {};
         if (smsSettings.apiToken) API_TOKEN = smsSettings.apiToken;
@@ -1886,13 +1906,12 @@ export const sendSMSNotification = functions.https.onCall(async (data) => {
   }
 
   const ENDPOINT =
-    process.env.TEXTLK_HTTP_ENDPOINT ||
-    "https://app.text.lk/api/v3/sms/send";
+    process.env.TEXTLK_HTTP_ENDPOINT || "https://app.text.lk/api/v3/sms/send";
 
   if (!API_TOKEN) {
     throw new functions.https.HttpsError(
       "failed-precondition",
-      "SMS API token not configured. Set it in Dashboard → Settings → SMS Configuration."
+      "SMS API token not configured. Set it in Dashboard → Settings → SMS Configuration.",
     );
   }
 
@@ -1917,7 +1936,7 @@ export const sendSMSNotification = functions.https.onCall(async (data) => {
     if (!response.ok || result.status === "error") {
       throw new functions.https.HttpsError(
         "internal",
-        result.message || `SMS API error: ${response.status}`
+        result.message || `SMS API error: ${response.status}`,
       );
     }
 
@@ -1929,4 +1948,3 @@ export const sendSMSNotification = functions.https.onCall(async (data) => {
     throw new functions.https.HttpsError("internal", err.message);
   }
 });
-
