@@ -96,12 +96,17 @@ const Members = () => {
     joinDate: new Date().toISOString().split("T")[0],
     membershipFee: "",
     packageDuration: 1,
+    packageId: "",
+    packageName: "",
+    isVip: false,
     nextPaymentDate: "",
     emergencyContact: "",
     emergencyName: "",
     notes: "",
   });
 
+  const [activeTab, setActiveTab] = useState("members");
+  const [blockingId, setBlockingId] = useState(null);
   const [generatedCredentials, setGeneratedCredentials] = useState(null);
   const [bmiInfo, setBmiInfo] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -204,6 +209,9 @@ const Members = () => {
       joinDate: new Date().toISOString().split("T")[0],
       membershipFee: "",
       packageDuration: 1,
+      packageId: "",
+      packageName: "",
+      isVip: false,
       nextPaymentDate: "",
       emergencyContact: registration.emergencyContact || "",
       emergencyName: registration.emergencyName || "",
@@ -285,6 +293,58 @@ const Members = () => {
     const reader = new FileReader();
     reader.onloadend = () => setProfileImagePreview(reader.result);
     reader.readAsDataURL(file);
+  };
+
+  const handleSelectPackage = (packageId) => {
+    const pkg = (settings.packages || []).find((p) => p.id === packageId);
+    if (!pkg) {
+      setMemberForm((prev) => ({ ...prev, packageId: "", packageName: "" }));
+      return;
+    }
+    setMemberForm((prev) => ({
+      ...prev,
+      packageId: pkg.id,
+      packageName: pkg.name,
+      membershipFee: prev.isVip ? "" : String(pkg.price),
+      packageDuration: pkg.duration || prev.packageDuration,
+    }));
+  };
+
+  const handleToggleVip = (isVip) => {
+    setMemberForm((prev) => ({
+      ...prev,
+      isVip,
+      // VIP members don't pay, so clear the fee. Otherwise restore the
+      // selected package's fee (if any).
+      membershipFee: isVip
+        ? "0"
+        : (settings.packages || []).find((p) => p.id === prev.packageId)?.price?.toString() || prev.membershipFee,
+    }));
+  };
+
+  const handleBlockMember = async (member) => {
+    if (!userIsAdmin) {
+      showError("You don't have permission to block members");
+      return;
+    }
+    const newStatus = member.status === "blocked" ? "active" : "blocked";
+    setBlockingId(member.id);
+    try {
+      const { db } = await import("../config/firebase");
+      const { doc, updateDoc } = await import("firebase/firestore");
+      await updateDoc(doc(db, "members", member.id), { status: newStatus });
+      showSuccess(
+        newStatus === "blocked"
+          ? `${member.name}'s access has been blocked`
+          : `${member.name}'s access has been restored`,
+      );
+      fetchMembers();
+    } catch (error) {
+      console.error("Error updating block status:", error);
+      showError("Failed to update access");
+    } finally {
+      setBlockingId(null);
+    }
   };
 
   const handleAddMember = async (e) => {
@@ -429,6 +489,9 @@ const Members = () => {
         joinDate: new Date().toISOString().split("T")[0],
         membershipFee: "",
         packageDuration: 1,
+        packageId: "",
+        packageName: "",
+        isVip: false,
         nextPaymentDate: "",
         emergencyContact: "",
         emergencyName: "",
@@ -801,6 +864,34 @@ const Members = () => {
         </header>
 
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+          {/* Tabs */}
+          <div className="flex gap-2 mb-6 border-b border-gray-700">
+            <button
+              onClick={() => setActiveTab("members")}
+              className={`px-4 py-2 text-sm font-medium transition border-b-2 -mb-px ${
+                activeTab === "members"
+                  ? "border-blue-500 text-white"
+                  : "border-transparent text-gray-400 hover:text-white"
+              }`}
+            >
+              Members
+            </button>
+            {userIsAdmin && (
+              <button
+                onClick={() => setActiveTab("blocked")}
+                className={`px-4 py-2 text-sm font-medium transition border-b-2 -mb-px ${
+                  activeTab === "blocked"
+                    ? "border-blue-500 text-white"
+                    : "border-transparent text-gray-400 hover:text-white"
+                }`}
+              >
+                Block Access
+              </button>
+            )}
+          </div>
+
+          {activeTab === "members" && (
+          <>
           {/* Stats Grid */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
             <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
@@ -925,6 +1016,7 @@ const Members = () => {
               <option value="all">All Status</option>
               <option value="active">Active</option>
               <option value="inactive">Inactive</option>
+              <option value="blocked">Blocked</option>
             </select>
             <select
               value={filterLevel}
@@ -970,8 +1062,13 @@ const Members = () => {
                         )}
                       </div>
                       <div>
-                        <h3 className="text-lg font-bold text-white">
+                        <h3 className="text-lg font-bold text-white flex items-center gap-2">
                           {member.name}
+                          {member.isVip && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400">
+                              VIP
+                            </span>
+                          )}
                         </h3>
                         <p className="text-sm text-gray-400">{member.mobile}</p>
                         {member.memberCode && (
@@ -1054,6 +1151,95 @@ const Members = () => {
               ))
             )}
           </div>
+          </>
+          )}
+
+          {/* Block Access Tab */}
+          {activeTab === "blocked" && userIsAdmin && (
+            <div>
+              <div className="mb-4">
+                <input
+                  type="text"
+                  placeholder="Search members..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full sm:max-w-md px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <p className="text-gray-400 text-sm mb-4">
+                Blocked members cannot log in to the app. Use this to revoke or restore access per member.
+              </p>
+              <div className="space-y-2">
+                {members
+                  .filter(
+                    (m) =>
+                      m.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                      m.memberCode?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                      m.mobile?.includes(searchTerm),
+                  )
+                  .map((member) => {
+                    const isBlocked = member.status === "blocked";
+                    return (
+                      <div
+                        key={member.id}
+                        className="flex items-center justify-between bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 gap-3"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-11 h-11 rounded-full overflow-hidden flex-shrink-0">
+                            {member.profileImageUrl ? (
+                              <img
+                                src={member.profileImageUrl}
+                                alt={member.name}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <div className="w-full h-full bg-blue-600 flex items-center justify-center text-white font-bold">
+                                {member.name?.charAt(0).toUpperCase()}
+                              </div>
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-white font-medium truncate">{member.name}</p>
+                            {member.memberCode && (
+                              <p className="text-xs text-blue-400 font-mono">#{member.memberCode}</p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 flex-shrink-0">
+                          <span
+                            className={`px-2 py-1 rounded text-xs font-medium ${
+                              isBlocked
+                                ? "bg-red-600/20 text-red-500"
+                                : "bg-green-600/20 text-green-500"
+                            }`}
+                          >
+                            {isBlocked ? "Blocked" : "Allowed"}
+                          </span>
+                          <button
+                            onClick={() => handleBlockMember(member)}
+                            disabled={blockingId === member.id}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50 ${
+                              isBlocked
+                                ? "bg-green-600 hover:bg-green-700 text-white"
+                                : "bg-red-600 hover:bg-red-700 text-white"
+                            }`}
+                          >
+                            {blockingId === member.id
+                              ? "..."
+                              : isBlocked
+                                ? "Unblock"
+                                : "Block"}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                {members.length === 0 && (
+                  <p className="text-gray-500 text-center py-8">No members found.</p>
+                )}
+              </div>
+            </div>
+          )}
         </main>
       </div>
 
@@ -1397,22 +1583,62 @@ const Members = () => {
                   />
                 </div>
 
+                {/* VIP toggle */}
+                <div className="md:col-span-2">
+                  <label className="flex items-center gap-3 cursor-pointer bg-gray-900 border border-gray-700 rounded-lg px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={memberForm.isVip}
+                      onChange={(e) => handleToggleVip(e.target.checked)}
+                      className="w-4 h-4 accent-amber-500"
+                    />
+                    <span className="text-sm font-medium text-white">
+                      VIP Member
+                      <span className="text-gray-400 font-normal ml-2">
+                        (no membership fee is collected)
+                      </span>
+                    </span>
+                  </label>
+                </div>
+
+                {/* Package selector (from gym settings) */}
+                {(settings.packages || []).length > 0 && (
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Package
+                    </label>
+                    <select
+                      value={memberForm.packageId}
+                      onChange={(e) => handleSelectPackage(e.target.value)}
+                      className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Custom (enter fee manually)</option>
+                      {(settings.packages || []).map((pkg) => (
+                        <option key={pkg.id} value={pkg.id}>
+                          {pkg.name} — Rs. {Number(pkg.price).toLocaleString()} ({pkg.duration} Month{pkg.duration > 1 ? "s" : ""})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Package Fee (Rs.) *
+                    Package Fee (Rs.) {!memberForm.isVip && "*"}
                   </label>
                   <input
                     type="number"
-                    value={memberForm.membershipFee}
+                    value={memberForm.isVip ? "" : memberForm.membershipFee}
                     onChange={(e) =>
                       setMemberForm({
                         ...memberForm,
                         membershipFee: e.target.value,
                       })
                     }
-                    className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Enter package fee"
-                    required
+                    disabled={memberForm.isVip}
+                    className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                    placeholder={memberForm.isVip ? "VIP — no fee" : "Enter package fee"}
+                    required={!memberForm.isVip}
                     min="0"
                     step="0.01"
                   />
