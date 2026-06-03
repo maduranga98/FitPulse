@@ -75,7 +75,7 @@ service cloud.firestore {
     match /members/{memberId} {
       allow read: if true;
       allow create: if hasFields(['name', 'gymId', 'mobile', 'whatsapp'])
-                    && (request.resource.data.email == null || isValidEmail(request.resource.data.email));
+                    && (request.resource.data.email == null || request.resource.data.email == '' || isValidEmail(request.resource.data.email));
       allow update: if true;
       allow delete: if true;
     }
