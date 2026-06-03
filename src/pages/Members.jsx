@@ -857,12 +857,22 @@ const Members = () => {
                     <div className="flex items-center gap-3 min-w-0 flex-1">
                       <div className="w-9 h-9 rounded-full overflow-hidden flex-shrink-0">
                         {reg.profileImageUrl ? (
-                          <img src={reg.profileImageUrl} alt={reg.name} className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full bg-purple-600/20 flex items-center justify-center text-purple-400 font-bold text-sm">
-                            {reg.name?.charAt(0)?.toUpperCase() || "?"}
-                          </div>
-                        )}
+                          <img
+                            src={reg.profileImageUrl}
+                            alt={reg.name}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              e.target.style.display = "none";
+                              e.target.nextSibling.style.display = "flex";
+                            }}
+                          />
+                        ) : null}
+                        <div
+                          className="w-full h-full bg-purple-600/20 items-center justify-center text-purple-400 font-bold text-sm"
+                          style={{ display: reg.profileImageUrl ? "none" : "flex" }}
+                        >
+                          {reg.name?.charAt(0)?.toUpperCase() || "?"}
+                        </div>
                       </div>
                       <div className="min-w-0">
                         <p className="text-white font-medium text-sm truncate">
@@ -1092,12 +1102,25 @@ const Members = () => {
                   <div className="flex items-center gap-4">
                     <div className="w-20 h-20 rounded-full overflow-hidden bg-gray-700 flex items-center justify-center flex-shrink-0">
                       {profileImagePreview ? (
-                        <img src={profileImagePreview} alt="Preview" className="w-full h-full object-cover" />
-                      ) : (
-                        <svg className="w-8 h-8 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                        </svg>
-                      )}
+                        <img
+                          src={profileImagePreview}
+                          alt="Preview"
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            e.target.style.display = "none";
+                            e.target.parentNode.querySelector("svg").style.display = "block";
+                          }}
+                        />
+                      ) : null}
+                      <svg
+                        className="w-8 h-8 text-gray-500"
+                        style={{ display: profileImagePreview ? "none" : "block" }}
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                      </svg>
                     </div>
                     <div>
                       <label className="cursor-pointer px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition inline-block">
