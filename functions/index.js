@@ -1948,3 +1948,174 @@ export const sendSMSNotification = functions.https.onCall(async (data) => {
     throw new functions.https.HttpsError("internal", err.message);
   }
 });
+
+// ========================================
+// ⏰ SCHEDULED PAYMENT REMINDERS (SMS)
+// ========================================
+// Runs daily. For each gym, computes the monthly payment due date from
+// settings.payment.dueDay and sends an SMS reminder to active, non-VIP
+// members who have not yet paid for the current month, on each of the
+// configured settings.payment.reminderDays (days before the due date).
+
+/**
+ * Send a single plain SMS via text.lk. Returns true on success.
+ */
+async function sendPlainSMS(apiToken, senderId, phoneNumber, message) {
+  if (!apiToken || !phoneNumber) return false;
+
+  // Format Sri Lankan number: 0XXXXXXXXX → 94XXXXXXXXX
+  let cleaned = String(phoneNumber).replace(/\D/g, "");
+  if (cleaned.startsWith("0")) cleaned = "94" + cleaned.slice(1);
+  else if (cleaned.length === 9) cleaned = "94" + cleaned;
+  if (!/^94\d{9}$/.test(cleaned)) {
+    console.warn(`⚠️ Invalid phone number for reminder: ${phoneNumber}`);
+    return false;
+  }
+
+  const ENDPOINT =
+    process.env.TEXTLK_HTTP_ENDPOINT || "https://app.text.lk/api/v3/sms/send";
+  try {
+    const resp = await fetch(ENDPOINT, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiToken}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        recipient: cleaned,
+        sender_id: senderId,
+        type: "plain",
+        message,
+      }),
+    });
+    const result = await resp.json();
+    if (resp.ok && result.status !== "error") return true;
+    console.error("❌ Reminder SMS API error:", result.message);
+    return false;
+  } catch (err) {
+    console.error("❌ Reminder SMS send error:", err);
+    return false;
+  }
+}
+
+export const sendPaymentReminders = functions.pubsub
+  .schedule("0 9 * * *") // every day at 09:00
+  .timeZone("Asia/Colombo")
+  .onRun(async () => {
+    const db = admin.firestore();
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth(); // 0-indexed
+    const monthStr = `${year}-${String(month + 1).padStart(2, "0")}`; // YYYY-MM
+
+    const gymsSnap = await db.collection("gyms").get();
+
+    for (const gymDoc of gymsSnap.docs) {
+      const gym = gymDoc.data();
+      const gymId = gymDoc.id;
+
+      if (gym.status && gym.status !== "active") continue;
+
+      const paymentCfg = gym.settings?.payment || {};
+      const dueDay = parseInt(paymentCfg.dueDay) || 10;
+      const reminderDays = Array.isArray(paymentCfg.reminderDays)
+        ? paymentCfg.reminderDays
+        : [3, 1];
+
+      // Due date for the current month
+      const dueDate = new Date(year, month, dueDay);
+      const msPerDay = 1000 * 60 * 60 * 24;
+      const daysUntilDue = Math.round(
+        (new Date(year, month, dueDate.getDate()) -
+          new Date(year, month, now.getDate())) /
+          msPerDay,
+      );
+
+      // Only proceed if today matches one of the reminder offsets
+      if (!reminderDays.includes(daysUntilDue)) continue;
+
+      const smsSettings = gym.settings?.sms || {};
+      const apiToken = smsSettings.apiToken || process.env.TEXTLK_API_TOKEN;
+      const senderId =
+        smsSettings.senderId || process.env.TEXTLK_SENDER_ID || "Lumora Tech";
+      if (!apiToken) {
+        console.warn(`⚠️ Gym ${gymId} has no SMS token, skipping reminders`);
+        continue;
+      }
+
+      // Members who already paid this month
+      const paymentsSnap = await db
+        .collection("payments")
+        .where("gymId", "==", gymId)
+        .where("month", "==", monthStr)
+        .get();
+      const paidMemberIds = new Set(
+        paymentsSnap.docs.map((d) => d.data().memberId),
+      );
+
+      // Active, non-VIP members
+      const membersSnap = await db
+        .collection("members")
+        .where("gymId", "==", gymId)
+        .where("status", "==", "active")
+        .get();
+
+      const gymName = gym.name || "Your Gym";
+      const dueLabel = dueDate.toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "long",
+      });
+
+      for (const memberDoc of membersSnap.docs) {
+        const member = memberDoc.data();
+        if (member.role && member.role !== "member") continue;
+        if (member.isVip) continue; // VIP members don't pay
+        if (paidMemberIds.has(memberDoc.id)) continue;
+
+        const phone = member.mobile || member.whatsapp || member.phone;
+        if (!phone) continue;
+
+        // Dedupe: one reminder per member per due-offset per month
+        const reminderId = `${gymId}_${memberDoc.id}_${monthStr}_${daysUntilDue}`;
+        const reminderRef = db.collection("payment_reminders").doc(reminderId);
+        const existing = await reminderRef.get();
+        if (existing.exists) continue;
+
+        const fee = member.membershipFee
+          ? `Rs. ${Number(member.membershipFee).toLocaleString()}`
+          : "";
+        const message =
+          `💪 ${gymName} payment reminder\n\n` +
+          `Hi ${member.name || "Member"}, your membership payment` +
+          (fee ? ` of ${fee}` : "") +
+          ` is due by ${dueLabel}.\n\n` +
+          `Please make your payment to keep your access active. Thank you!`;
+
+        const sent = await sendPlainSMS(apiToken, senderId, phone, message);
+        if (sent) {
+          await reminderRef.set({
+            gymId,
+            memberId: memberDoc.id,
+            memberName: member.name || "",
+            month: monthStr,
+            daysBeforeDue: daysUntilDue,
+            channel: "sms",
+            sentAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          await db.collection("notifications").add({
+            gymId,
+            memberId: memberDoc.id,
+            memberName: member.name || "",
+            type: "payment_reminder",
+            channel: "sms",
+            status: "sent",
+            sentAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          console.log(`✅ Payment reminder SMS sent to ${member.name}`);
+        }
+      }
+    }
+
+    return null;
+  });
