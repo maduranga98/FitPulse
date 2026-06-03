@@ -758,18 +758,18 @@ const AdminPayments = () => {
                 <p className="text-gray-400 text-sm mt-1">
                   {selectedMember.name}
                 </p>
-                {selectedMember.membershipFee && (
+                {selectedMember.membershipFee > 0 ? (
                   <div className="flex items-center gap-3 mt-2">
                     <span className="text-sm px-2 py-1 bg-purple-600/20 text-purple-400 rounded">
                       Rs. {selectedMember.membershipFee}
                     </span>
-                    {selectedMember.packageDuration && (
+                    {selectedMember.packageDuration > 0 && (
                       <span className="text-sm px-2 py-1 bg-blue-600/20 text-blue-400 rounded">
                         {selectedMember.packageDuration} Month{selectedMember.packageDuration > 1 ? 's' : ''} plan
                       </span>
                     )}
                   </div>
-                )}
+                ) : null}
               </div>
               <button
                 onClick={() => {
@@ -801,18 +801,20 @@ const AdminPayments = () => {
                 </div>
               )}
 
-              {/* Member fee summary */}
-              {selectedMember.membershipFee ? (
+              {/* Member fee summary — always shown for consistency */}
+              {!selectedMember.isVip && (
                 <div className="bg-gray-900 border border-gray-700 rounded-lg p-3 flex items-center justify-between text-sm">
                   <span className="text-gray-400">Member Package Fee</span>
-                  <span className="text-white font-semibold">
-                    Rs. {Number(selectedMember.membershipFee).toLocaleString()}
+                  <span className={selectedMember.membershipFee > 0 ? "text-white font-semibold" : "text-gray-500"}>
+                    {selectedMember.membershipFee > 0
+                      ? `Rs. ${Number(selectedMember.membershipFee).toLocaleString()}`
+                      : "Not set"}
                   </span>
                 </div>
-              ) : null}
+              )}
 
               {/* Fully paid toggle */}
-              {selectedMember.membershipFee && !isEditMode ? (
+              {selectedMember.membershipFee > 0 && !isEditMode ? (
                 <label className="flex items-center gap-3 cursor-pointer bg-gray-900 border border-gray-700 rounded-lg px-4 py-3">
                   <input
                     type="checkbox"
@@ -848,7 +850,7 @@ const AdminPayments = () => {
                   onChange={(e) =>
                     setPaymentForm({ ...paymentForm, amount: e.target.value })
                   }
-                  disabled={paymentForm.fullyPaid && !!selectedMember.membershipFee && !isEditMode}
+                  disabled={paymentForm.fullyPaid && selectedMember.membershipFee > 0 && !isEditMode}
                   className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-600 disabled:opacity-60"
                   placeholder="Enter amount"
                   required
@@ -856,7 +858,7 @@ const AdminPayments = () => {
                   step="0.01"
                 />
                 {/* Remaining for partial payments */}
-                {!paymentForm.fullyPaid && selectedMember.membershipFee ? (
+                {!paymentForm.fullyPaid && selectedMember.membershipFee > 0 ? (
                   <p className="text-xs mt-2 text-yellow-500">
                     Remaining: Rs.{" "}
                     {Math.max(
