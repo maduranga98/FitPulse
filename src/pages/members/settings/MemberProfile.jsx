@@ -41,8 +41,9 @@ const MemberProfile = () => {
       const { doc, updateDoc } = await import("firebase/firestore");
 
       const imgRef = ref(storage, `members/${memberData.gymId}/${currentUser.id}/profile.jpg`);
+      const imgMetadata = { contentType: profileImageFile.type };
       await new Promise((resolve, reject) => {
-        const task = uploadBytesResumable(imgRef, profileImageFile);
+        const task = uploadBytesResumable(imgRef, profileImageFile, imgMetadata);
         task.on("state_changed", null, reject, () => resolve(task.snapshot));
       });
       const url = await getDownloadURL(imgRef);
