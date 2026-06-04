@@ -498,8 +498,12 @@ const Exercises = ({ onLogout, onNavigate }) => {
       const fileName = `exercises/${currentGymId}/videos/${timestamp}_${file.name}`;
       const storageRef = ref(storage, fileName);
 
-      // Upload file with progress tracking
-      const uploadTask = uploadBytesResumable(storageRef, file);
+      // Pass contentType explicitly so Firebase Storage serves the file as a
+      // playable video MIME type (otherwise some uploads end up as
+      // application/octet-stream and the <video> element silently fails).
+      const uploadTask = uploadBytesResumable(storageRef, file, {
+        contentType: file.type || "video/mp4",
+      });
 
       uploadTask.on(
         "state_changed",

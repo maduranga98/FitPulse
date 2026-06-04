@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import AdminLayout from "../components/AdminLayout";
 import { useGymSettings } from "../contexts/GymSettingsContext";
@@ -21,26 +21,35 @@ const ToggleRow = ({ label, description, checked, onChange }) => (
 
 const GymSettings = () => {
   const navigate = useNavigate();
-  const { settings, updateSettings } = useGymSettings();
+  const { settings, loading, updateSettings } = useGymSettings();
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  const [localSettings, setLocalSettings] = useState({
-    features: { ...settings.features },
+  const buildLocalSettings = (src) => ({
+    features: { ...src.features },
     instructorPermissions: {
       registerMembers: false,
       collectPayments: false,
       viewSupplements: false,
-      ...settings.instructorPermissions,
+      ...src.instructorPermissions,
     },
-    notifications: { ...settings.notifications },
-    packages: Array.isArray(settings.packages) ? settings.packages : [],
+    notifications: { ...src.notifications },
+    packages: Array.isArray(src.packages) ? src.packages : [],
     payment: {
       dueDay: 10,
       reminderDays: [3, 1],
-      ...settings.payment,
+      ...src.payment,
     },
   });
+
+  const [localSettings, setLocalSettings] = useState(() => buildLocalSettings(settings));
+
+  useEffect(() => {
+    if (!loading) {
+      setLocalSettings(buildLocalSettings(settings));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, settings]);
 
   const [newPackage, setNewPackage] = useState({ name: "", price: "", duration: 1 });
 

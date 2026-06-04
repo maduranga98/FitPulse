@@ -11,7 +11,7 @@ import MemberAvatar from "../../components/MemberAvatar";
 
 const InstructorAddMember = () => {
   const { user } = useAuth();
-  const { showSuccess, showError, showWarning } = useNotification();
+  const { showSuccess, showError } = useNotification();
   const { settings } = useGymSettings();
   const currentGymId = user?.gymId;
 
@@ -298,17 +298,7 @@ const InstructorAddMember = () => {
         }).catch((err) => console.error("Supabase error:", err));
       }
 
-      if (settings.notifications.sms !== false) {
-        try {
-          const { sendMemberRegistrationSMS } = await import("../../services/smsService");
-          await sendMemberRegistrationSMS(
-            { name: memberForm.name, mobile: memberForm.mobile, whatsapp: memberForm.whatsapp },
-            username, password, currentGymId
-          );
-        } catch (smsErr) {
-          showWarning(`Member added, but SMS failed: ${smsErr.message}`);
-        }
-      }
+      // SMS is sent automatically by the onMemberCreated Cloud Function.
 
       setGeneratedCredentials({ username, password, name: memberForm.name, memberCode, devicePIN });
       setMemberForm({
@@ -637,6 +627,14 @@ const InstructorAddMember = () => {
                         <option value="beginner">Beginner</option>
                         <option value="intermediate">Intermediate</option>
                         <option value="advanced">Advanced</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1.5">Status</label>
+                      <select value={memberForm.status} onChange={(e) => setMemberForm((p) => ({ ...p, status: e.target.value }))} className={inputClass}>
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                        <option value="suspended">Suspended</option>
                       </select>
                     </div>
                     <div>
