@@ -25,6 +25,8 @@ const InstructorAddMember = () => {
   const [submitting, setSubmitting] = useState(false);
   const [profileImageFile, setProfileImageFile] = useState(null);
   const [profileImagePreview, setProfileImagePreview] = useState(null);
+  const [profileImageUrlOverride, setProfileImageUrlOverride] = useState(null);
+  const [pendingRegistrations, setPendingRegistrations] = useState([]);
 
   const canRegisterMembers = settings.instructorPermissions?.registerMembers !== false;
 
@@ -84,6 +86,7 @@ const InstructorAddMember = () => {
 
   useEffect(() => {
     fetchData();
+    fetchPendingRegistrations();
   }, [currentGymId]);
 
   useEffect(() => {
@@ -96,6 +99,77 @@ const InstructorAddMember = () => {
       }));
     }
   }, [memberForm.joinDate, memberForm.packageDuration]);
+
+  const fetchPendingRegistrations = async () => {
+    if (!currentGymId) return;
+    try {
+      const { db } = await import("../../config/firebase");
+      const { collection, getDocs, query, where, orderBy } = await import("firebase/firestore");
+      const snap = await getDocs(query(
+        collection(db, "self_registrations"),
+        where("gymId", "==", currentGymId),
+        where("status", "==", "pending_approval"),
+        orderBy("submittedAt", "desc"),
+      ));
+      setPendingRegistrations(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    } catch (err) {
+      console.error("Error fetching pending registrations:", err);
+    }
+  };
+
+  const handleApproveRegistration = (registration) => {
+    setMemberForm({
+      name: registration.name || "",
+      age: registration.age || "",
+      mobile: registration.mobile || "",
+      whatsapp: registration.whatsapp || "",
+      email: registration.email || "",
+      weight: registration.weight || "",
+      height: registration.height || "",
+      allergies: registration.allergies || "",
+      diseases: registration.diseases || "",
+      level: "beginner",
+      status: "active",
+      joinDate: new Date().toISOString().split("T")[0],
+      membershipFee: "",
+      packageDuration: 1,
+      packageId: "",
+      packageName: "",
+      isVip: false,
+      nextPaymentDate: "",
+      emergencyContact: registration.emergencyContact || "",
+      emergencyName: registration.emergencyName || "",
+      notes: "Self-registered",
+    });
+    if (registration.profileImageUrl) {
+      setProfileImagePreview(registration.profileImageUrl);
+      setProfileImageUrlOverride(registration.profileImageUrl);
+    }
+    setShowAddForm(true);
+
+    (async () => {
+      try {
+        const { db } = await import("../../config/firebase");
+        const { doc, updateDoc } = await import("firebase/firestore");
+        await updateDoc(doc(db, "self_registrations", registration.id), { status: "approved" });
+        fetchPendingRegistrations();
+      } catch (err) {
+        console.error("Error updating registration status:", err);
+      }
+    })();
+  };
+
+  const handleDismissRegistration = async (registrationId) => {
+    try {
+      const { db } = await import("../../config/firebase");
+      const { doc, updateDoc } = await import("firebase/firestore");
+      await updateDoc(doc(db, "self_registrations", registrationId), { status: "dismissed" });
+      showSuccess("Registration dismissed");
+      fetchPendingRegistrations();
+    } catch (err) {
+      showError("Failed to dismiss registration");
+    }
+  };
 
   const fetchData = async () => {
     if (!currentGymId) { setLoading(false); return; }
@@ -196,7 +270,7 @@ const InstructorAddMember = () => {
       const memberCode = generateMemberCode(memberRef.id);
       const devicePIN = generateDevicePIN();
 
-      let profileImageUrl = null;
+      let profileImageUrl = profileImageUrlOverride || null;
       if (profileImageFile && storage) {
         try {
           const imgRef = ref(storage, `members/${currentGymId}/${memberRef.id}/profile.jpg`);
@@ -247,6 +321,7 @@ const InstructorAddMember = () => {
       });
       setProfileImageFile(null);
       setProfileImagePreview(null);
+      setProfileImageUrlOverride(null);
       fetchData();
     } catch (err) {
       console.error("Error adding member:", err);
@@ -313,6 +388,60 @@ const InstructorAddMember = () => {
             </button>
           </div>
         </div>
+
+        {/* Pending Self-Registrations */}
+        {pendingRegistrations.length > 0 && (
+          <div className="bg-gray-800 border border-purple-600/30 rounded-xl p-4 sm:p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-2 h-2 bg-purple-500 rounded-full animate-pulse" />
+              <h3 className="text-white font-semibold text-sm">
+                Pending Self-Registrations ({pendingRegistrations.length})
+              </h3>
+            </div>
+            <div className="space-y-3">
+              {pendingRegistrations.map((reg) => (
+                <div key={reg.id} className="flex items-center justify-between bg-gray-900 rounded-lg p-3 gap-3">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <div className="w-9 h-9 rounded-full overflow-hidden flex-shrink-0">
+                      {reg.profileImageUrl ? (
+                        <img
+                          src={reg.profileImageUrl}
+                          alt={reg.name}
+                          className="w-full h-full object-cover"
+                          onError={(e) => { e.target.style.display = "none"; e.target.nextSibling.style.display = "flex"; }}
+                        />
+                      ) : null}
+                      <div
+                        className="w-full h-full bg-purple-600/20 items-center justify-center text-purple-400 font-bold text-sm"
+                        style={{ display: reg.profileImageUrl ? "none" : "flex" }}
+                      >
+                        {reg.name?.charAt(0)?.toUpperCase() || "?"}
+                      </div>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-white font-medium text-sm truncate">{reg.name}</p>
+                      <p className="text-xs text-gray-400 truncate">{reg.mobile || reg.whatsapp || reg.email || "No contact"}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                      onClick={() => handleApproveRegistration(reg)}
+                      className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-medium transition"
+                    >
+                      Approve
+                    </button>
+                    <button
+                      onClick={() => handleDismissRegistration(reg.id)}
+                      className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-xs font-medium transition"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Search */}
         <div className="relative">
@@ -433,7 +562,7 @@ const InstructorAddMember = () => {
                         <input type="file" accept="image/*" onChange={handleProfileImageChange} className="hidden" />
                       </label>
                       {profileImagePreview && (
-                        <button type="button" onClick={() => { setProfileImageFile(null); setProfileImagePreview(null); }} className="ml-2 text-sm text-red-400 hover:text-red-300">
+                        <button type="button" onClick={() => { setProfileImageFile(null); setProfileImagePreview(null); setProfileImageUrlOverride(null); }} className="ml-2 text-sm text-red-400 hover:text-red-300">
                           Remove
                         </button>
                       )}
