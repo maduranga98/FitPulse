@@ -53,7 +53,16 @@ const GymSettings = () => {
 
   const [newPackage, setNewPackage] = useState({ name: "", price: "", duration: 1 });
 
-  const addPackage = () => {
+  const persistPackages = async (packages) => {
+    try {
+      await updateSettings({ ...settings, ...localSettings, packages });
+    } catch (err) {
+      alert("Failed to save packages. Please try again.");
+      throw err;
+    }
+  };
+
+  const addPackage = async () => {
     const name = newPackage.name.trim();
     const price = parseFloat(newPackage.price);
     if (!name || isNaN(price) || price < 0) return;
@@ -63,15 +72,26 @@ const GymSettings = () => {
       price,
       duration: parseInt(newPackage.duration) || 1,
     };
-    setLocalSettings((prev) => ({ ...prev, packages: [...prev.packages, pkg] }));
+    const nextPackages = [...localSettings.packages, pkg];
+    setLocalSettings((prev) => ({ ...prev, packages: nextPackages }));
     setNewPackage({ name: "", price: "", duration: 1 });
+    try {
+      await persistPackages(nextPackages);
+    } catch {
+      setLocalSettings((prev) => ({ ...prev, packages: prev.packages.filter((p) => p.id !== pkg.id) }));
+    }
   };
 
-  const removePackage = (id) =>
-    setLocalSettings((prev) => ({
-      ...prev,
-      packages: prev.packages.filter((p) => p.id !== id),
-    }));
+  const removePackage = async (id) => {
+    const prevPackages = localSettings.packages;
+    const nextPackages = prevPackages.filter((p) => p.id !== id);
+    setLocalSettings((prev) => ({ ...prev, packages: nextPackages }));
+    try {
+      await persistPackages(nextPackages);
+    } catch {
+      setLocalSettings((prev) => ({ ...prev, packages: prevPackages }));
+    }
+  };
 
   const updatePayment = (key, value) =>
     setLocalSettings((prev) => ({ ...prev, payment: { ...prev.payment, [key]: value } }));
