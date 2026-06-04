@@ -23,6 +23,8 @@ const InstructorAddMember = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [generatedCredentials, setGeneratedCredentials] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [profileImageFile, setProfileImageFile] = useState(null);
+  const [profileImagePreview, setProfileImagePreview] = useState(null);
 
   const canRegisterMembers = settings.instructorPermissions?.registerMembers !== false;
 
@@ -135,6 +137,17 @@ const InstructorAddMember = () => {
   const generateMemberCode = (docId) => `PG${docId.substring(0, 6).toUpperCase()}`;
   const generateDevicePIN = () => Math.floor(100000 + Math.random() * 900000).toString();
 
+  const handleProfileImageChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { showError("Please select an image file"); return; }
+    if (file.size > 5 * 1024 * 1024) { showError("Image must be smaller than 5MB"); return; }
+    setProfileImageFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => setProfileImagePreview(reader.result);
+    reader.readAsDataURL(file);
+  };
+
   const handleAddMember = async (e) => {
     e.preventDefault();
     if (!canRegisterMembers) {
@@ -152,8 +165,9 @@ const InstructorAddMember = () => {
 
     setSubmitting(true);
     try {
-      const { db } = await import("../../config/firebase");
+      const { db, storage } = await import("../../config/firebase");
       const { collection, addDoc, Timestamp, updateDoc, doc } = await import("firebase/firestore");
+      const { ref, uploadBytesResumable, getDownloadURL } = await import("firebase/storage");
 
       const username = generateUsername(memberForm.name);
       const password = generatePassword();
@@ -181,7 +195,25 @@ const InstructorAddMember = () => {
       const memberRef = await addDoc(collection(db, "members"), memberData);
       const memberCode = generateMemberCode(memberRef.id);
       const devicePIN = generateDevicePIN();
-      await updateDoc(doc(db, "members", memberRef.id), { memberCode, firestoreId: memberRef.id, devicePIN });
+
+      let profileImageUrl = null;
+      if (profileImageFile && storage) {
+        try {
+          const imgRef = ref(storage, `members/${currentGymId}/${memberRef.id}/profile.jpg`);
+          const uploadTask = uploadBytesResumable(imgRef, profileImageFile, { contentType: profileImageFile.type });
+          await new Promise((resolve, reject) => uploadTask.on("state_changed", null, reject, resolve));
+          profileImageUrl = await getDownloadURL(imgRef);
+        } catch (imgErr) {
+          console.error("Profile image upload failed:", imgErr);
+        }
+      }
+
+      await updateDoc(doc(db, "members", memberRef.id), {
+        memberCode,
+        firestoreId: memberRef.id,
+        devicePIN,
+        ...(profileImageUrl ? { profileImageUrl } : {}),
+      });
 
       if (supabase) {
         await supabase.from("members").insert({
@@ -213,6 +245,8 @@ const InstructorAddMember = () => {
         membershipFee: "", packageDuration: 1, packageId: "", packageName: "", isVip: false, nextPaymentDate: "",
         emergencyContact: "", emergencyName: "", notes: "",
       });
+      setProfileImageFile(null);
+      setProfileImagePreview(null);
       fetchData();
     } catch (err) {
       console.error("Error adding member:", err);
@@ -380,6 +414,34 @@ const InstructorAddMember = () => {
                 </button>
               </div>
               <form onSubmit={handleAddMember} className="p-6 space-y-5">
+                {/* Profile Photo */}
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-300 mb-3">Profile Photo</h3>
+                  <div className="flex items-center gap-4">
+                    <div className="w-20 h-20 rounded-full overflow-hidden bg-gray-700 flex items-center justify-center flex-shrink-0">
+                      {profileImagePreview ? (
+                        <img src={profileImagePreview} alt="Preview" className="w-full h-full object-cover" />
+                      ) : (
+                        <svg className="w-8 h-8 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                        </svg>
+                      )}
+                    </div>
+                    <div>
+                      <label className="cursor-pointer px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition inline-block">
+                        {profileImagePreview ? "Change Photo" : "Upload Photo"}
+                        <input type="file" accept="image/*" onChange={handleProfileImageChange} className="hidden" />
+                      </label>
+                      {profileImagePreview && (
+                        <button type="button" onClick={() => { setProfileImageFile(null); setProfileImagePreview(null); }} className="ml-2 text-sm text-red-400 hover:text-red-300">
+                          Remove
+                        </button>
+                      )}
+                      <p className="text-xs text-gray-500 mt-1">JPEG, PNG or WebP, max 5MB</p>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Personal Info */}
                 <div>
                   <h3 className="text-sm font-semibold text-gray-300 mb-3">Personal Information</h3>
@@ -473,15 +535,59 @@ const InstructorAddMember = () => {
                     </div>
                   </div>
                   {bmiInfo && (
-                    <div className="mt-2 p-2 bg-gray-900 rounded-lg text-xs text-gray-400">
-                      BMI: <span className="text-white font-medium">{bmiInfo.bmi}</span> — {bmiInfo.category}
+                    <div className="mt-3 bg-gray-900 border border-gray-700 rounded-lg p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="text-xs text-gray-400 mb-1">BMI (Body Mass Index)</div>
+                          <div className="text-2xl font-bold text-white">{bmiInfo.bmi}</div>
+                        </div>
+                        <div className={`text-right ${bmiInfo.color}`}>
+                          <div className="text-base font-bold">{bmiInfo.category}</div>
+                          <div className="text-xs text-gray-400 mt-1">
+                            {bmiInfo.bmi < 18.5 && "Below normal range"}
+                            {bmiInfo.bmi >= 18.5 && bmiInfo.bmi < 25 && "Healthy weight"}
+                            {bmiInfo.bmi >= 25 && bmiInfo.bmi < 30 && "Above normal range"}
+                            {bmiInfo.bmi >= 30 && "Significantly above normal"}
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>
 
+                {/* Medical Information */}
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-300 mb-3">Medical Information</h3>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1.5">Allergies</label>
+                      <textarea value={memberForm.allergies} onChange={(e) => setMemberForm((p) => ({ ...p, allergies: e.target.value }))} className={inputClass} rows={2} placeholder="Any known allergies..." />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1.5">Medical Conditions / Diseases</label>
+                      <textarea value={memberForm.diseases} onChange={(e) => setMemberForm((p) => ({ ...p, diseases: e.target.value }))} className={inputClass} rows={2} placeholder="Any medical conditions, chronic diseases, etc..." />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Emergency Contact */}
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-300 mb-3">Emergency Contact</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1.5">Contact Name</label>
+                      <input type="text" value={memberForm.emergencyName} onChange={(e) => setMemberForm((p) => ({ ...p, emergencyName: e.target.value }))} className={inputClass} placeholder="Contact person name" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1.5">Contact Number</label>
+                      <input type="tel" value={memberForm.emergencyContact} onChange={(e) => setMemberForm((p) => ({ ...p, emergencyContact: e.target.value }))} className={inputClass} placeholder="+1234567890" />
+                    </div>
+                  </div>
+                </div>
+
                 {/* Notes */}
                 <div>
-                  <label className="block text-xs text-gray-400 mb-1.5">Notes</label>
+                  <label className="block text-xs text-gray-400 mb-1.5">Additional Notes</label>
                   <textarea value={memberForm.notes} onChange={(e) => setMemberForm((p) => ({ ...p, notes: e.target.value }))} className={inputClass} rows={2} placeholder="Any additional notes..." />
                 </div>
 
