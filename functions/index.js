@@ -906,6 +906,15 @@ export const onMemberCreated = functions.firestore
     const member = snap.data();
     const db = admin.firestore();
 
+    // Skip non-member roles (e.g. instructors mirrored into members) — their
+    // onboarding SMS is sent by the dedicated client-side flow.
+    if (member.role && member.role !== "member") {
+      console.log(
+        `⏭️ Skipping onMemberCreated SMS for ${snap.id} (role=${member.role})`,
+      );
+      return null;
+    }
+
     // Resolve phone: members store mobile/whatsapp, not phone
     const phoneNumber = member.mobile || member.whatsapp || member.phone;
     if (!phoneNumber) {

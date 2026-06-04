@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import AdminLayout from "../components/AdminLayout";
 import { useGymSettings } from "../contexts/GymSettingsContext";
@@ -21,30 +21,48 @@ const ToggleRow = ({ label, description, checked, onChange }) => (
 
 const GymSettings = () => {
   const navigate = useNavigate();
-  const { settings, updateSettings } = useGymSettings();
+  const { settings, loading, updateSettings } = useGymSettings();
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  const [localSettings, setLocalSettings] = useState({
-    features: { ...settings.features },
+  const buildLocalSettings = (src) => ({
+    features: { ...src.features },
     instructorPermissions: {
       registerMembers: false,
       collectPayments: false,
       viewSupplements: false,
-      ...settings.instructorPermissions,
+      ...src.instructorPermissions,
     },
-    notifications: { ...settings.notifications },
-    packages: Array.isArray(settings.packages) ? settings.packages : [],
+    notifications: { ...src.notifications },
+    packages: Array.isArray(src.packages) ? src.packages : [],
     payment: {
       dueDay: 10,
       reminderDays: [3, 1],
-      ...settings.payment,
+      ...src.payment,
     },
   });
 
+  const [localSettings, setLocalSettings] = useState(() => buildLocalSettings(settings));
+
+  useEffect(() => {
+    if (!loading) {
+      setLocalSettings(buildLocalSettings(settings));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, settings]);
+
   const [newPackage, setNewPackage] = useState({ name: "", price: "", duration: 1 });
 
-  const addPackage = () => {
+  const persistPackages = async (packages) => {
+    try {
+      await updateSettings({ ...settings, ...localSettings, packages });
+    } catch (err) {
+      alert("Failed to save packages. Please try again.");
+      throw err;
+    }
+  };
+
+  const addPackage = async () => {
     const name = newPackage.name.trim();
     const price = parseFloat(newPackage.price);
     if (!name || isNaN(price) || price < 0) return;
@@ -54,15 +72,26 @@ const GymSettings = () => {
       price,
       duration: parseInt(newPackage.duration) || 1,
     };
-    setLocalSettings((prev) => ({ ...prev, packages: [...prev.packages, pkg] }));
+    const nextPackages = [...localSettings.packages, pkg];
+    setLocalSettings((prev) => ({ ...prev, packages: nextPackages }));
     setNewPackage({ name: "", price: "", duration: 1 });
+    try {
+      await persistPackages(nextPackages);
+    } catch {
+      setLocalSettings((prev) => ({ ...prev, packages: prev.packages.filter((p) => p.id !== pkg.id) }));
+    }
   };
 
-  const removePackage = (id) =>
-    setLocalSettings((prev) => ({
-      ...prev,
-      packages: prev.packages.filter((p) => p.id !== id),
-    }));
+  const removePackage = async (id) => {
+    const prevPackages = localSettings.packages;
+    const nextPackages = prevPackages.filter((p) => p.id !== id);
+    setLocalSettings((prev) => ({ ...prev, packages: nextPackages }));
+    try {
+      await persistPackages(nextPackages);
+    } catch {
+      setLocalSettings((prev) => ({ ...prev, packages: prevPackages }));
+    }
+  };
 
   const updatePayment = (key, value) =>
     setLocalSettings((prev) => ({ ...prev, payment: { ...prev.payment, [key]: value } }));
