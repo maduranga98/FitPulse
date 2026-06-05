@@ -21,10 +21,18 @@ const InstructorPayments = () => {
   const [paymentForm, setPaymentForm] = useState({
     amount: "",
     month: new Date().toISOString().slice(0, 7),
+    day: String(new Date().getDate()).padStart(2, "0"),
     paymentMethod: "Cash",
     notes: "",
     fullyPaid: true,
   });
+
+  const getCurrentDay = () => String(new Date().getDate()).padStart(2, "0");
+  const daysInMonth = (yyyymm) => {
+    if (!yyyymm) return 31;
+    const [y, m] = yyyymm.split("-").map(Number);
+    return new Date(y, m, 0).getDate();
+  };
 
   const canCollectPayments = settings.instructorPermissions?.collectPayments !== false;
   const paymentMethods = ["Cash", "Card", "Bank Transfer", "Online", "Other"];
@@ -86,6 +94,7 @@ const InstructorPayments = () => {
     setPaymentForm({
       amount: member.membershipFee || "",
       month: getCurrentMonth(),
+      day: getCurrentDay(),
       paymentMethod: "Cash",
       notes: "",
       fullyPaid: true,
@@ -113,6 +122,7 @@ const InstructorPayments = () => {
       const remaining = Math.max(expectedFee - paidAmount, 0);
       const isFullPayment = paymentForm.fullyPaid || remaining <= 0;
 
+      const dayPadded = String(paymentForm.day || getCurrentDay()).padStart(2, "0");
       const paymentData = {
         memberId: selectedMember.id,
         gymId: currentGymId,
@@ -123,6 +133,8 @@ const InstructorPayments = () => {
         isFullPayment,
         status: isFullPayment ? "completed" : "partial",
         month: paymentForm.month,
+        day: dayPadded,
+        paymentDate: `${paymentForm.month}-${dayPadded}`,
         paymentMethod: paymentForm.paymentMethod,
         notes: paymentForm.notes,
         paidAt: Timestamp.now(),
@@ -154,14 +166,22 @@ const InstructorPayments = () => {
         }
       }
 
-      // Update next payment date
+      // Update next payment date — anchored to the originally-set due day-of-month.
       try {
         const memberSnap = await getDoc(doc(db, "members", selectedMember.id));
         const mData = memberSnap.data();
-        const nextDate = mData.nextPaymentDate ? new Date(mData.nextPaymentDate) : new Date();
-        nextDate.setMonth(nextDate.getMonth() + (mData.packageDuration || 1));
+        const duration = mData.packageDuration || 1;
+        const anchorSource =
+          mData.nextPaymentDate || mData.joinDate || new Date().toISOString().slice(0, 10);
+        const anchor = new Date(anchorSource);
+        const anchorDay = anchor.getDate();
+        const base = mData.nextPaymentDate ? new Date(mData.nextPaymentDate) : anchor;
+        const target = new Date(base.getFullYear(), base.getMonth() + duration, 1);
+        const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+        target.setDate(Math.min(anchorDay, lastDay));
+        const newNextPaymentDate = `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, "0")}-${String(target.getDate()).padStart(2, "0")}`;
         await updateDoc(doc(db, "members", selectedMember.id), {
-          nextPaymentDate: nextDate.toISOString().slice(0, 10),
+          nextPaymentDate: newNextPaymentDate,
         });
       } catch (upErr) {
         console.warn("Failed to update next payment date:", upErr);
@@ -448,14 +468,25 @@ const InstructorPayments = () => {
                     </p>
                   ) : null}
                 </div>
-                <div>
-                  <label className="block text-xs text-gray-400 mb-1.5">Month *</label>
-                  <input
-                    required type="month"
-                    value={paymentForm.month}
-                    onChange={(e) => setPaymentForm((p) => ({ ...p, month: e.target.value }))}
-                    className="w-full px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1.5">Month *</label>
+                    <input
+                      required type="month"
+                      value={paymentForm.month}
+                      onChange={(e) => setPaymentForm((p) => ({ ...p, month: e.target.value }))}
+                      className="w-full px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1.5">Day *</label>
+                    <input
+                      required type="number" min="1" max={daysInMonth(paymentForm.month)}
+                      value={paymentForm.day}
+                      onChange={(e) => setPaymentForm((p) => ({ ...p, day: e.target.value }))}
+                      className="w-full px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
                 </div>
                 <div>
                   <label className="block text-xs text-gray-400 mb-1.5">Payment Method</label>

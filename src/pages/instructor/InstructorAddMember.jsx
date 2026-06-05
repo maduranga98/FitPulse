@@ -634,7 +634,6 @@ const InstructorAddMember = () => {
                       <select value={memberForm.status} onChange={(e) => setMemberForm((p) => ({ ...p, status: e.target.value }))} className={inputClass}>
                         <option value="active">Active</option>
                         <option value="inactive">Inactive</option>
-                        <option value="suspended">Suspended</option>
                       </select>
                     </div>
                     <div>
