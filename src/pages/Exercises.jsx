@@ -289,6 +289,29 @@ const Exercises = ({ onLogout, onNavigate }) => {
     }
   };
 
+  const handleDeleteCategory = async (cat) => {
+    if (cat.gymId !== currentGymId) {
+      alert("Common categories cannot be deleted.");
+      return;
+    }
+    const exercisesInCat = exercises.filter((e) => e.category === cat.id).length;
+    if (exercisesInCat > 0) {
+      alert(`Cannot delete this category — ${exercisesInCat} exercise(s) still use it. Move or delete those exercises first.`);
+      return;
+    }
+    if (!confirm(`Delete category "${cat.name}"?`)) return;
+    try {
+      const { db } = await import("../config/firebase");
+      const { doc, deleteDoc } = await import("firebase/firestore");
+      await deleteDoc(doc(db, "exerciseCategories", cat.id));
+      if (selectedCategory === cat.id) setSelectedCategory("all");
+      fetchData();
+    } catch (err) {
+      console.error("Error deleting category:", err);
+      alert("Failed to delete category");
+    }
+  };
+
   const handleEditExercise = (exercise) => {
     setEditingExercise(exercise);
     setExerciseForm({
@@ -868,25 +891,37 @@ const Exercises = ({ onLogout, onNavigate }) => {
                 currentExercises.some((ex) => ex.category === cat.id)
               ) // ✅ Only show categories with exercises
               .map((cat) => (
-                <button
-                  key={cat.id}
-                  onClick={() => setSelectedCategory(cat.id)}
-                  className={`p-4 rounded-xl border transition ${
-                    selectedCategory === cat.id
-                      ? "bg-blue-600 border-blue-600 text-white"
-                      : "bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600"
-                  }`}
-                >
-                  <div className="text-2xl mb-2">{cat.icon}</div>
-                  <div className="text-sm font-medium truncate">{cat.name}</div>
-                  <div className="text-xs mt-1">
-                    {
-                      currentExercises.filter((e) => e.category === cat.id)
-                        .length
-                    }{" "}
-                    exercises
-                  </div>
-                </button>
+                <div key={cat.id} className="relative">
+                  <button
+                    onClick={() => setSelectedCategory(cat.id)}
+                    className={`w-full p-4 rounded-xl border transition ${
+                      selectedCategory === cat.id
+                        ? "bg-blue-600 border-blue-600 text-white"
+                        : "bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600"
+                    }`}
+                  >
+                    <div className="text-2xl mb-2">{cat.icon}</div>
+                    <div className="text-sm font-medium truncate">{cat.name}</div>
+                    <div className="text-xs mt-1">
+                      {
+                        currentExercises.filter((e) => e.category === cat.id)
+                          .length
+                      }{" "}
+                      exercises
+                    </div>
+                  </button>
+                  {cat.gymId === currentGymId && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleDeleteCategory(cat); }}
+                      title="Delete category"
+                      className="absolute top-1 right-1 p-1 bg-red-600/80 hover:bg-red-600 text-white rounded-md opacity-80 hover:opacity-100"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
               ))}
           </div>
 

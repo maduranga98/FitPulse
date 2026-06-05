@@ -322,6 +322,29 @@ const InstructorExercises = () => {
     }
   };
 
+  const handleDeleteCategory = async (cat) => {
+    if (cat.gymId !== currentGymId) {
+      alert("Common categories cannot be deleted.");
+      return;
+    }
+    const inUse = exercises.filter((e) => e.category === cat.id || e.category === cat.name).length;
+    if (inUse > 0) {
+      alert(`Cannot delete "${cat.name}" — ${inUse} exercise(s) still use it.`);
+      return;
+    }
+    if (!confirm(`Delete category "${cat.name}"?`)) return;
+    try {
+      const { db } = await import("../../config/firebase");
+      const { doc, deleteDoc } = await import("firebase/firestore");
+      await deleteDoc(doc(db, "exerciseCategories", cat.id));
+      if (selectedCategory === cat.name) setSelectedCategory("all");
+      fetchData();
+    } catch (err) {
+      console.error("Error deleting category:", err);
+      alert("Failed to delete category.");
+    }
+  };
+
   const handlePhotoUpload = async (e, index) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -358,7 +381,11 @@ const InstructorExercises = () => {
       const { storage } = await import("../../config/firebase");
       const { ref, uploadBytesResumable, getDownloadURL } = await import("firebase/storage");
       const fileName = `exercises/${currentGymId}/videos/${Date.now()}_${file.name}`;
-      const uploadTask = uploadBytesResumable(ref(storage, fileName), file);
+      // Set explicit Content-Type so Firebase Storage serves the video with the correct MIME
+      // and the browser <video> tag can play it (otherwise it can be served as application/octet-stream).
+      const uploadTask = uploadBytesResumable(ref(storage, fileName), file, {
+        contentType: file.type || "video/mp4",
+      });
       uploadTask.on("state_changed",
         (snap) => setUploadProgress((p) => ({ ...p, [`video_${index}`]: (snap.bytesTransferred / snap.totalBytes) * 100 })),
         (err) => { console.error(err); alert("Upload failed"); setUploadingFiles(false); },
@@ -543,6 +570,30 @@ const InstructorExercises = () => {
             </select>
           </div>
         </div>
+
+        {/* My Categories — tap × to delete (only your gym's categories) */}
+        {categories.filter((c) => c.gymId === currentGymId).length > 0 && (
+          <div className="mb-6 flex flex-wrap gap-2">
+            <span className="text-xs text-gray-400 self-center mr-1">My Categories:</span>
+            {categories
+              .filter((c) => c.gymId === currentGymId)
+              .map((cat) => (
+                <span
+                  key={cat.id}
+                  className="inline-flex items-center gap-1 px-3 py-1 bg-gray-700 text-gray-200 text-xs rounded-full"
+                >
+                  <span>{cat.icon} {cat.name}</span>
+                  <button
+                    onClick={() => handleDeleteCategory(cat)}
+                    title="Delete category"
+                    className="ml-1 text-red-400 hover:text-red-300"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+          </div>
+        )}
 
         {/* Exercises Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
