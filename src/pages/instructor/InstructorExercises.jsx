@@ -497,7 +497,7 @@ const InstructorExercises = () => {
             <div>
               <h1 className="text-3xl font-bold text-white mb-2">Exercises</h1>
               <p className="text-gray-400">
-                Browse exercises and assign them to your members
+                Browse exercises and use them in your schedule templates
               </p>
             </div>
             <div className="flex gap-3 flex-wrap">
@@ -701,17 +701,6 @@ const InstructorExercises = () => {
                     >
                       <Eye className="w-4 h-4" />
                       View
-                    </button>
-                    <button
-                      onClick={() => {
-                        setSelectedExercise(exercise);
-                        setSelectedMembers([]);
-                        setShowAssignModal(true);
-                      }}
-                      className="flex-1 py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition flex items-center justify-center gap-2 text-sm"
-                    >
-                      <UserPlus className="w-4 h-4" />
-                      Assign
                     </button>
                   </div>
                 </div>
