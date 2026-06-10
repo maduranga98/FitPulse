@@ -33,7 +33,7 @@ const Schedules = () => {
   const [assignedSchedules, setAssignedSchedules] = useState([]);
 
   const isAdmin =
-    currentUser?.role === "admin" || currentUser?.role === "manager" || currentUser?.role === "gym_admin" || currentUser?.role === "gym_manager";
+    currentUser?.role === "admin" || currentUser?.role === "manager" || currentUser?.role === "gym_admin" || currentUser?.role === "gym_manager" || currentUser?.role === "trainer";
   const isMember = currentUser?.role === "member";
   console.log(currentUser?.role);
 
