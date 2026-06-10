@@ -37,6 +37,7 @@ const InstructorMealPlans = () => {
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [selectedMembers, setSelectedMembers] = useState([]);
   const [assignedMembers, setAssignedMembers] = useState([]);
+  const [editingMealPlan, setEditingMealPlan] = useState(null);
 
   // Creation form state
   const [newPlan, setNewPlan] = useState({
@@ -231,15 +232,28 @@ const InstructorMealPlans = () => {
   };
 
   // Meal plan creation handlers
-  const handleOpenCreateModal = () => {
-    setNewPlan({
-      name: "",
-      description: "",
-      targetCalories: "",
-      duration: "7",
-      notes: "",
-      meals: [],
-    });
+  const handleOpenCreateModal = (plan = null) => {
+    if (plan) {
+      setEditingMealPlan(plan);
+      setNewPlan({
+        name: plan.name || "",
+        description: plan.description || "",
+        targetCalories: plan.targetCalories ? String(plan.targetCalories) : "",
+        duration: plan.duration ? String(plan.duration) : "7",
+        notes: plan.notes || "",
+        meals: plan.meals || [],
+      });
+    } else {
+      setEditingMealPlan(null);
+      setNewPlan({
+        name: "",
+        description: "",
+        targetCalories: "",
+        duration: "7",
+        notes: "",
+        meals: [],
+      });
+    }
     setCurrentMeal({ name: "", time: "", items: [] });
     setCurrentFoodItem("");
     setShowCreateModal(true);
@@ -307,12 +321,12 @@ const InstructorMealPlans = () => {
 
     try {
       const { db } = await import("../../config/firebase");
-      const { collection, addDoc, Timestamp } = await import(
+      const { collection, addDoc, doc, updateDoc, Timestamp } = await import(
         "firebase/firestore"
       );
 
-      await addDoc(collection(db, "mealPlans"), {
-        name: newPlan.name,
+      const mealPlanData = {
+        name: newPlan.name.trim(),
         description: newPlan.description,
         targetCalories: newPlan.targetCalories
           ? parseInt(newPlan.targetCalories)
@@ -321,17 +335,46 @@ const InstructorMealPlans = () => {
         meals: newPlan.meals,
         notes: newPlan.notes,
         gymId: currentGymId,
-        createdBy: user.id,
-        createdByName: user.name,
-        createdAt: Timestamp.now(),
-      });
+      };
 
-      alert("Meal plan created successfully! 🎉");
+      if (editingMealPlan) {
+        await updateDoc(doc(db, "mealPlans", editingMealPlan.id), {
+          ...mealPlanData,
+          updatedAt: Timestamp.now(),
+        });
+        alert("Meal plan updated successfully! ✓");
+      } else {
+        await addDoc(collection(db, "mealPlans"), {
+          ...mealPlanData,
+          createdBy: user.id,
+          createdByName: user.name,
+          createdAt: Timestamp.now(),
+        });
+        alert("Meal plan created successfully! 🎉");
+      }
+
       setShowCreateModal(false);
+      setEditingMealPlan(null);
       fetchData();
     } catch (error) {
-      console.error("Error creating meal plan:", error);
-      alert("Failed to create meal plan. Please try again.");
+      console.error("Error saving meal plan:", error);
+      alert("Failed to save meal plan. Please try again.");
+    }
+  };
+
+  const handleDeleteMealPlan = async (id) => {
+    if (!confirm("Are you sure you want to delete this meal plan?")) return;
+
+    try {
+      const { db } = await import("../../config/firebase");
+      const { doc, deleteDoc } = await import("firebase/firestore");
+
+      await deleteDoc(doc(db, "mealPlans", id));
+      fetchData();
+      alert("Meal plan deleted successfully.");
+    } catch (error) {
+      console.error("Error deleting meal plan:", error);
+      alert("Failed to delete meal plan. Please try again.");
     }
   };
 
@@ -491,21 +534,25 @@ const InstructorMealPlans = () => {
                 <div className="space-y-2">
                   <div className="flex gap-2">
                     <button
-                      onClick={() => {
-                        setSelectedPlan(plan);
-                        setShowViewModal(true);
-                      }}
-                      className="flex-1 py-2 px-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition flex items-center justify-center gap-2 text-sm"
-                    >
-                      <Eye className="w-4 h-4" />
-                      View Details
-                    </button>
-                    <button
                       onClick={() => handleOpenAssignModal(plan)}
                       className="flex-1 py-2 px-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition flex items-center justify-center gap-2 text-sm"
                     >
                       <UserPlus className="w-4 h-4" />
                       Assign
+                    </button>
+                    <button
+                      onClick={() => handleOpenCreateModal(plan)}
+                      className="py-2 px-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => handleDeleteMealPlan(plan.id)}
+                      className="py-2 px-3 bg-red-600 hover:bg-red-700 text-white rounded-lg transition"
+                    >
+                      <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                   {plan.assignedCount > 0 && (
@@ -794,7 +841,7 @@ const InstructorMealPlans = () => {
             <div className="bg-gray-800 rounded-xl max-w-4xl w-full p-4 sm:p-6 my-4 sm:my-8 max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-2xl font-bold text-white">
-                  Create New Meal Plan
+                  {editingMealPlan ? "Edit Meal Plan" : "Create New Meal Plan"}
                 </h2>
                 <button
                   onClick={() => setShowCreateModal(false)}

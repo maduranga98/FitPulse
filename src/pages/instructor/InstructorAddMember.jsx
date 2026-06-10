@@ -486,36 +486,76 @@ const InstructorAddMember = () => {
 
         {/* QR Modal */}
         {showQRModal && (
-          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-            <div className="bg-gray-800 border border-gray-700 rounded-xl p-6 w-full max-w-sm">
-              <div className="flex items-center justify-between mb-5">
-                <h2 className="text-lg font-bold text-white">Self-Registration QR</h2>
-                <button onClick={() => setShowQRModal(false)} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div
+              className="fixed inset-0 bg-black/60"
+              onClick={() => setShowQRModal(false)}
+            />
+            <div className="relative bg-gray-800 border border-gray-700 rounded-xl p-6 w-full max-w-sm text-center">
+              <button
+                onClick={() => setShowQRModal(false)}
+                className="absolute top-3 right-3 p-1 text-gray-400 hover:text-white"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+
+              <div className="flex items-center justify-center gap-2 mb-1">
+                <img src="/logo.png" alt="PulsedGym" className="w-7 h-7 object-contain" />
+                <span className="text-white font-bold text-base">PulsedGym</span>
               </div>
-              <div className="flex flex-col items-center gap-4">
-                <div className="bg-white p-4 rounded-xl">
-                  <QRCodeSVG value={selfRegUrl} size={200} />
-                </div>
-                <p className="text-gray-400 text-sm text-center">Members can scan this QR to self-register</p>
+              <h3 className="text-lg font-bold text-white mb-0.5">
+                {gymName || user?.gymName || user?.name || "Your Gym"}
+              </h3>
+              <p className="text-sm text-gray-400 mb-4">
+                Share this QR code with new members. They can scan it to fill in their own details.
+              </p>
+
+              <div className="bg-white rounded-xl p-4 inline-block mb-4">
+                <QRCodeSVG
+                  value={selfRegUrl}
+                  size={200}
+                  level="M"
+                />
+              </div>
+
+              <div className="space-y-3">
                 <button
-                  onClick={() => { navigator.clipboard.writeText(selfRegUrl); showSuccess("Link copied!"); }}
-                  className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition"
+                  onClick={() => {
+                    navigator.clipboard.writeText(selfRegUrl);
+                    showSuccess("Registration link copied to clipboard!");
+                  }}
+                  className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition flex items-center justify-center gap-2"
                 >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                  </svg>
                   Copy Registration Link
                 </button>
+
                 {navigator.share && (
                   <button
-                    onClick={() => navigator.share({ title: "Join the gym", url: selfRegUrl })}
-                    className="w-full py-2.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition"
+                    onClick={async () => {
+                      try {
+                        await navigator.share({ title: "Join Our Gym", text: "Register as a member by filling in your details:", url: selfRegUrl });
+                      } catch (err) {
+                        if (err.name !== "AbortError") console.error("Share failed:", err);
+                      }
+                    }}
+                    className="w-full py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition flex items-center justify-center gap-2"
                   >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                    </svg>
                     Share Link
                   </button>
                 )}
               </div>
+
+              <p className="text-xs text-gray-500 mt-4">
+                Submitted registrations will appear in a pending list for your approval.
+              </p>
             </div>
           </div>
         )}
