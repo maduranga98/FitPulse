@@ -111,6 +111,27 @@ sudo systemctl enable --now fitpulse-relay
 journalctl -u fitpulse-relay -f
 ```
 
+## Testing directly against the device (no app / Firestore)
+
+`test-device.js` runs the relay's exact ISAPI code against the terminal,
+so results are directly comparable with Postman:
+
+```bash
+# See a user's current validity window
+node test-device.js --ip 192.168.8.126 --user admin --pass 'SECRET' \
+  --employee PGNA117X --action status
+
+# Block / unblock (each verifies the window on the device afterwards)
+node test-device.js --ip 192.168.8.126 --user admin --pass 'SECRET' \
+  --employee PGNA117X --action block
+node test-device.js --ip 192.168.8.126 --user admin --pass 'SECRET' \
+  --employee PGNA117X --action unblock \
+  --begin 2026-06-02T00:00:00 --end 2036-06-01T23:59:59
+```
+
+It prints the full Modify request body and the device's response, and
+fails loudly if the device claims OK without applying the change.
+
 ## Debugging in the field
 
 - Everything is logged to `relay-agent.log` (path configurable via
