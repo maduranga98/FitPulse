@@ -18,15 +18,18 @@ const crypto = require("crypto");
 const { digestRequest } = require("./digest");
 const log = require("./logger");
 
-// Field whitelist for the Modify body — exactly the set from the payload
-// verified working against the real DS-K1T343MFX in Postman. Values are
-// taken from the device's Search response when present so nothing gets
+// Field whitelist for the Modify body — exactly the set AND order from the
+// payload verified working against the real DS-K1T343MFX in Postman
+// (employeeNo, then these up to Valid, then the rest). Values are taken
+// from the device's Search response when present so nothing gets
 // overwritten with a guess; Valid is replaced by us.
-const MODIFY_FIELDS = [
+const MODIFY_FIELDS_BEFORE_VALID = [
   "name",
   "userType",
   "onlyVerify",
   "closeDelayEnabled",
+];
+const MODIFY_FIELDS_AFTER_VALID = [
   "belongGroup",
   "doorRight",
   "RightPlan",
@@ -150,10 +153,13 @@ async function modifyAndVerify(device, employeeNo, payload, isApplied) {
 
 function buildModifyPayload(current, employeeNo, valid) {
   const payload = { employeeNo: String(employeeNo) };
-  for (const f of MODIFY_FIELDS) {
+  for (const f of MODIFY_FIELDS_BEFORE_VALID) {
     if (current[f] !== undefined) payload[f] = current[f];
   }
   payload.Valid = valid;
+  for (const f of MODIFY_FIELDS_AFTER_VALID) {
+    if (current[f] !== undefined) payload[f] = current[f];
+  }
   return payload;
 }
 

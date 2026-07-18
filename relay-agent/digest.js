@@ -69,8 +69,12 @@ function rawRequest({ host, port, method, path, headers, body, timeoutMs }) {
  */
 async function digestRequest({ host, port = 80, method, path, username, password, jsonBody, timeoutMs = 10000 }) {
   const body = jsonBody ? JSON.stringify(jsonBody) : null;
+  // Header set mirrors Postman's (which is verified working against the
+  // real device) to keep the requests as identical as possible.
   const baseHeaders = {
     "Content-Type": "application/json",
+    Accept: "*/*",
+    Connection: "keep-alive",
     ...(body ? { "Content-Length": Buffer.byteLength(body) } : {}),
   };
 
