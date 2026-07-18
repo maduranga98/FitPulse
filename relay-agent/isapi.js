@@ -6,22 +6,38 @@
 //   setting an already-elapsed beginTime/endTime window.
 // - beginTime must be strictly earlier than endTime or the device
 //   returns badJsonContent.
-// - Modify must echo back the full UserInfo from Search, minus read-only
-//   fields — omitting fields can wipe them, sending read-only ones back
-//   can 400.
+// - The Modify body must contain EXACTLY the field set proven to work on
+//   the real hardware (see MODIFY_FIELDS below, from the Postman test).
+//   Echoing back everything Search returns can make firmware answer
+//   200 OK while silently ignoring the change — extra/read-only fields
+//   (numOfFace, userVerifyMode, checkUser, …) poison the request.
 // - Some firmwares accept PUT on UserInfo/Modify, others only POST
 //   (returning methodNotAllowed for PUT). We try PUT, fall back to POST.
 
 const crypto = require("crypto");
 const { digestRequest } = require("./digest");
+const log = require("./logger");
 
-const READ_ONLY_FIELDS = [
-  "password",
-  "numOfCard",
-  "numOfFP",
-  "numOfFace",
-  "faceURL",
-  "PersonInfoExtends",
+// Field whitelist for the Modify body — exactly the set from the payload
+// verified working against the real DS-K1T343MFX in Postman. Values are
+// taken from the device's Search response when present so nothing gets
+// overwritten with a guess; Valid is replaced by us.
+const MODIFY_FIELDS = [
+  "name",
+  "userType",
+  "onlyVerify",
+  "closeDelayEnabled",
+  "belongGroup",
+  "doorRight",
+  "RightPlan",
+  "maxOpenDoorTime",
+  "openDoorTime",
+  "roomNumber",
+  "floorNumber",
+  "localUIRight",
+  "gender",
+  "groupId",
+  "localAtndPlanTemplateId",
 ];
 
 // "YYYY-MM-DDTHH:mm:ss" in the relay host's local time (device uses timeType: local)
@@ -83,6 +99,8 @@ async function searchUser(device, employeeNo) {
 }
 
 async function modifyUser(device, userInfo, method) {
+  const body = { UserInfo: userInfo };
+  log.info(`${method} UserInfo/Modify → ${device.ip}: ${JSON.stringify(body)}`);
   const res = await digestRequest({
     host: device.ip,
     port: device.port || 80,
@@ -90,8 +108,11 @@ async function modifyUser(device, userInfo, method) {
     path: "/ISAPI/AccessControl/UserInfo/Modify?format=json",
     username: device.username,
     password: device.password,
-    jsonBody: { UserInfo: userInfo },
+    jsonBody: body,
   });
+  log.info(
+    `${method} UserInfo/Modify ← HTTP ${res.status}: ${(res.body || "").slice(0, 300)}`
+  );
   if (res.status !== 200) throwIsapiError(`UserInfo/Modify (${method})`, res);
   const statusCode = res.json?.statusCode;
   if (statusCode !== undefined && statusCode !== 1) {
@@ -115,6 +136,9 @@ async function modifyAndVerify(device, employeeNo, payload, isApplied) {
       continue;
     }
     const after = await searchUser(device, employeeNo);
+    log.info(
+      `verify after ${method}: device Valid is now ${JSON.stringify(after.Valid)}`
+    );
     if (isApplied(after.Valid || {})) return after;
     lastError = new Error(
       `device accepted UserInfo/Modify via ${method} but did not apply it — ` +
@@ -124,10 +148,13 @@ async function modifyAndVerify(device, employeeNo, payload, isApplied) {
   throw lastError;
 }
 
-function stripReadOnly(userInfo) {
-  const clean = { ...userInfo };
-  for (const f of READ_ONLY_FIELDS) delete clean[f];
-  return clean;
+function buildModifyPayload(current, employeeNo, valid) {
+  const payload = { employeeNo: String(employeeNo) };
+  for (const f of MODIFY_FIELDS) {
+    if (current[f] !== undefined) payload[f] = current[f];
+  }
+  payload.Valid = valid;
+  return payload;
 }
 
 /**
@@ -141,15 +168,11 @@ async function blockUser(device, employeeNo) {
   let beginTime = current.Valid?.beginTime || "2020-01-01T00:00:00";
   if (beginTime >= endTime) beginTime = "2020-01-01T00:00:00";
 
-  const payload = stripReadOnly({
-    ...current,
-    employeeNo: String(employeeNo),
-    Valid: {
-      enable: true,
-      beginTime,
-      endTime,
-      timeType: current.Valid?.timeType || "local",
-    },
+  const payload = buildModifyPayload(current, employeeNo, {
+    enable: true,
+    beginTime,
+    endTime,
+    timeType: current.Valid?.timeType || "local",
   });
   // Applied = validity is enforced and already expired.
   await modifyAndVerify(device, employeeNo, payload, (valid) => {
@@ -175,15 +198,11 @@ async function unblockUser(device, employeeNo, validPeriod) {
     endTime = toLocalIso(end);
   }
 
-  const payload = stripReadOnly({
-    ...current,
-    employeeNo: String(employeeNo),
-    Valid: {
-      enable: true,
-      beginTime,
-      endTime,
-      timeType: current.Valid?.timeType || "local",
-    },
+  const payload = buildModifyPayload(current, employeeNo, {
+    enable: true,
+    beginTime,
+    endTime,
+    timeType: current.Valid?.timeType || "local",
   });
   // Applied = validity window extends into the future again.
   await modifyAndVerify(device, employeeNo, payload, (valid) => {
