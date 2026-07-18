@@ -76,15 +76,25 @@ async function loadDevices() {
 
 async function executeOnDevice(device, command, memberData) {
   const employeeNo = command.employeeNo;
+  let current;
   if (command.type === "block") {
-    const { current } = await blockUser(device, employeeNo);
-    return { originalValid: current.Valid || null };
+    ({ current } = await blockUser(device, employeeNo));
+  } else if (command.type === "unblock") {
+    ({ current } = await unblockUser(
+      device,
+      employeeNo,
+      memberData?.deviceValidPeriod || null
+    ));
+  } else {
+    throw new Error(`Unknown command type: ${command.type}`);
   }
-  if (command.type === "unblock") {
-    await unblockUser(device, employeeNo, memberData?.deviceValidPeriod || null);
-    return {};
-  }
-  throw new Error(`Unknown command type: ${command.type}`);
+  // If this name doesn't match the member, the face may be enrolled under
+  // a DIFFERENT employeeNo — the door would still open via that record.
+  log.info(
+    `Device record for employeeNo ${employeeNo} on ${device.name}: ` +
+      `name="${current.name || "?"}" (app member: "${command.memberName || "?"}")`
+  );
+  return command.type === "block" ? { originalValid: current.Valid || null } : {};
 }
 
 async function processCommand(doc) {

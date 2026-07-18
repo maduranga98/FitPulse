@@ -82,31 +82,46 @@ async function searchUser(device, employeeNo) {
   return exact[0] || matches[0];
 }
 
-async function modifyUser(device, userInfo) {
-  const body = { UserInfo: userInfo };
-  const path = "/ISAPI/AccessControl/UserInfo/Modify?format=json";
-  const base = {
+async function modifyUser(device, userInfo, method) {
+  const res = await digestRequest({
     host: device.ip,
     port: device.port || 80,
-    path,
+    method,
+    path: "/ISAPI/AccessControl/UserInfo/Modify?format=json",
     username: device.username,
     password: device.password,
-    jsonBody: body,
-  };
-
-  let res = await digestRequest({ ...base, method: "PUT" });
-  const methodRejected =
-    res.status === 405 || /methodNotAllowed/i.test(res.body || "");
-  if (methodRejected) {
-    res = await digestRequest({ ...base, method: "POST" });
-  }
-  if (res.status !== 200) throwIsapiError("UserInfo/Modify", res);
-
+    jsonBody: { UserInfo: userInfo },
+  });
+  if (res.status !== 200) throwIsapiError(`UserInfo/Modify (${method})`, res);
   const statusCode = res.json?.statusCode;
   if (statusCode !== undefined && statusCode !== 1) {
-    throwIsapiError("UserInfo/Modify", res);
+    throwIsapiError(`UserInfo/Modify (${method})`, res);
   }
   return res.json;
+}
+
+// Some firmwares only accept PUT on UserInfo/Modify, others only POST —
+// and worse, a firmware can answer 200 OK for the wrong method without
+// actually applying the change. So after each attempt we Search the user
+// back and check the validity window really changed; only a verified
+// write counts as success.
+async function modifyAndVerify(device, employeeNo, payload, isApplied) {
+  let lastError = null;
+  for (const method of ["PUT", "POST"]) {
+    try {
+      await modifyUser(device, payload, method);
+    } catch (err) {
+      lastError = err;
+      continue;
+    }
+    const after = await searchUser(device, employeeNo);
+    if (isApplied(after.Valid || {})) return after;
+    lastError = new Error(
+      `device accepted UserInfo/Modify via ${method} but did not apply it — ` +
+        `Valid is still ${JSON.stringify(after.Valid)}`
+    );
+  }
+  throw lastError;
 }
 
 function stripReadOnly(userInfo) {
@@ -136,7 +151,10 @@ async function blockUser(device, employeeNo) {
       timeType: current.Valid?.timeType || "local",
     },
   });
-  await modifyUser(device, payload);
+  // Applied = validity is enforced and already expired.
+  await modifyAndVerify(device, employeeNo, payload, (valid) => {
+    return valid.enable === true && new Date(valid.endTime) < new Date();
+  });
   return { current };
 }
 
@@ -167,7 +185,10 @@ async function unblockUser(device, employeeNo, validPeriod) {
       timeType: current.Valid?.timeType || "local",
     },
   });
-  await modifyUser(device, payload);
+  // Applied = validity window extends into the future again.
+  await modifyAndVerify(device, employeeNo, payload, (valid) => {
+    return new Date(valid.endTime) > new Date();
+  });
   return { current };
 }
 
