@@ -8,6 +8,7 @@ import { QRCodeSVG, QRCodeCanvas } from "qrcode.react";
 import { useGymSettings } from "../contexts/GymSettingsContext";
 import { supabase } from "../services/supabaseClient";
 import { APP_URL } from "../config/app";
+import AccessControlCard from "../components/AccessControlCard";
 
 const HikStatus = ({ member, onRetry, retrying }) => {
   if (member.hikCentralSynced === true) {
@@ -1099,6 +1100,14 @@ const Members = () => {
                               VIP
                             </span>
                           )}
+                          {member.accessBlocked && (
+                            <span
+                              title={member.accessBlockedReason || "Door access blocked"}
+                              className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#FF6B6B]/20 text-[#FF6B6B]"
+                            >
+                              ACCESS BLOCKED
+                            </span>
+                          )}
                         </h3>
                         <p className="text-sm text-gray-400">{member.mobile}</p>
                         {member.memberCode && (
@@ -2044,6 +2053,15 @@ const Members = () => {
                       Inactive
                     </button>
                   </div>
+                  <AccessControlCard
+                    member={viewMember}
+                    gymId={currentGymId}
+                    user={user}
+                    onMemberUpdated={(fields) => {
+                      setViewMember((v) => (v ? { ...v, ...fields } : v));
+                      fetchMembers();
+                    }}
+                  />
                   <div className="mb-6 flex items-center justify-between bg-gray-900 border border-gray-700 rounded-lg px-4 py-3">
                     <div>
                       <div className="text-sm font-medium text-white flex items-center gap-2">
