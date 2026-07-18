@@ -1,0 +1,128 @@
+# FitPulse Device Relay Agent
+
+Small always-on Node.js service that runs **on the gym's local network**
+(same LAN as the Hikvision DS-K1T343MFX terminal). It executes member
+block/unblock commands queued from the FitPulse web app.
+
+## Why this exists
+
+The terminal's ISAPI interface is only reachable on the local network.
+Cloud Functions run on GCP and **cannot** reach a gym's private
+`192.168.x.x` IP. So:
+
+1. The React app writes a command to `gyms/{gymId}/deviceCommands`
+   with `status: "pending"` — it never talks to the device directly.
+2. This relay (listening via `firebase-admin`) picks up the command and
+   makes the actual ISAPI call with HTTP Digest Auth.
+3. It updates the member document and marks the command
+   `completed` or `failed`; the app reflects the result in real time.
+
+## How block/unblock works on the device
+
+- Blocking does **not** delete face/fingerprint enrollment. It keeps
+  `Valid.enable: true` and sets the validity window to an already-elapsed
+  range (end = yesterday). The face is still recognized; the door stays shut.
+- `Valid.enable: false` means "long-term user, ignore validity period" —
+  the **opposite** of blocking. The relay never sets it to false.
+- Unblocking restores the member's original validity window, captured in
+  `members/{id}.deviceValidPeriod` on the first block. Zero re-enrollment.
+- Before modifying, the relay always `Search`es the current `UserInfo` and
+  echoes all fields back (minus read-only ones: `password`, `numOfCard`,
+  `numOfFP`, `numOfFace`, `faceURL`, `PersonInfoExtends`).
+- `UserInfo/Modify` is tried as `PUT` first, falling back to `POST` if the
+  firmware answers `methodNotAllowed` — both variants exist in the field.
+
+## Setup (per gym)
+
+Requirements: Node.js 18+, on a machine that stays powered on and on the
+same WiFi/LAN as the terminal (a Raspberry Pi, the front-desk PC, etc.).
+
+1. Copy this `relay-agent/` folder to that machine.
+
+2. Create a **service account key**:
+   Firebase Console → Project settings (`gymnex-65440`) → Service accounts
+   → *Generate new private key*. Save it as `service-account.json` in this
+   folder. **Never commit this file.**
+
+3. Configure:
+
+   ```bash
+   cp .env.example .env
+   # edit .env — set GYM_ID to this gym's Firestore document ID
+   ```
+
+   Device IPs come from the app's Devices page (`gyms/{gymId}/devices`).
+   Admin credentials are resolved in priority order:
+
+   1. `gyms/{gymId}/deviceConfig/{deviceId}` — fields `adminUsername` /
+      `adminPassword` (+ optional `ip`, `port`). **Preferred**: Firestore
+      rules deny all client access to this subcollection, so passwords are
+      only readable by this relay (Admin SDK bypasses rules). Create these
+      docs from the Firebase Console or a script — not from the app.
+   2. `username` / `password` fields on the device doc itself (legacy —
+      note these docs are client-readable, avoid storing passwords there).
+   3. `DEVICE_USERNAME` / `DEVICE_PASSWORD` from `.env`.
+
+4. Install and test in the foreground:
+
+   ```bash
+   npm install
+   npm start
+   # you should see: "Relay agent starting for gym <GYM_ID>"
+   # then block a member from the app and watch the log lines
+   ```
+
+## Running persistently
+
+### Option A — pm2 (simplest)
+
+```bash
+npm install -g pm2
+pm2 start index.js --name fitpulse-relay
+pm2 save
+pm2 startup   # follow the printed instructions so it survives reboots
+pm2 logs fitpulse-relay
+```
+
+### Option B — systemd (Linux / Raspberry Pi)
+
+Create `/etc/systemd/system/fitpulse-relay.service`:
+
+```ini
+[Unit]
+Description=FitPulse Hikvision relay agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=/opt/fitpulse/relay-agent
+ExecStart=/usr/bin/node index.js
+Restart=always
+RestartSec=10
+User=pi
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now fitpulse-relay
+journalctl -u fitpulse-relay -f
+```
+
+## Debugging in the field
+
+- Everything is logged to `relay-agent.log` (path configurable via
+  `LOG_FILE`) as well as stdout.
+- Command failures are also written to the command doc's `errorMessage`
+  field, visible in the app.
+- Common failures:
+  - `timed out` → device IP wrong or relay not on the same LAN.
+  - `Digest authentication failed` → wrong device admin credentials.
+  - `employeeNo ... not found` → member's `memberCode` doesn't match any
+    user on the terminal (not enrolled, or enrolled under another number).
+  - `matches N users` → duplicate employeeNo on the device; clean up the
+    duplicate on the terminal itself before retrying.
+- A command stuck in `pending` in the app means this relay isn't running
+  or can't reach Firestore — check the service and internet connection.

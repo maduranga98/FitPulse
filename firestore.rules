@@ -592,6 +592,37 @@ service cloud.firestore {
     }
 
     // ============================================
+    // DEVICE CONFIG (Hikvision admin credentials)
+    // Server/relay-agent only — the relay reads this
+    // via the Admin SDK, which bypasses rules. No
+    // client should ever read device passwords.
+    // ============================================
+    match /gyms/{gymId}/deviceConfig/{configId} {
+      allow read, write: if false;
+    }
+
+    // ============================================
+    // DEVICE COMMANDS (block/unblock access queue)
+    // AccessControlCard.jsx creates:
+    //   type, employeeNo, memberId, memberName, gymId,
+    //   reason, status, errorMessage, createdAt,
+    //   completedAt, createdBy, createdByName
+    // Only the relay agent (Admin SDK) transitions
+    // status to processing/completed/failed, so
+    // client updates are denied. Delete is allowed
+    // so the app can cancel a still-pending command.
+    // ============================================
+    match /gyms/{gymId}/deviceCommands/{commandId} {
+      allow read: if true;
+      allow create: if hasFields(['type', 'employeeNo', 'memberId', 'gymId', 'status'])
+                    && request.resource.data.type in ['block', 'unblock']
+                    && request.resource.data.status == 'pending'
+                    && request.resource.data.gymId == gymId;
+      allow update: if false;
+      allow delete: if resource.data.status == 'pending';
+    }
+
+    // ============================================
     // DEFAULT — deny everything else
     // ============================================
     match /{document=**} {
