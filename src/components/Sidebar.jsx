@@ -372,7 +372,7 @@ const Sidebar = ({ isOpen, onClose }) => {
       ),
       label: "Member Analytics",
     },
-    ...(settings.instructorPermissions?.viewAttendance
+    ...(settings.instructorPermissions?.viewAttendance !== false
       ? [{
           path: "/attendance",
           icon: (
