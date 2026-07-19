@@ -46,6 +46,7 @@ const FinancialAnalytics = () => {
     revenueVsTarget: [],
     dailyRevenue: [],
     memberPaymentStatus: [],
+    packageDistribution: [],
   });
 
   const isAdmin =
@@ -141,7 +142,10 @@ const FinancialAnalytics = () => {
     const avgRevenuePerMember =
       membersData.length > 0 ? totalRevenue / membersData.length : 0;
 
-    // Calculate paid vs unpaid members for current month
+    // Calculate paid vs unpaid members for current month.
+    // VIP members don't pay a fee, so they are excluded from paid/unpaid
+    // and collection-rate calculations. Trainer records in the members
+    // collection are excluded entirely.
     const currentMonth = now.toISOString().slice(0, 7);
     const paidMemberIds = new Set(
       paymentsData
@@ -149,25 +153,28 @@ const FinancialAnalytics = () => {
         .map((p) => p.memberId)
     );
 
-    const activeMembers = membersData.filter((m) => m.status === "active");
-    const totalPaidMembers = activeMembers.filter((m) =>
+    const activeMembers = membersData.filter(
+      (m) => m.status === "active" && (!m.role || m.role === "member")
+    );
+    const payingMembers = activeMembers.filter((m) => !m.isVip);
+    const totalPaidMembers = payingMembers.filter((m) =>
       paidMemberIds.has(m.id)
     ).length;
-    const totalUnpaidMembers = activeMembers.length - totalPaidMembers;
+    const totalUnpaidMembers = payingMembers.length - totalPaidMembers;
 
-    // Calculate collection rate
+    // Calculate collection rate (paying members only)
     const collectionRate =
-      activeMembers.length > 0
-        ? (totalPaidMembers / activeMembers.length) * 100
+      payingMembers.length > 0
+        ? (totalPaidMembers / payingMembers.length) * 100
         : 0;
 
-    // Calculate outstanding amount (assuming avg membership fee)
+    // Calculate outstanding amount (assuming avg membership fee of paying members)
     const avgMembershipFee =
-      membersData.length > 0
-        ? membersData.reduce(
+      payingMembers.length > 0
+        ? payingMembers.reduce(
             (sum, m) => sum + (parseFloat(m.membershipFee) || 0),
             0
-          ) / membersData.length
+          ) / payingMembers.length
         : 0;
     const outstandingAmount = totalUnpaidMembers * avgMembershipFee;
 
@@ -275,7 +282,8 @@ const FinancialAnalytics = () => {
 
     const dailyRevenue = Object.values(dailyData);
 
-    // Member payment status
+    // Member payment status — VIP members are shown as their own slice
+    // instead of being counted as unpaid
     const currentMonth = now.toISOString().slice(0, 7);
     const paidMemberIds = new Set(
       paymentsData
@@ -283,19 +291,52 @@ const FinancialAnalytics = () => {
         .map((p) => p.memberId)
     );
 
-    const activeMembers = membersData.filter((m) => m.status === "active");
+    const activeMembers = membersData.filter(
+      (m) => m.status === "active" && (!m.role || m.role === "member")
+    );
+    const vipMembers = activeMembers.filter((m) => m.isVip);
+    const payingMembers = activeMembers.filter((m) => !m.isVip);
     const memberPaymentStatus = [
       {
         name: "Paid",
-        value: activeMembers.filter((m) => paidMemberIds.has(m.id)).length,
+        value: payingMembers.filter((m) => paidMemberIds.has(m.id)).length,
         color: "#10b981",
       },
       {
         name: "Unpaid",
-        value: activeMembers.filter((m) => !paidMemberIds.has(m.id)).length,
+        value: payingMembers.filter((m) => !paidMemberIds.has(m.id)).length,
         color: "#ef4444",
       },
+      {
+        name: "VIP",
+        value: vipMembers.length,
+        color: "#f59e0b",
+      },
+    ].filter((slice) => slice.value > 0);
+
+    // Package distribution across active members
+    const packageColors = [
+      "#3b82f6",
+      "#10b981",
+      "#f59e0b",
+      "#8b5cf6",
+      "#ec4899",
+      "#14b8a6",
+      "#f97316",
+      "#6b7280",
     ];
+    const packageCounts = activeMembers.reduce((acc, m) => {
+      const name = m.packageName || "No Package";
+      acc[name] = (acc[name] || 0) + 1;
+      return acc;
+    }, {});
+    const packageDistribution = Object.entries(packageCounts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, count], index) => ({
+        name,
+        value: count,
+        color: name === "No Package" ? "#6b7280" : packageColors[index % packageColors.length],
+      }));
 
     setChartData({
       monthlyRevenue,
@@ -303,6 +344,7 @@ const FinancialAnalytics = () => {
       revenueVsTarget: monthlyRevenue,
       dailyRevenue,
       memberPaymentStatus,
+      packageDistribution,
     });
   };
 
@@ -694,8 +736,52 @@ const FinancialAnalytics = () => {
                       color: "#fff",
                     }}
                   />
+                  <Legend />
                 </PieChart>
               </ResponsiveContainer>
+            </div>
+
+            {/* Package Distribution */}
+            <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
+              <h3 className="text-lg font-bold text-white mb-4">
+                Package Distribution
+              </h3>
+              {chartData.packageDistribution.length === 0 ? (
+                <div className="h-[300px] flex items-center justify-center">
+                  <p className="text-gray-500 text-sm">No active members to display</p>
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={300}>
+                  <PieChart>
+                    <Pie
+                      data={chartData.packageDistribution}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      label={({ name, percent }) =>
+                        `${name}: ${(percent * 100).toFixed(0)}%`
+                      }
+                      outerRadius={100}
+                      fill="#8884d8"
+                      dataKey="value"
+                    >
+                      {chartData.packageDistribution.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: "#1f2937",
+                        border: "1px solid #374151",
+                        borderRadius: "0.5rem",
+                        color: "#fff",
+                      }}
+                      formatter={(value, name) => [`${value} member${value === 1 ? "" : "s"}`, name]}
+                    />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
 

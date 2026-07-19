@@ -11,6 +11,7 @@ const defaultSettings = {
     registerMembers: false,
     collectPayments: false,
     viewSupplements: false,
+    viewAttendance: false,
   },
   notifications: {
     sms: true,
