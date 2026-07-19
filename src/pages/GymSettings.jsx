@@ -97,17 +97,34 @@ const GymSettings = () => {
   const updatePayment = (key, value) =>
     setLocalSettings((prev) => ({ ...prev, payment: { ...prev.payment, [key]: value } }));
 
+  // Toggles persist immediately so a refresh doesn't lose the change;
+  // reverted if the save fails.
+  const persistToggle = (next) => {
+    const previous = localSettings;
+    setLocalSettings(next);
+    updateSettings({ ...settings, ...next }).catch(() => {
+      setLocalSettings(previous);
+      alert("Failed to save setting. Please try again.");
+    });
+  };
+
   const updateFeature = (key, value) =>
-    setLocalSettings((prev) => ({ ...prev, features: { ...prev.features, [key]: value } }));
+    persistToggle({
+      ...localSettings,
+      features: { ...localSettings.features, [key]: value },
+    });
 
   const updateInstructorPerm = (key, value) =>
-    setLocalSettings((prev) => ({
-      ...prev,
-      instructorPermissions: { ...prev.instructorPermissions, [key]: value },
-    }));
+    persistToggle({
+      ...localSettings,
+      instructorPermissions: { ...localSettings.instructorPermissions, [key]: value },
+    });
 
   const updateNotification = (key, value) =>
-    setLocalSettings((prev) => ({ ...prev, notifications: { ...prev.notifications, [key]: value } }));
+    persistToggle({
+      ...localSettings,
+      notifications: { ...localSettings.notifications, [key]: value },
+    });
 
   const handleSave = async () => {
     setSaving(true);
