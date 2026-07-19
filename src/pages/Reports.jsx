@@ -153,60 +153,55 @@ const Reports = () => {
   const getEmpNo = (record) =>
     record.rawEvent?.employeeNo || record.employeeNo || record.memberId;
 
-  const generateMonthlyActiveMembers = () => {
+  // Group the month's raw attendance events per member, deduplicating repeat
+  // device scans into unique attended days. Returns
+  // { empNo: { name, days: Set<"YYYY-MM-DD">, scans, lastDate } }.
+  const groupMonthAttendance = () => {
     const [year, month] = selectedMonth.split("-");
     const startDate = new Date(year, parseInt(month) - 1, 1);
     const endDate = new Date(year, parseInt(month), 0);
     endDate.setHours(23, 59, 59, 999);
 
-    const monthAttendance = attendance.filter((record) => {
-      const d = getAttendanceDate(record);
-      return d && d >= startDate && d <= endDate;
-    });
-
-    // Group by employeeNo (device ID) or memberName
     const byEmployee = {};
-    monthAttendance.forEach((r) => {
-      const key = getEmpNo(r) || "unknown";
-      if (!byEmployee[key]) byEmployee[key] = { count: 0, name: r.memberName || key };
-      byEmployee[key].count++;
-    });
+    attendance.forEach((record) => {
+      const d = getAttendanceDate(record);
+      if (!d || d < startDate || d > endDate) return;
 
-    return Object.entries(byEmployee).map(([empNo, info]) => ({
+      const key = getEmpNo(record) || "unknown";
+      const dayKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      if (!byEmployee[key]) {
+        byEmployee[key] = {
+          name: record.memberName || key,
+          days: new Set(),
+          scans: 0,
+          lastDate: null,
+        };
+      }
+      byEmployee[key].days.add(dayKey);
+      byEmployee[key].scans++;
+      if (!byEmployee[key].lastDate || d > byEmployee[key].lastDate) {
+        byEmployee[key].lastDate = d;
+      }
+    });
+    return byEmployee;
+  };
+
+  const generateMonthlyActiveMembers = () => {
+    return Object.entries(groupMonthAttendance()).map(([empNo, info]) => ({
       "Employee No": empNo,
       Name: info.name,
-      "Attendance Count": info.count,
+      "Days Attended": info.days.size,
+      "Total Scans": info.scans,
     }));
   };
 
   const generateAttendanceReport = () => {
-    const [year, month] = selectedMonth.split("-");
-    const startDate = new Date(year, parseInt(month) - 1, 1);
-    const endDate = new Date(year, parseInt(month), 0);
-    endDate.setHours(23, 59, 59, 999);
-
-    const monthAttendance = attendance.filter((record) => {
-      const d = getAttendanceDate(record);
-      return d && d >= startDate && d <= endDate;
-    });
-
-    const byEmployee = {};
-    monthAttendance.forEach((record) => {
-      const key = getEmpNo(record) || "unknown";
-      const d = getAttendanceDate(record);
-      const dateStr = d ? d.toLocaleDateString("en-LK") : "N/A";
-      if (!byEmployee[key]) {
-        byEmployee[key] = { name: record.memberName || key, count: 0, lastDate: dateStr };
-      }
-      byEmployee[key].count++;
-      byEmployee[key].lastDate = dateStr;
-    });
-
-    return Object.entries(byEmployee).map(([empNo, info]) => ({
+    return Object.entries(groupMonthAttendance()).map(([empNo, info]) => ({
       "Employee No": empNo,
       "Member Name": info.name,
-      "Total Check-ins": info.count,
-      "Last Attendance": info.lastDate,
+      "Days Attended": info.days.size,
+      "Total Scans": info.scans,
+      "Last Attendance": info.lastDate ? info.lastDate.toLocaleDateString("en-LK") : "N/A",
     }));
   };
 
