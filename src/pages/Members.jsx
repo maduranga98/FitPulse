@@ -1811,6 +1811,10 @@ const Members = () => {
                     className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     required
                   />
+                  <p className="text-xs text-gray-500 mt-1">
+                    The member&apos;s payment due date. Reminders, reports, and the dashboard all
+                    use this date, and it moves forward automatically when a payment is recorded.
+                  </p>
                 </div>
 
                 {/* Emergency Contact */}

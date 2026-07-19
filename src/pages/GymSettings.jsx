@@ -336,11 +336,15 @@ const GymSettings = () => {
             Payment Collection
           </h2>
           <p className="text-gray-400 text-xs mb-4">
-            Set the day of the month payments are due and how many days before to send reminders.
+            Payment reminders follow each member&apos;s own Next Payment Date (set when the member
+            is registered and moved forward automatically each time they pay). The default due day
+            below is only used for members who don&apos;t have a Next Payment Date on record.
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">Payment Due Day</label>
+              <label className="block text-sm font-medium text-gray-300 mb-1">
+                Default Due Day (fallback)
+              </label>
               <select
                 value={localSettings.payment.dueDay}
                 onChange={(e) => updatePayment("dueDay", parseInt(e.target.value))}
@@ -352,6 +356,9 @@ const GymSettings = () => {
                   </option>
                 ))}
               </select>
+              <p className="text-xs text-gray-500 mt-1">
+                Only applies to members with no Next Payment Date.
+              </p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-1">

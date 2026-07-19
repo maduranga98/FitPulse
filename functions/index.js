@@ -1998,10 +1998,11 @@ export const sendSMSNotification = functions.https.onCall(async (data) => {
 // ========================================
 // ⏰ SCHEDULED PAYMENT REMINDERS (SMS)
 // ========================================
-// Runs daily. For each gym, computes the monthly payment due date from
-// settings.payment.dueDay and sends an SMS reminder to active, non-VIP
-// members who have not yet paid for the current month, on each of the
-// configured settings.payment.reminderDays (days before the due date).
+// Runs daily. For each gym, sends an SMS reminder to active, non-VIP
+// members on each of the configured settings.payment.reminderDays (days
+// before the due date). The due date is the member's own nextPaymentDate
+// (the same date shown in the app and reports); settings.payment.dueDay
+// is only a fallback for members who have no next payment date on record.
 
 /**
  * Send a single plain SMS via text.lk. Returns true on success.
@@ -2064,22 +2065,13 @@ export const sendPaymentReminders = functions.pubsub
       if (gym.status && gym.status !== "active") continue;
 
       const paymentCfg = gym.settings?.payment || {};
-      const dueDay = parseInt(paymentCfg.dueDay) || 10;
+      const fallbackDueDay = parseInt(paymentCfg.dueDay) || 10;
       const reminderDays = Array.isArray(paymentCfg.reminderDays)
         ? paymentCfg.reminderDays
         : [3, 1];
 
-      // Due date for the current month
-      const dueDate = new Date(year, month, dueDay);
       const msPerDay = 1000 * 60 * 60 * 24;
-      const daysUntilDue = Math.round(
-        (new Date(year, month, dueDate.getDate()) -
-          new Date(year, month, now.getDate())) /
-          msPerDay,
-      );
-
-      // Only proceed if today matches one of the reminder offsets
-      if (!reminderDays.includes(daysUntilDue)) continue;
+      const today = new Date(year, month, now.getDate());
 
       const smsSettings = gym.settings?.sms || {};
       const apiToken = smsSettings.apiToken || process.env.TEXTLK_API_TOKEN;
@@ -2108,10 +2100,6 @@ export const sendPaymentReminders = functions.pubsub
         .get();
 
       const gymName = gym.name || "Your Gym";
-      const dueLabel = dueDate.toLocaleDateString("en-GB", {
-        day: "numeric",
-        month: "long",
-      });
 
       for (const memberDoc of membersSnap.docs) {
         const member = memberDoc.data();
@@ -2119,13 +2107,39 @@ export const sendPaymentReminders = functions.pubsub
         if (member.isVip) continue; // VIP / fee-exempt members don't pay
         // Skip special-case members with no fee to collect (fee 0 or unset)
         if (!(Number(member.membershipFee) > 0)) continue;
-        if (paidMemberIds.has(memberDoc.id)) continue;
+
+        // Due date: the member's own nextPaymentDate (kept in sync by the
+        // payment pages), falling back to the gym-wide due day for members
+        // who have no next payment date on record.
+        let dueDate = null;
+        if (member.nextPaymentDate) {
+          const d = new Date(member.nextPaymentDate);
+          if (!isNaN(d.getTime())) {
+            dueDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+          }
+        }
+        const usingFallback = !dueDate;
+        if (!dueDate) dueDate = new Date(year, month, fallbackDueDay);
+
+        const daysUntilDue = Math.round((dueDate - today) / msPerDay);
+        if (!reminderDays.includes(daysUntilDue)) continue;
+
+        // Paying advances nextPaymentDate, so members tracked by their own
+        // date fall out naturally. The paid-this-month check only applies to
+        // fallback members, whose due date repeats every month.
+        if (usingFallback && paidMemberIds.has(memberDoc.id)) continue;
 
         const phone = member.mobile || member.whatsapp || member.phone;
         if (!phone) continue;
 
-        // Dedupe: one reminder per member per due-offset per month
-        const reminderId = `${gymId}_${memberDoc.id}_${monthStr}_${daysUntilDue}`;
+        const dueStr = `${dueDate.getFullYear()}-${String(dueDate.getMonth() + 1).padStart(2, "0")}-${String(dueDate.getDate()).padStart(2, "0")}`;
+        const dueLabel = dueDate.toLocaleDateString("en-GB", {
+          day: "numeric",
+          month: "long",
+        });
+
+        // Dedupe: one reminder per member per due date per offset
+        const reminderId = `${gymId}_${memberDoc.id}_${dueStr}_${daysUntilDue}`;
         const reminderRef = db.collection("payment_reminders").doc(reminderId);
         const existing = await reminderRef.get();
         if (existing.exists) continue;
@@ -2147,6 +2161,7 @@ export const sendPaymentReminders = functions.pubsub
             memberId: memberDoc.id,
             memberName: member.name || "",
             month: monthStr,
+            dueDate: dueStr,
             daysBeforeDue: daysUntilDue,
             channel: "sms",
             sentAt: admin.firestore.FieldValue.serverTimestamp(),
