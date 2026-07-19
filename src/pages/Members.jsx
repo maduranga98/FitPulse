@@ -725,6 +725,29 @@ const Members = () => {
     }
   };
 
+  // Update an existing member's fitness level from the detail modal
+  const handleUpdateLevel = async (member, newLevel) => {
+    if (!userIsAdmin) {
+      showError("You don't have permission to update members");
+      return;
+    }
+    if (member.level === newLevel) return;
+
+    try {
+      const { db } = await import("../config/firebase");
+      const { doc, updateDoc } = await import("firebase/firestore");
+      await updateDoc(doc(db, "members", member.id), { level: newLevel });
+      showSuccess(`${member.name}'s fitness level set to ${newLevel}`);
+      fetchMembers();
+      if (viewMember && viewMember.id === member.id) {
+        setViewMember({ ...viewMember, level: newLevel });
+      }
+    } catch (error) {
+      console.error("Error updating fitness level:", error);
+      showError("Failed to update fitness level");
+    }
+  };
+
   // Update an existing member's package / fee without opening the full edit
   // form — lets admins adjust the price charged to each member individually.
   const handleSavePackageEdit = async () => {
@@ -2270,17 +2293,39 @@ const Members = () => {
                     <div className="text-gray-400 text-sm mb-1">
                       Fitness Level
                     </div>
-                    <span
-                      className={`inline-block px-3 py-1 rounded text-sm font-medium ${
-                        viewMember.level === "beginner"
-                          ? "bg-blue-600/20 text-blue-600"
-                          : viewMember.level === "intermediate"
-                            ? "bg-yellow-600/20 text-yellow-600"
-                            : "bg-purple-600/20 text-purple-600"
-                      }`}
-                    >
-                      {viewMember.level}
-                    </span>
+                    {userIsAdmin ? (
+                      <div className="flex flex-wrap gap-2">
+                        {["beginner", "intermediate", "advanced"].map((level) => (
+                          <button
+                            key={level}
+                            onClick={() => handleUpdateLevel(viewMember, level)}
+                            className={`px-3 py-1 rounded text-sm font-medium capitalize transition ${
+                              viewMember.level === level
+                                ? level === "beginner"
+                                  ? "bg-blue-600 text-white"
+                                  : level === "intermediate"
+                                    ? "bg-yellow-600 text-white"
+                                    : "bg-purple-600 text-white"
+                                : "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white"
+                            }`}
+                          >
+                            {level}
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <span
+                        className={`inline-block px-3 py-1 rounded text-sm font-medium ${
+                          viewMember.level === "beginner"
+                            ? "bg-blue-600/20 text-blue-600"
+                            : viewMember.level === "intermediate"
+                              ? "bg-yellow-600/20 text-yellow-600"
+                              : "bg-purple-600/20 text-purple-600"
+                        }`}
+                      >
+                        {viewMember.level}
+                      </span>
+                    )}
                   </div>
                   <div className="bg-gray-900 rounded-lg p-4">
                     <div className="text-gray-400 text-sm mb-1">Status</div>
