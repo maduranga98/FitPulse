@@ -220,15 +220,23 @@ const Reports = () => {
       );
     });
 
-    const data = monthPayments.map((payment) => ({
-      "Payment ID": payment.id.slice(-6).toUpperCase(),
-      "Member Name": payment.memberName || "N/A",
-      Amount: payment.amount || 0,
-      Month: payment.month || selectedMonth,
-      "Payment Method": payment.paymentMethod || "N/A",
-      "Paid Date": formatJsDate(payment.paidAt || payment.createdAt),
-      Notes: payment.notes || "N/A",
-    }));
+    const memberById = new Map(actualMembers.map((m) => [m.id, m]));
+
+    const data = monthPayments.map((payment) => {
+      const member = memberById.get(payment.memberId);
+      return {
+        "Payment ID": payment.id.slice(-6).toUpperCase(),
+        "Member Name": payment.memberName || "N/A",
+        Amount: payment.amount || 0,
+        "For Month": payment.month || selectedMonth,
+        "Payment Method": payment.paymentMethod || "N/A",
+        "Paid Date": formatJsDate(payment.paidAt || payment.createdAt),
+        "Next Due Date": member?.nextPaymentDate
+          ? formatJsDate(member.nextPaymentDate)
+          : "N/A",
+        Notes: payment.notes || "N/A",
+      };
+    });
 
     // The preview table and CSV take their columns from the first row, so the
     // summary row must use the same columns as the data rows.
@@ -236,9 +244,10 @@ const Reports = () => {
       "Payment ID": "TOTAL",
       "Member Name": `${data.length} payment${data.length === 1 ? "" : "s"}`,
       Amount: data.reduce((sum, p) => sum + (p.Amount || 0), 0),
-      Month: selectedMonth,
+      "For Month": selectedMonth,
       "Payment Method": "",
       "Paid Date": "",
+      "Next Due Date": "",
       Notes: "",
     };
 

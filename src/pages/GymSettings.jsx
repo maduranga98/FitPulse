@@ -336,11 +336,15 @@ const GymSettings = () => {
             Payment Collection
           </h2>
           <p className="text-gray-400 text-xs mb-4">
-            Set the day of the month payments are due and how many days before to send reminders.
+            The gym collects all payments on one dedicated day of the month. Every member&apos;s
+            due date falls on this day — which month they&apos;re next due depends on their
+            package duration, and moves forward automatically each time they pay.
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">Payment Due Day</label>
+              <label className="block text-sm font-medium text-gray-300 mb-1">
+                Payment Collection Day
+              </label>
               <select
                 value={localSettings.payment.dueDay}
                 onChange={(e) => updatePayment("dueDay", parseInt(e.target.value))}
@@ -352,6 +356,9 @@ const GymSettings = () => {
                   </option>
                 ))}
               </select>
+              <p className="text-xs text-gray-500 mt-1">
+                Used for member due dates, reports, and SMS reminders.
+              </p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-1">

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { useNotification } from "../../contexts/NotificationContext";
 import { useGymSettings } from "../../contexts/GymSettingsContext";
+import { nextDueDateOnCollectionDay } from "../../utils/paymentDates";
 import AdminLayout from "../../components/AdminLayout";
 import { QRCodeSVG } from "qrcode.react";
 import { APP_URL } from "../../config/app";
@@ -89,16 +90,20 @@ const InstructorAddMember = () => {
     fetchPendingRegistrations();
   }, [currentGymId]);
 
+  // Next due date always lands on the gym's payment collection day, one
+  // package-duration after the join date.
   useEffect(() => {
     if (memberForm.joinDate && memberForm.packageDuration) {
-      const join = new Date(memberForm.joinDate);
-      join.setMonth(join.getMonth() + parseInt(memberForm.packageDuration));
       setMemberForm((prev) => ({
         ...prev,
-        nextPaymentDate: join.toISOString().split("T")[0],
+        nextPaymentDate: nextDueDateOnCollectionDay(
+          memberForm.joinDate,
+          memberForm.packageDuration,
+          settings.payment?.dueDay,
+        ),
       }));
     }
-  }, [memberForm.joinDate, memberForm.packageDuration]);
+  }, [memberForm.joinDate, memberForm.packageDuration, settings.payment?.dueDay]);
 
   const fetchPendingRegistrations = async () => {
     if (!currentGymId) return;

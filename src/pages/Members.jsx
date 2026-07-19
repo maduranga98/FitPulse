@@ -3,6 +3,7 @@ import { useAuth } from "../hooks/useAuth";
 import { useNotification } from "../contexts/NotificationContext";
 import Sidebar from "../components/Sidebar";
 import { isAdmin, validateGymId } from "../utils/authUtils";
+import { nextDueDateOnCollectionDay, DEFAULT_DUE_DAY } from "../utils/paymentDates";
 import { calculateBMI, validateBMIInputs } from "../utils/validationUtils";
 import { QRCodeSVG, QRCodeCanvas } from "qrcode.react";
 import { useGymSettings } from "../contexts/GymSettingsContext";
@@ -142,17 +143,19 @@ const Members = () => {
     setEditingPackage(false);
   }, [viewMember?.id]);
 
-  // Auto-calculate nextPaymentDate when joinDate or packageDuration changes
+  // Auto-calculate nextPaymentDate: the gym's payment collection day, one
+  // package-duration after the join date. Not user-editable — every member
+  // pays on the gym's collection day.
   useEffect(() => {
     if (memberForm.joinDate && memberForm.packageDuration) {
-      const joinDate = new Date(memberForm.joinDate);
-      joinDate.setMonth(
-        joinDate.getMonth() + parseInt(memberForm.packageDuration),
+      const nextDate = nextDueDateOnCollectionDay(
+        memberForm.joinDate,
+        memberForm.packageDuration,
+        settings.payment?.dueDay,
       );
-      const nextDate = joinDate.toISOString().slice(0, 10);
       setMemberForm((prev) => ({ ...prev, nextPaymentDate: nextDate }));
     }
-  }, [memberForm.joinDate, memberForm.packageDuration]);
+  }, [memberForm.joinDate, memberForm.packageDuration, settings.payment?.dueDay]);
 
   const fetchMembers = async () => {
     if (!currentGymId) {
@@ -1797,20 +1800,22 @@ const Members = () => {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Next Payment Date *
+                    First Payment Due
                   </label>
-                  <input
-                    type="date"
-                    value={memberForm.nextPaymentDate}
-                    onChange={(e) =>
-                      setMemberForm({
-                        ...memberForm,
-                        nextPaymentDate: e.target.value,
-                      })
-                    }
-                    className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
-                  />
+                  <div className="w-full px-4 py-2 bg-gray-900/60 border border-gray-700 rounded-lg text-gray-300">
+                    {memberForm.nextPaymentDate
+                      ? new Date(memberForm.nextPaymentDate).toLocaleDateString("en-GB", {
+                          day: "numeric",
+                          month: "long",
+                          year: "numeric",
+                        })
+                      : "—"}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    All payments are collected on day{" "}
+                    {settings.payment?.dueDay || DEFAULT_DUE_DAY} of the month (change it in Gym
+                    Settings). This date moves forward automatically when a payment is recorded.
+                  </p>
                 </div>
 
                 {/* Emergency Contact */}
