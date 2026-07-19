@@ -111,14 +111,33 @@ const Reports = () => {
     setShowPreview(true);
   };
 
+  // Firestore Timestamps, {seconds} objects, ISO strings, and Dates all
+  // appear in this data — normalize before any date math or formatting.
+  const toJsDate = (value) => {
+    if (!value) return null;
+    if (value.toDate) return value.toDate();
+    if (value.seconds) return new Date(value.seconds * 1000);
+    const d = new Date(value);
+    return isNaN(d.getTime()) ? null : d;
+  };
+
+  const formatJsDate = (value) => {
+    const d = toJsDate(value);
+    return d ? d.toLocaleDateString() : "N/A";
+  };
+
+  // The members collection also stores trainer records — exclude them from
+  // member reports
+  const actualMembers = members.filter((m) => !m.role || m.role === "member");
+
   const generateOverallMembersList = () => {
-    return members.map((member) => ({
+    return actualMembers.map((member) => ({
       "Member Number": member.id.slice(-6).toUpperCase(),
       Name: member.name,
       Email: member.email || "N/A",
       Mobile: member.mobile || "N/A",
       Status: member.status || "N/A",
-      "Join Date": member.joinDate ? new Date(member.joinDate).toLocaleDateString() : "N/A",
+      "Join Date": formatJsDate(member.joinDate),
       Level: member.level || "N/A",
       "Membership Fee": member.membershipFee || 0,
     }));
@@ -194,9 +213,13 @@ const Reports = () => {
   const generateMonthlyPaymentReport = () => {
     const [year, month] = selectedMonth.split("-");
 
+    // Match by the payment's "month" field (which month the payment is FOR);
+    // fall back to the paid date for older records without that field.
     const monthPayments = payments.filter((payment) => {
-      const paymentDate = new Date(payment.paidAt || payment.createdAt);
+      if (payment.month) return payment.month === selectedMonth;
+      const paymentDate = toJsDate(payment.paidAt || payment.createdAt);
       return (
+        paymentDate &&
         paymentDate.getFullYear() === parseInt(year) &&
         paymentDate.getMonth() === parseInt(month) - 1
       );
@@ -208,44 +231,60 @@ const Reports = () => {
       Amount: payment.amount || 0,
       Month: payment.month || selectedMonth,
       "Payment Method": payment.paymentMethod || "N/A",
-      "Paid Date": payment.paidAt ? new Date(payment.paidAt).toLocaleDateString() : "N/A",
+      "Paid Date": formatJsDate(payment.paidAt || payment.createdAt),
       Notes: payment.notes || "N/A",
     }));
 
-    const summary = {
-      "Total Amount": data.reduce((sum, p) => sum + (p.Amount || 0), 0),
-      "Total Payments": data.length,
+    // The preview table and CSV take their columns from the first row, so the
+    // summary row must use the same columns as the data rows.
+    const summaryRow = {
+      "Payment ID": "TOTAL",
+      "Member Name": `${data.length} payment${data.length === 1 ? "" : "s"}`,
+      Amount: data.reduce((sum, p) => sum + (p.Amount || 0), 0),
+      Month: selectedMonth,
+      "Payment Method": "",
+      "Paid Date": "",
+      Notes: "",
     };
 
-    return [{ ...summary }, ...data];
+    return data.length > 0 ? [...data, summaryRow] : [];
   };
 
   const generatePendingPaymentReport = () => {
     const [year, month] = selectedMonth.split("-");
-    const currentMonth = new Date(`${year}-${month}-01`);
+    // A payment is pending if it falls due at any point during the selected
+    // month, so compare against the END of the month, not the 1st.
+    const endOfMonth = new Date(parseInt(year), parseInt(month), 0);
+    endOfMonth.setHours(23, 59, 59, 999);
 
-    return members.map((member) => {
-      const nextPaymentDate = member.nextPaymentDate
-        ? new Date(member.nextPaymentDate)
-        : new Date(member.joinDate).getTime() > 0
-        ? new Date(member.joinDate)
-        : null;
+    // Members who already have a payment recorded for the selected month
+    const paidMemberIds = new Set(
+      payments.filter((p) => p.month === selectedMonth).map((p) => p.memberId)
+    );
 
-      const isPending = nextPaymentDate && nextPaymentDate <= currentMonth;
+    return actualMembers
+      .filter((member) => {
+        if (member.status !== "active") return false;
+        if (member.isVip) return false; // VIP members don't pay
+        if (paidMemberIds.has(member.id)) return false;
 
-      if (isPending && member.status === "active") {
+        const dueDate = toJsDate(member.nextPaymentDate) || toJsDate(member.joinDate);
+        // No due date on record at all — treat as pending so it's not silently missed
+        if (!dueDate) return true;
+        return dueDate <= endOfMonth;
+      })
+      .map((member) => {
+        const dueDate = toJsDate(member.nextPaymentDate) || toJsDate(member.joinDate);
         return {
           "Member Number": member.id.slice(-6).toUpperCase(),
           Name: member.name,
-          "Due Date": nextPaymentDate?.toLocaleDateString() || "N/A",
+          "Due Date": dueDate ? dueDate.toLocaleDateString() : "N/A",
           "Package Fee": member.membershipFee || 0,
           "Package Duration": member.packageDuration || 1,
           Email: member.email || "N/A",
           Mobile: member.mobile || "N/A",
         };
-      }
-      return null;
-    }).filter(Boolean);
+      });
   };
 
   const generateOverallPaymentReport = () => {
@@ -255,26 +294,32 @@ const Reports = () => {
       Amount: payment.amount || 0,
       Month: payment.month || "N/A",
       "Payment Method": payment.paymentMethod || "N/A",
-      "Paid Date": payment.paidAt ? new Date(payment.paidAt).toLocaleDateString() : "N/A",
+      "Paid Date": formatJsDate(payment.paidAt || payment.createdAt),
     }));
 
-    const summary = {
-      "Total Revenue": data.reduce((sum, p) => sum + (p.Amount || 0), 0),
-      "Total Transactions": data.length,
-      "Average Payment": (data.reduce((sum, p) => sum + (p.Amount || 0), 0) / data.length).toFixed(2),
+    if (data.length === 0) return [];
+
+    const totalRevenue = data.reduce((sum, p) => sum + (p.Amount || 0), 0);
+    const summaryRow = {
+      "Payment ID": "TOTAL",
+      "Member Name": `${data.length} transaction${data.length === 1 ? "" : "s"}`,
+      Amount: totalRevenue,
+      Month: "",
+      "Payment Method": `Avg ${(totalRevenue / data.length).toFixed(2)}`,
+      "Paid Date": "",
     };
 
-    return [{ ...summary }, ...data];
+    return [...data, summaryRow];
   };
 
   const generateInactiveMemberReport = () => {
-    const inactiveMembers = members.filter((m) => m.status === "inactive");
+    const inactiveMembers = actualMembers.filter((m) => m.status === "inactive");
     return inactiveMembers.map((member) => ({
       "Member Number": member.id.slice(-6).toUpperCase(),
       Name: member.name,
       Email: member.email || "N/A",
       Mobile: member.mobile || "N/A",
-      "Join Date": member.joinDate ? new Date(member.joinDate).toLocaleDateString() : "N/A",
+      "Join Date": formatJsDate(member.joinDate),
       Level: member.level || "N/A",
       "Membership Fee": member.membershipFee || 0,
       Status: "Inactive",
@@ -461,18 +506,18 @@ const Reports = () => {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <div className="bg-gray-900 rounded-lg p-4">
                   <div className="text-gray-400 text-sm mb-1">Total Members</div>
-                  <div className="text-2xl font-bold text-white">{members.length}</div>
+                  <div className="text-2xl font-bold text-white">{actualMembers.length}</div>
                 </div>
                 <div className="bg-gray-900 rounded-lg p-4">
                   <div className="text-gray-400 text-sm mb-1">Active Members</div>
                   <div className="text-2xl font-bold text-green-600">
-                    {members.filter((m) => m.status === "active").length}
+                    {actualMembers.filter((m) => m.status === "active").length}
                   </div>
                 </div>
                 <div className="bg-gray-900 rounded-lg p-4">
                   <div className="text-gray-400 text-sm mb-1">Inactive Members</div>
                   <div className="text-2xl font-bold text-red-600">
-                    {members.filter((m) => m.status === "inactive").length}
+                    {actualMembers.filter((m) => m.status === "inactive").length}
                   </div>
                 </div>
                 <div className="bg-gray-900 rounded-lg p-4">

@@ -188,6 +188,7 @@ function App() {
                         "manager",
                         "gym_admin",
                         "gym_manager",
+                        "trainer",
                       ]}
                     >
                       <Attendance />

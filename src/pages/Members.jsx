@@ -75,6 +75,14 @@ const Members = () => {
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterLevel, setFilterLevel] = useState("all");
   const [showQRModal, setShowQRModal] = useState(false);
+  const [editingPackage, setEditingPackage] = useState(false);
+  const [savingPackageEdit, setSavingPackageEdit] = useState(false);
+  const [packageEditForm, setPackageEditForm] = useState({
+    packageId: "",
+    packageName: "",
+    membershipFee: "",
+    packageDuration: 1,
+  });
   const [pendingRegistrations, setPendingRegistrations] = useState([]);
   const [hikSyncingId, setHikSyncingId] = useState(null);
   const qrCanvasRef = useRef(null);
@@ -128,6 +136,11 @@ const Members = () => {
       setBmiInfo(null);
     }
   }, [memberForm.weight, memberForm.height]);
+
+  // Close the inline package editor whenever the viewed member changes
+  useEffect(() => {
+    setEditingPackage(false);
+  }, [viewMember?.id]);
 
   // Auto-calculate nextPaymentDate when joinDate or packageDuration changes
   useEffect(() => {
@@ -710,6 +723,59 @@ const Members = () => {
       console.error("Error updating status:", error);
       showError("Failed to update status");
     }
+  };
+
+  // Update an existing member's package / fee without opening the full edit
+  // form — lets admins adjust the price charged to each member individually.
+  const handleSavePackageEdit = async () => {
+    if (!userIsAdmin) {
+      showError("You don't have permission to update members");
+      return;
+    }
+    if (!viewMember) return;
+
+    const fee = parseFloat(packageEditForm.membershipFee);
+    if (!viewMember.isVip && (isNaN(fee) || fee < 0)) {
+      showError("Enter a valid package fee");
+      return;
+    }
+
+    const selectedPkg = (settings.packages || []).find(
+      (p) => p.id === packageEditForm.packageId,
+    );
+    const updates = {
+      membershipFee: viewMember.isVip ? 0 : fee,
+      packageDuration: parseInt(packageEditForm.packageDuration) || 1,
+      packageId: selectedPkg?.id || packageEditForm.packageId || "",
+      packageName: selectedPkg?.name || packageEditForm.packageName || "",
+    };
+
+    setSavingPackageEdit(true);
+    try {
+      const { db } = await import("../config/firebase");
+      const { doc, updateDoc } = await import("firebase/firestore");
+      await updateDoc(doc(db, "members", viewMember.id), updates);
+      showSuccess(`${viewMember.name}'s package updated`);
+      setViewMember({ ...viewMember, ...updates });
+      setEditingPackage(false);
+      fetchMembers();
+    } catch (error) {
+      console.error("Error updating member package:", error);
+      showError("Failed to update package");
+    } finally {
+      setSavingPackageEdit(false);
+    }
+  };
+
+  const openPackageEdit = () => {
+    setPackageEditForm({
+      packageId: viewMember.packageId || "",
+      packageName: viewMember.packageName || "",
+      membershipFee:
+        viewMember.membershipFee != null ? String(viewMember.membershipFee) : "",
+      packageDuration: viewMember.packageDuration || 1,
+    });
+    setEditingPackage(true);
   };
 
   // Mark/unmark an existing member as VIP (no fee collected, excluded from
@@ -2228,24 +2294,130 @@ const Members = () => {
                       {viewMember.status}
                     </span>
                   </div>
-                  {viewMember.membershipFee != null && (
-                    <div className="bg-gray-900 rounded-lg p-4">
-                      <div className="text-gray-400 text-sm mb-1">
-                        Package Fee
+                  {!editingPackage ? (
+                    <>
+                      {viewMember.membershipFee != null && (
+                        <div className="bg-gray-900 rounded-lg p-4">
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="text-gray-400 text-sm">Package Fee</div>
+                            {userIsAdmin && (
+                              <button
+                                onClick={openPackageEdit}
+                                className="text-blue-400 hover:text-blue-300 text-xs font-medium"
+                              >
+                                Edit
+                              </button>
+                            )}
+                          </div>
+                          <div className="text-white font-medium">
+                            Rs. {viewMember.membershipFee}
+                            {viewMember.packageName && (
+                              <span className="text-gray-400 text-xs ml-2">
+                                ({viewMember.packageName})
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      {viewMember.membershipFee == null && userIsAdmin && (
+                        <div className="bg-gray-900 rounded-lg p-4">
+                          <div className="text-gray-400 text-sm mb-1">Package Fee</div>
+                          <button
+                            onClick={openPackageEdit}
+                            className="text-blue-400 hover:text-blue-300 text-sm font-medium"
+                          >
+                            Set package & fee
+                          </button>
+                        </div>
+                      )}
+                      {viewMember.packageDuration && (
+                        <div className="bg-gray-900 rounded-lg p-4">
+                          <div className="text-gray-400 text-sm mb-1">
+                            Package Duration
+                          </div>
+                          <div className="text-white font-medium">
+                            {viewMember.packageDuration} Month
+                            {viewMember.packageDuration > 1 ? "s" : ""}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="bg-gray-900 rounded-lg p-4 col-span-2">
+                      <div className="text-gray-400 text-sm mb-3">Edit Package & Fee</div>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        {(settings.packages || []).length > 0 && (
+                          <select
+                            value={packageEditForm.packageId}
+                            onChange={(e) => {
+                              const pkg = (settings.packages || []).find(
+                                (p) => p.id === e.target.value,
+                              );
+                              setPackageEditForm((prev) => ({
+                                ...prev,
+                                packageId: pkg?.id || "",
+                                packageName: pkg?.name || "",
+                                membershipFee: pkg ? String(pkg.price) : prev.membershipFee,
+                                packageDuration: pkg?.duration || prev.packageDuration,
+                              }));
+                            }}
+                            className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          >
+                            <option value="">Custom (no package)</option>
+                            {(settings.packages || []).map((pkg) => (
+                              <option key={pkg.id} value={pkg.id}>
+                                {pkg.name} — Rs. {Number(pkg.price).toLocaleString()}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={packageEditForm.membershipFee}
+                          onChange={(e) =>
+                            setPackageEditForm((prev) => ({
+                              ...prev,
+                              membershipFee: e.target.value,
+                            }))
+                          }
+                          disabled={viewMember.isVip}
+                          placeholder={viewMember.isVip ? "VIP — no fee" : "Fee (Rs.)"}
+                          className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                        />
+                        <select
+                          value={packageEditForm.packageDuration}
+                          onChange={(e) =>
+                            setPackageEditForm((prev) => ({
+                              ...prev,
+                              packageDuration: parseInt(e.target.value),
+                            }))
+                          }
+                          className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          {[1, 2, 3, 6, 12].map((d) => (
+                            <option key={d} value={d}>
+                              {d} Month{d > 1 ? "s" : ""}
+                            </option>
+                          ))}
+                        </select>
                       </div>
-                      <div className="text-white font-medium">
-                        Rs. {viewMember.membershipFee}
-                      </div>
-                    </div>
-                  )}
-                  {viewMember.packageDuration && (
-                    <div className="bg-gray-900 rounded-lg p-4">
-                      <div className="text-gray-400 text-sm mb-1">
-                        Package Duration
-                      </div>
-                      <div className="text-white font-medium">
-                        {viewMember.packageDuration} Month
-                        {viewMember.packageDuration > 1 ? "s" : ""}
+                      <div className="flex gap-2 mt-3">
+                        <button
+                          onClick={handleSavePackageEdit}
+                          disabled={savingPackageEdit}
+                          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition disabled:opacity-50"
+                        >
+                          {savingPackageEdit ? "Saving..." : "Save"}
+                        </button>
+                        <button
+                          onClick={() => setEditingPackage(false)}
+                          disabled={savingPackageEdit}
+                          className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition"
+                        >
+                          Cancel
+                        </button>
                       </div>
                     </div>
                   )}

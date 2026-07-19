@@ -1,44 +1,55 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import AdminLayout from "../../components/AdminLayout";
 import { useGymSettings } from "../../contexts/GymSettingsContext";
 import { useNotification } from "../../contexts/NotificationContext";
 
 const InstructorPackages = () => {
-  const { settings, updateSettings } = useGymSettings();
+  const { settings, loading, updateSettings } = useGymSettings();
   const { showSuccess, showError } = useNotification();
   const [saving, setSaving] = useState(false);
   const [packages, setPackages] = useState(Array.isArray(settings.packages) ? settings.packages : []);
   const [newPackage, setNewPackage] = useState({ name: "", price: "", duration: 1 });
 
-  const inputClass = "w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500";
+  // Keep local list in sync once settings finish loading from Firestore —
+  // the initial useState snapshot runs before the async load completes.
+  useEffect(() => {
+    if (!loading) {
+      setPackages(Array.isArray(settings.packages) ? settings.packages : []);
+    }
+  }, [loading, settings.packages]);
 
-  const addPackage = () => {
+  const persistPackages = async (nextPackages, successMessage) => {
+    setSaving(true);
+    try {
+      await updateSettings({ ...settings, packages: nextPackages });
+      setPackages(nextPackages);
+      if (successMessage) showSuccess(successMessage);
+      return true;
+    } catch {
+      showError("Failed to save packages. Please try again.");
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const addPackage = async () => {
     const name = newPackage.name.trim();
     const price = parseFloat(newPackage.price);
     if (!name || isNaN(price) || price < 0) {
       showError("Enter a valid package name and price");
       return;
     }
-    setPackages((prev) => [
-      ...prev,
-      { id: `pkg_${Date.now()}`, name, price, duration: parseInt(newPackage.duration) || 1 },
-    ]);
-    setNewPackage({ name: "", price: "", duration: 1 });
+    const pkg = { id: `pkg_${Date.now()}`, name, price, duration: parseInt(newPackage.duration) || 1 };
+    const saved = await persistPackages([...packages, pkg], `Package "${name}" saved`);
+    if (saved) setNewPackage({ name: "", price: "", duration: 1 });
   };
 
-  const removePackage = (id) => setPackages((prev) => prev.filter((p) => p.id !== id));
-
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      await updateSettings({ ...settings, packages });
-      showSuccess("Packages saved successfully!");
-    } catch (err) {
-      showError("Failed to save packages. Please try again.");
-    } finally {
-      setSaving(false);
-    }
+  const removePackage = (id) => {
+    persistPackages(packages.filter((p) => p.id !== id), "Package removed");
   };
+
+  const handleSave = () => persistPackages(packages, "Packages saved successfully!");
 
   return (
     <AdminLayout>

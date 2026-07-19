@@ -25,19 +25,26 @@ export const getTodayAttendance = async (gymId) => {
   return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
 };
 
-// Get attendance for a specific member
+// Get attendance for a specific member.
+// Equality-only filters (no orderBy) so no composite index is required;
+// sorted newest-first client-side.
 export const getMemberAttendance = async (gymId, memberId, limit = 30) => {
   const q = query(
     collection(db, "attendance"),
     where("gymId", "==", gymId),
     where("memberId", "==", memberId),
-    orderBy("checkInTime", "desc"),
   );
 
   const snapshot = await getDocs(q);
+  const toMillis = (record) => {
+    if (record.checkInTime?.toMillis) return record.checkInTime.toMillis();
+    if (record.checkInTime?.seconds) return record.checkInTime.seconds * 1000;
+    return 0;
+  };
   return snapshot.docs
-    .slice(0, limit)
-    .map((doc) => ({ id: doc.id, ...doc.data() }));
+    .map((doc) => ({ id: doc.id, ...doc.data() }))
+    .sort((a, b) => toMillis(b) - toMillis(a))
+    .slice(0, limit);
 };
 
 // Get attendance between date range

@@ -2,27 +2,39 @@ import { useState, useEffect } from "react";
 import {
   getTodayAttendance,
   getAttendanceRange,
+  getMemberAttendance,
   subscribeToAttendance,
 } from "../services/attendanceService";
 import { useAuth } from "../hooks/useAuth";
+import { useGymSettings } from "../contexts/GymSettingsContext";
 import Sidebar from "../components/Sidebar";
 import { db } from "../config/firebase";
 import { collection, query, where, getDocs } from "firebase/firestore";
 
 const Attendance = () => {
   const { user } = useAuth();
+  const { settings, loading: settingsLoading } = useGymSettings();
   const gymId =
     user?.gymId || JSON.parse(localStorage.getItem("gymUser") || "{}")?.gymId;
+  const isTrainer = user?.role === "trainer";
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [attendance, setAttendance] = useState([]);
   const [instructorIds, setInstructorIds] = useState(new Set());
+  const [unpaidIds, setUnpaidIds] = useState(new Set());
+  const [gymMembers, setGymMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState(
     new Date().toISOString().split("T")[0],
   );
   const [isToday, setIsToday] = useState(true);
   const [activeTab, setActiveTab] = useState("members");
+
+  // Member-wise attendance view
+  const [memberSearch, setMemberSearch] = useState("");
+  const [selectedMemberId, setSelectedMemberId] = useState("");
+  const [memberHistory, setMemberHistory] = useState([]);
+  const [memberHistoryLoading, setMemberHistoryLoading] = useState(false);
 
   const formatTime = (timestamp) => {
     return new Date(timestamp).toLocaleTimeString("en-LK", {
@@ -63,20 +75,48 @@ const Attendance = () => {
     return null;
   };
 
-  // Fetch instructor IDs from members collection
-  const loadInstructorIds = async () => {
+  // Fetch all gym members once — used to split instructors, flag unpaid
+  // members, and power the member-wise view.
+  const loadMembers = async () => {
     if (!gymId) return;
     try {
-      const q = query(
-        collection(db, "members"),
-        where("gymId", "==", gymId),
-        where("role", "==", "trainer"),
+      const membersSnap = await getDocs(
+        query(collection(db, "members"), where("gymId", "==", gymId)),
       );
-      const snapshot = await getDocs(q);
-      const ids = new Set(snapshot.docs.map((d) => d.id));
-      setInstructorIds(ids);
+      const membersData = membersSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      setGymMembers(membersData);
+      setInstructorIds(
+        new Set(membersData.filter((m) => m.role === "trainer").map((m) => m.id)),
+      );
+
+      // Paid this month = a payment record for the current YYYY-MM month
+      const currentMonth = new Date().toISOString().slice(0, 7);
+      const paymentsSnap = await getDocs(
+        query(
+          collection(db, "payments"),
+          where("gymId", "==", gymId),
+          where("month", "==", currentMonth),
+        ),
+      );
+      const paidIds = new Set(paymentsSnap.docs.map((d) => d.data().memberId));
+
+      // Unpaid = active non-VIP member, no payment this month, and not
+      // covered by a multi-month package (nextPaymentDate still in the future)
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const unpaid = new Set(
+        membersData
+          .filter((m) => {
+            if (m.role === "trainer" || m.isVip || m.status !== "active") return false;
+            if (paidIds.has(m.id)) return false;
+            if (m.nextPaymentDate && new Date(m.nextPaymentDate) > today) return false;
+            return true;
+          })
+          .map((m) => m.id),
+      );
+      setUnpaidIds(unpaid);
     } catch (err) {
-      console.error("Error fetching instructor IDs:", err);
+      console.error("Error fetching members:", err);
     }
   };
 
@@ -124,8 +164,29 @@ const Attendance = () => {
   };
 
   useEffect(() => {
-    loadInstructorIds();
+    loadMembers();
   }, [gymId]);
+
+  // Load per-member attendance history when a member is selected
+  useEffect(() => {
+    if (!gymId || !selectedMemberId) {
+      setMemberHistory([]);
+      return;
+    }
+    let cancelled = false;
+    setMemberHistoryLoading(true);
+    getMemberAttendance(gymId, selectedMemberId, 60)
+      .then((data) => {
+        if (!cancelled) setMemberHistory(data || []);
+      })
+      .catch((err) => console.error("Error loading member attendance:", err))
+      .finally(() => {
+        if (!cancelled) setMemberHistoryLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [gymId, selectedMemberId]);
 
   useEffect(() => {
     loadAttendance();
@@ -158,6 +219,35 @@ const Attendance = () => {
 
   const displayRecords = activeTab === "members" ? memberRecords : instructorRecords;
 
+  const selectableMembers = gymMembers
+    .filter((m) => m.role !== "trainer")
+    .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  const filteredMembers = memberSearch.trim()
+    ? selectableMembers.filter(
+        (m) =>
+          (m.name || "").toLowerCase().includes(memberSearch.toLowerCase()) ||
+          (m.memberCode || "").toLowerCase().includes(memberSearch.toLowerCase()),
+      )
+    : selectableMembers;
+  const selectedMember = gymMembers.find((m) => m.id === selectedMemberId);
+
+  // Trainers only get here when the admin has enabled attendance viewing
+  if (isTrainer && !settingsLoading && settings.instructorPermissions?.viewAttendance !== true) {
+    return (
+      <div className="h-screen w-screen overflow-hidden bg-gray-950 text-white flex">
+        <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+        <div className="flex-1 flex items-center justify-center p-4">
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center max-w-md">
+            <h2 className="text-2xl font-bold text-white mb-2">Access Denied</h2>
+            <p className="text-gray-400">
+              Attendance viewing has not been enabled for trainers. Please contact your gym admin.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const renderRow = (record, index) => {
     const verifyMode = getVerifyMode(record);
     const empNo = record.rawEvent?.employeeNo || record.employeeNo;
@@ -165,27 +255,44 @@ const Attendance = () => {
     const initial = name.charAt(0).toUpperCase();
     const checkInTime = getCheckInTime(record);
     const evtType = record.rawEvent?.eventType || record.eventType || "check_in";
+    const isUnpaid = record.memberId && unpaidIds.has(record.memberId);
 
     return (
       <div
         key={record.id}
-        className="flex items-center justify-between p-4 hover:bg-gray-800/50 transition-colors"
+        className={`flex items-center justify-between p-4 transition-colors ${
+          isUnpaid ? "bg-red-500/10 hover:bg-red-500/15" : "hover:bg-gray-800/50"
+        }`}
       >
         <div className="flex items-center gap-4">
           <span className="text-gray-600 text-sm w-6 text-right">{index + 1}</span>
 
-          <div className="w-11 h-11 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center flex-shrink-0">
+          <div
+            className={`w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0 ${
+              isUnpaid
+                ? "bg-gradient-to-br from-red-500 to-red-700"
+                : "bg-gradient-to-br from-blue-500 to-purple-600"
+            }`}
+          >
             <span className="text-white font-bold text-lg">{initial}</span>
           </div>
 
           <div>
-            <p className="text-white font-medium">
+            <p className={`font-medium ${isUnpaid ? "text-red-400" : "text-white"}`}>
               {record.memberName || (
                 <span className="text-gray-500 italic">Unidentified</span>
               )}
             </p>
             <div className="flex items-center gap-2 mt-1">
               <span className="text-gray-500 text-xs">{empNo}</span>
+              {isUnpaid && (
+                <>
+                  <span className="text-gray-700">•</span>
+                  <span className="text-xs px-2 py-0.5 rounded-full text-red-400 bg-red-400/10 font-medium">
+                    Unpaid
+                  </span>
+                </>
+              )}
               <span className="text-gray-700">•</span>
               <span className={`text-xs px-2 py-0.5 rounded-full ${verifyMode.color}`}>
                 {verifyMode.label}
@@ -310,9 +417,117 @@ const Attendance = () => {
                 {instructorRecords.length}
               </span>
             </button>
+            <button
+              onClick={() => setActiveTab("member-wise")}
+              className={`px-5 py-2 rounded-lg text-sm font-medium transition-colors ${
+                activeTab === "member-wise"
+                  ? "bg-green-600 text-white"
+                  : "text-gray-400 hover:text-white"
+              }`}
+            >
+              By Member
+            </button>
           </div>
 
+          {/* Member-wise attendance view */}
+          {activeTab === "member-wise" && (
+            <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+              <div className="p-4 border-b border-gray-800">
+                <input
+                  type="text"
+                  value={memberSearch}
+                  onChange={(e) => setMemberSearch(e.target.value)}
+                  placeholder="Search member by name or code..."
+                  className="w-full sm:w-80 bg-gray-800 border border-gray-700 text-white rounded-lg px-4 py-2 text-sm placeholder-gray-500 focus:outline-none focus:border-green-500"
+                />
+                {selectedMember && (
+                  <div className="flex items-center justify-between mt-3 bg-gray-800 rounded-lg px-4 py-3">
+                    <div>
+                      <span className={`font-medium ${unpaidIds.has(selectedMember.id) ? "text-red-400" : "text-white"}`}>
+                        {selectedMember.name}
+                      </span>
+                      {unpaidIds.has(selectedMember.id) && (
+                        <span className="ml-2 text-xs px-2 py-0.5 rounded-full text-red-400 bg-red-400/10 font-medium">
+                          Unpaid
+                        </span>
+                      )}
+                      <span className="text-gray-500 text-xs ml-2">
+                        {memberHistory.length} check-in{memberHistory.length === 1 ? "" : "s"} (last {memberHistory.length < 60 ? "recorded" : "60"})
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => setSelectedMemberId("")}
+                      className="text-sm text-blue-400 hover:text-blue-300 transition-colors"
+                    >
+                      Change member
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {!selectedMemberId ? (
+                <div className="divide-y divide-gray-800 max-h-96 overflow-y-auto">
+                  {filteredMembers.length === 0 ? (
+                    <p className="text-gray-500 text-sm text-center py-8">No members found</p>
+                  ) : (
+                    filteredMembers.map((m) => (
+                      <button
+                        key={m.id}
+                        onClick={() => setSelectedMemberId(m.id)}
+                        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-800/50 transition-colors"
+                      >
+                        <span className={`font-medium ${unpaidIds.has(m.id) ? "text-red-400" : "text-white"}`}>
+                          {m.name}
+                          {unpaidIds.has(m.id) && (
+                            <span className="ml-2 text-xs px-2 py-0.5 rounded-full text-red-400 bg-red-400/10 font-medium">
+                              Unpaid
+                            </span>
+                          )}
+                        </span>
+                        <span className="text-gray-500 text-xs">
+                          {m.memberCode ? `#${m.memberCode}` : m.status}
+                        </span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              ) : memberHistoryLoading ? (
+                <div className="text-center py-16">
+                  <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-green-500 mx-auto"></div>
+                  <p className="text-gray-400 mt-4 text-sm">Loading attendance history...</p>
+                </div>
+              ) : memberHistory.length === 0 ? (
+                <div className="text-center py-16">
+                  <p className="text-gray-400">No attendance records for this member</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-800">
+                  {memberHistory.map((record) => {
+                    const checkInTime = getCheckInTime(record);
+                    const verifyMode = getVerifyMode(record);
+                    return (
+                      <div key={record.id} className="flex items-center justify-between p-4">
+                        <div>
+                          <p className="text-white font-medium">
+                            {checkInTime ? formatDate(checkInTime) : "Unknown date"}
+                          </p>
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${verifyMode.color}`}>
+                            {verifyMode.label}
+                          </span>
+                        </div>
+                        <p className="text-blue-400 font-bold">
+                          {checkInTime ? formatTime(checkInTime) : "—"}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Attendance List */}
+          {activeTab !== "member-wise" && (
           <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
             {loading ? (
               <div className="text-center py-16">
@@ -339,6 +554,7 @@ const Attendance = () => {
               </div>
             )}
           </div>
+          )}
         </main>
       </div>
     </div>
