@@ -231,8 +231,8 @@ const Attendance = () => {
     : selectableMembers;
   const selectedMember = gymMembers.find((m) => m.id === selectedMemberId);
 
-  // Trainers only get here when the admin has enabled attendance viewing
-  if (isTrainer && !settingsLoading && settings.instructorPermissions?.viewAttendance !== true) {
+  // Attendance is visible to trainers unless the admin has turned it off
+  if (isTrainer && !settingsLoading && settings.instructorPermissions?.viewAttendance === false) {
     return (
       <div className="h-screen w-screen overflow-hidden bg-gray-950 text-white flex">
         <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />

@@ -11,7 +11,8 @@ const defaultSettings = {
     registerMembers: false,
     collectPayments: false,
     viewSupplements: false,
-    viewAttendance: false,
+    // Shown by default — the admin can turn it off in Gym Settings
+    viewAttendance: true,
   },
   notifications: {
     sms: true,

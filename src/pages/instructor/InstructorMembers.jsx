@@ -107,6 +107,25 @@ const InstructorMembers = () => {
     }
   };
 
+  // Trainers can adjust a member's fitness level as they progress
+  const handleUpdateLevel = async (member, newLevel) => {
+    if (member.level === newLevel) return;
+    try {
+      const { db } = await import("../../config/firebase");
+      const { doc, updateDoc } = await import("firebase/firestore");
+      await updateDoc(doc(db, "members", member.id), { level: newLevel });
+      setMembers((prev) =>
+        prev.map((m) => (m.id === member.id ? { ...m, level: newLevel } : m)),
+      );
+      setSelectedMember((prev) =>
+        prev && prev.id === member.id ? { ...prev, level: newLevel } : prev,
+      );
+    } catch (error) {
+      console.error("Error updating fitness level:", error);
+      alert("Failed to update fitness level. Please try again.");
+    }
+  };
+
   const getMemberStats = (memberId) => {
     const exercises = memberAssignments[memberId] || [];
     const workouts = memberWorkouts[memberId] || [];
@@ -323,7 +342,6 @@ const InstructorMembers = () => {
                       { label: "Mobile", value: selectedMember.mobile || selectedMember.phone },
                       { label: "WhatsApp", value: selectedMember.whatsapp },
                       { label: "Email", value: selectedMember.email },
-                      { label: "Level", value: selectedMember.level ? selectedMember.level.charAt(0).toUpperCase() + selectedMember.level.slice(1) : null },
                       { label: "Status", value: selectedMember.status ? selectedMember.status.charAt(0).toUpperCase() + selectedMember.status.slice(1) : null },
                     ].filter(f => f.value).map(({ label, value }) => (
                       <div key={label}>
@@ -331,6 +349,28 @@ const InstructorMembers = () => {
                         <p className="text-white text-sm font-medium break-words">{value}</p>
                       </div>
                     ))}
+                  </div>
+                  <div className="mt-3 pt-3 border-t border-gray-700">
+                    <p className="text-gray-500 text-xs mb-1.5">Fitness Level</p>
+                    <div className="flex flex-wrap gap-2">
+                      {["beginner", "intermediate", "advanced"].map((level) => (
+                        <button
+                          key={level}
+                          onClick={() => handleUpdateLevel(selectedMember, level)}
+                          className={`px-3 py-1 rounded text-sm font-medium capitalize transition ${
+                            (selectedMember.level || "beginner") === level
+                              ? level === "beginner"
+                                ? "bg-green-600 text-white"
+                                : level === "intermediate"
+                                  ? "bg-yellow-600 text-white"
+                                  : "bg-red-600 text-white"
+                              : "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white"
+                          }`}
+                        >
+                          {level}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
