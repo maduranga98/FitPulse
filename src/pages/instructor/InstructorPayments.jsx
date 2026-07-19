@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { useGymSettings } from "../../contexts/GymSettingsContext";
+import { nextDueDateOnCollectionDay } from "../../utils/paymentDates";
 import AdminLayout from "../../components/AdminLayout";
 import MemberAvatar from "../../components/MemberAvatar";
 
@@ -166,23 +167,24 @@ const InstructorPayments = () => {
         }
       }
 
-      // Update next payment date — anchored to the originally-set due day-of-month.
+      // Update next payment date — advance by the package duration, always
+      // landing on the gym's payment collection day.
       try {
         const memberSnap = await getDoc(doc(db, "members", selectedMember.id));
         const mData = memberSnap.data();
         const duration = mData.packageDuration || 1;
-        const anchorSource =
+        const base =
           mData.nextPaymentDate || mData.joinDate || new Date().toISOString().slice(0, 10);
-        const anchor = new Date(anchorSource);
-        const anchorDay = anchor.getDate();
-        const base = mData.nextPaymentDate ? new Date(mData.nextPaymentDate) : anchor;
-        const target = new Date(base.getFullYear(), base.getMonth() + duration, 1);
-        const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
-        target.setDate(Math.min(anchorDay, lastDay));
-        const newNextPaymentDate = `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, "0")}-${String(target.getDate()).padStart(2, "0")}`;
-        await updateDoc(doc(db, "members", selectedMember.id), {
-          nextPaymentDate: newNextPaymentDate,
-        });
+        const newNextPaymentDate = nextDueDateOnCollectionDay(
+          base,
+          duration,
+          settings.payment?.dueDay,
+        );
+        if (newNextPaymentDate) {
+          await updateDoc(doc(db, "members", selectedMember.id), {
+            nextPaymentDate: newNextPaymentDate,
+          });
+        }
       } catch (upErr) {
         console.warn("Failed to update next payment date:", upErr);
       }

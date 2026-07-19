@@ -2000,9 +2000,11 @@ export const sendSMSNotification = functions.https.onCall(async (data) => {
 // ========================================
 // Runs daily. For each gym, sends an SMS reminder to active, non-VIP
 // members on each of the configured settings.payment.reminderDays (days
-// before the due date). The due date is the member's own nextPaymentDate
-// (the same date shown in the app and reports); settings.payment.dueDay
-// is only a fallback for members who have no next payment date on record.
+// before the due date). The gym collects all payments on one dedicated
+// day of the month (settings.payment.dueDay); a member's nextPaymentDate
+// lands on that day and tracks WHICH month they're next due (multi-month
+// packages skip months). Members without a nextPaymentDate fall back to
+// the collection day of the current month.
 
 /**
  * Send a single plain SMS via text.lk. Returns true on success.
@@ -2108,9 +2110,9 @@ export const sendPaymentReminders = functions.pubsub
         // Skip special-case members with no fee to collect (fee 0 or unset)
         if (!(Number(member.membershipFee) > 0)) continue;
 
-        // Due date: the member's own nextPaymentDate (kept in sync by the
-        // payment pages), falling back to the gym-wide due day for members
-        // who have no next payment date on record.
+        // Due date: the member's nextPaymentDate (always on the gym's
+        // collection day, kept in sync by the payment pages), falling back
+        // to the collection day of the current month for members without one.
         let dueDate = null;
         if (member.nextPaymentDate) {
           const d = new Date(member.nextPaymentDate);

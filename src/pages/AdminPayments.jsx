@@ -3,6 +3,7 @@ import { useAuth } from "../hooks/useAuth";
 import Sidebar from "../components/Sidebar";
 import { where } from "firebase/firestore";
 import { useGymSettings } from "../contexts/GymSettingsContext";
+import { nextDueDateOnCollectionDay } from "../utils/paymentDates";
 import MemberAvatar from "../components/MemberAvatar";
 
 const AdminPayments = () => {
@@ -269,30 +270,26 @@ const AdminPayments = () => {
       }
 
       // Auto-update nextPaymentDate after successful payment.
-      // Next due date is anchored to the originally-set due day-of-month (not the day the member paid).
+      // Advance by the package duration, always landing on the gym's payment
+      // collection day (settings.payment.dueDay) — every member pays on that day.
       try {
         const memberRef = doc(db, "members", selectedMember.id);
         const memberSnap = await getDoc(memberRef);
         const memberData = memberSnap.data();
         const duration = memberData.packageDuration || 1;
 
-        // Anchor day: prefer the existing nextPaymentDate's day-of-month (the "set due date"),
-        // fall back to the join date's day if no due date has been configured.
-        const anchorSource =
-          memberData.nextPaymentDate || memberData.joinDate || new Date().toISOString().slice(0, 10);
-        const anchor = new Date(anchorSource);
-        const anchorDay = anchor.getDate();
-
-        const base = memberData.nextPaymentDate
-          ? new Date(memberData.nextPaymentDate)
-          : anchor;
-        // Advance by package duration while preserving anchor day-of-month
-        const target = new Date(base.getFullYear(), base.getMonth() + duration, 1);
-        const lastDayOfTargetMonth = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
-        target.setDate(Math.min(anchorDay, lastDayOfTargetMonth));
-
-        const newNextPaymentDate = `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, "0")}-${String(target.getDate()).padStart(2, "0")}`;
-        await updateDoc(memberRef, { nextPaymentDate: newNextPaymentDate });
+        const base =
+          memberData.nextPaymentDate ||
+          memberData.joinDate ||
+          new Date().toISOString().slice(0, 10);
+        const newNextPaymentDate = nextDueDateOnCollectionDay(
+          base,
+          duration,
+          settings.payment?.dueDay,
+        );
+        if (newNextPaymentDate) {
+          await updateDoc(memberRef, { nextPaymentDate: newNextPaymentDate });
+        }
       } catch (updateError) {
         console.warn("⚠️ Failed to update next payment date:", updateError);
       }
