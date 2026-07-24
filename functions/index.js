@@ -945,7 +945,7 @@ export const onMemberCreated = functions.firestore
         const username = member.username || member.memberCode || snap.id;
         const password = member.password || member.defaultPassword || "";
 
-        const smsMessage = `💪 Welcome to PulsedGym, ${memberName}!\n\nYou have been registered as a member.\n\n📱 LOGIN DETAILS:\nURL: ${APP_URL}/login\nUsername: ${username}\nPassword: ${password}\n\n⚠️ Keep your credentials safe.`;
+        const smsMessage = `PulsedGym: Welcome ${memberName}! Login ${APP_URL}/login User: ${username} Pass: ${password}. Keep credentials safe, do not share.`;
 
         // Validate and format phone (Sri Lankan: 0XXXXXXXXX → 94XXXXXXXXX)
         let cleaned = phoneNumber.replace(/\D/g, "");
@@ -1096,11 +1096,10 @@ export const onPaymentCreated = functions.firestore
         const receiptId = context.params.paymentId.slice(0, 8).toUpperCase();
         const dateStr = new Date().toLocaleDateString("en-GB");
         const message =
-          `💪 ${gymName} payment received\n\n` +
-          `Hi ${member.name || "Member"}, we received your payment of ` +
-          `Rs. ${Number(payment.amount || 0).toLocaleString()}` +
-          `${payment.remaining > 0 ? ` (remaining Rs. ${Number(payment.remaining).toLocaleString()})` : ""}` +
-          `.\n\nReceipt: ${receiptId}\nDate: ${dateStr}\n\nThank you!`;
+          `${gymName}: Payment received. ` +
+          `Hi ${member.name || "Member"}, Rs. ${Number(payment.amount || 0).toLocaleString()}` +
+          `${payment.remaining > 0 ? ` (bal Rs. ${Number(payment.remaining).toLocaleString()})` : ""}` +
+          `. Receipt ${receiptId}, ${dateStr}. Thank you!`;
 
         const sent = await sendPlainSMS(apiToken, senderId, phone, message);
         if (sent) {

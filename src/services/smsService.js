@@ -71,17 +71,7 @@ const validatePhoneNumber = (phone) => {
  * Build SMS message for gym registration
  */
 const buildGymRegistrationMessage = (gymName, username, password, appLink) => {
-  return `🎉 Welcome to PulsedGym!
-
-${gymName} has been successfully registered.
-
-📱 LOGIN DETAILS:
-URL: ${appLink}
-Username: ${username}
-Password: ${password}
-
-⚠️ Keep your credentials safe.
-✓ Do not share with anyone.`;
+  return `PulsedGym: ${gymName} registered. Login ${appLink} User: ${username} Pass: ${password}. Keep credentials safe, do not share.`;
 };
 
 /**
@@ -93,19 +83,7 @@ const buildMemberRegistrationMessage = (
   password,
   appLink
 ) => {
-  return `💪 Welcome to PulsedGym, ${memberName}!
-
-You have been successfully registered as a member.
-
-📱 LOGIN DETAILS:
-URL: ${appLink}
-Username: ${username}
-Password: ${password}
-
-🏋️ Track your progress, view schedules, and more!
-
-⚠️ Keep your credentials safe.
-✓ Do not share with anyone.`;
+  return `PulsedGym: Welcome ${memberName}! Login ${appLink} User: ${username} Pass: ${password}. Keep credentials safe, do not share.`;
 };
 
 /**
@@ -122,19 +100,7 @@ const buildPaymentReceiptMessage = (
     month: "long",
   });
 
-  return `💰 Payment Received - PulsedGym
-
-Dear ${memberName},
-
-Your payment has been successfully received!
-
-📅 Month: ${monthName}
-💵 Amount: Rs. ${amount.toFixed(2)}
-💳 Method: ${paymentMethod}
-
-Thank you for your payment!
-
-For any queries, contact your gym.`;
+  return `PulsedGym: Payment received. ${memberName}, ${monthName}: Rs. ${amount.toFixed(2)} via ${paymentMethod}. Thank you!`;
 };
 
 /**
@@ -381,17 +347,7 @@ export const sendBulkSMS = async (phoneNumbers, message) => {
  * Build SMS message for instructor registration
  */
 const buildInstructorRegistrationMessage = (instructorName, username, password, appLink) => {
-  return `🏋️ Welcome to PulsedGym, ${instructorName}!
-
-You have been registered as an Instructor/Trainer.
-
-📱 LOGIN DETAILS:
-URL: ${appLink}
-Username: ${username}
-Password: ${password}
-
-⚠️ Keep your credentials safe.
-✓ Do not share with anyone.`;
+  return `PulsedGym: Welcome ${instructorName}, Instructor. Login ${appLink} User: ${username} Pass: ${password}. Keep credentials safe, do not share.`;
 };
 
 /**
