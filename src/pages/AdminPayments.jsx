@@ -4,6 +4,14 @@ import Sidebar from "../components/Sidebar";
 import { where } from "firebase/firestore";
 import { useGymSettings } from "../contexts/GymSettingsContext";
 import { nextDueDateOnCollectionDay } from "../utils/paymentDates";
+import {
+  toAmount,
+  sumAmounts,
+  formatAmount,
+  isFeeExempt,
+  isPayingMember,
+  paymentsForMonth,
+} from "../utils/paymentTotals";
 import MemberAvatar from "../components/MemberAvatar";
 
 const AdminPayments = () => {
@@ -30,6 +38,7 @@ const AdminPayments = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [expandedMember, setExpandedMember] = useState(null);
+  const [showCollectionBreakdown, setShowCollectionBreakdown] = useState(false);
 
   const isAdmin = user?.role === "admin" || user?.role === "manager" || user?.role === "gym_admin" || user?.role === "gym_manager";
 
@@ -350,21 +359,40 @@ const AdminPayments = () => {
       member.email?.toLowerCase().includes(searchTerm.toLowerCase());
 
     const isPaid = checkPaymentStatus(member.id);
+    const exempt = isFeeExempt(member);
     const matchesStatus =
       filterStatus === "all" ||
       (filterStatus === "paid" && isPaid) ||
-      (filterStatus === "unpaid" && !isPaid);
+      // VIPs owe nothing, so they are never part of the unpaid list
+      (filterStatus === "unpaid" && !isPaid && !exempt) ||
+      (filterStatus === "vip" && exempt);
 
     return matchesSearch && matchesStatus;
   });
 
-  const totalCollected = payments
-    .filter((p) => p.month === getCurrentMonth())
-    .reduce((sum, p) => sum + (p.amount || 0), 0);
+  // "Total Collected" is the plain sum of the payments recorded FOR this
+  // month — no averages, no projections. Keeping the list around lets the
+  // breakdown below show exactly which records make up the figure.
+  const currentMonthPayments = paymentsForMonth(payments, getCurrentMonth());
+  const totalCollected = sumAmounts(currentMonthPayments);
 
-  const paidMembersCount = members.filter((m) =>
+  // VIP members are fee-exempt, so they count as neither paid nor unpaid.
+  const payingMembers = members.filter(isPayingMember);
+  const vipMembersCount = members.length - payingMembers.length;
+  const paidMembersCount = payingMembers.filter((m) =>
     checkPaymentStatus(m.id)
   ).length;
+  const unpaidMembersCount = payingMembers.length - paidMembersCount;
+
+  // Members with more than one payment recorded for the same month — a
+  // common reason a monthly total looks higher than expected.
+  const duplicateMemberIds = new Set(
+    currentMonthPayments
+      .map((p) => p.memberId)
+      .filter(
+        (id, index, all) => id && all.indexOf(id) !== index
+      )
+  );
 
   if (!isAdmin) {
     return (
@@ -449,6 +477,10 @@ const AdminPayments = () => {
                 </div>
               </div>
               <p className="text-2xl font-bold text-white">{members.length}</p>
+              <p className="text-xs text-gray-500 mt-1">
+                {payingMembers.length} paying
+                {vipMembersCount > 0 ? ` · ${vipMembersCount} VIP (no fee)` : ""}
+              </p>
             </div>
 
             <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
@@ -471,6 +503,9 @@ const AdminPayments = () => {
               <p className="text-2xl font-bold text-white">
                 {paidMembersCount}
               </p>
+              <p className="text-xs text-gray-500 mt-1">
+                of {payingMembers.length} paying members
+              </p>
             </div>
 
             <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
@@ -491,7 +526,12 @@ const AdminPayments = () => {
                 </div>
               </div>
               <p className="text-2xl font-bold text-white">
-                {members.length - paidMembersCount}
+                {unpaidMembersCount}
+              </p>
+              <p className="text-xs text-gray-500 mt-1">
+                {vipMembersCount > 0
+                  ? `${vipMembersCount} VIP member${vipMembersCount === 1 ? "" : "s"} excluded`
+                  : "VIP members excluded"}
               </p>
             </div>
 
@@ -514,10 +554,102 @@ const AdminPayments = () => {
                 </div>
               </div>
               <p className="text-2xl font-bold text-white">
-                Rs. {totalCollected.toLocaleString()}
+                Rs. {formatAmount(totalCollected)}
+              </p>
+              <p className="text-xs text-gray-500 mt-1">
+                from {currentMonthPayments.length} payment
+                {currentMonthPayments.length === 1 ? "" : "s"} this month
               </p>
             </div>
           </div>
+
+          {/* Collection breakdown — every record behind the total above */}
+          {currentMonthPayments.length > 0 && (
+            <div className="bg-gray-800 border border-gray-700 rounded-xl mb-6">
+              <button
+                onClick={() => setShowCollectionBreakdown((v) => !v)}
+                className="w-full flex items-center justify-between p-4 text-left"
+              >
+                <div>
+                  <h3 className="text-white font-semibold">
+                    {formatMonth(getCurrentMonth())} Collection Breakdown
+                  </h3>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {currentMonthPayments.length} payment
+                    {currentMonthPayments.length === 1 ? "" : "s"} adding up to Rs.{" "}
+                    {formatAmount(totalCollected)}
+                    {duplicateMemberIds.size > 0
+                      ? ` · ${duplicateMemberIds.size} member${
+                          duplicateMemberIds.size === 1 ? "" : "s"
+                        } recorded more than once`
+                      : ""}
+                  </p>
+                </div>
+                <svg
+                  className={`w-5 h-5 text-gray-400 flex-shrink-0 transition-transform ${
+                    showCollectionBreakdown ? "rotate-180" : ""
+                  }`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19 9l-7 7-7-7"
+                  />
+                </svg>
+              </button>
+
+              {showCollectionBreakdown && (
+                <div className="border-t border-gray-700 p-4 space-y-2 max-h-80 overflow-y-auto">
+                  {currentMonthPayments.map((payment) => {
+                    const paid = toAmount(payment.amount);
+                    const expected = toAmount(payment.expectedFee);
+                    const isPartial = expected > 0 && paid < expected;
+                    return (
+                      <div
+                        key={payment.id}
+                        className="bg-gray-900 rounded-lg p-3 flex items-center justify-between gap-3"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-white text-sm font-medium truncate">
+                            {payment.memberName || "Unknown member"}
+                          </p>
+                          <p className="text-xs text-gray-400">
+                            {payment.paymentMethod || "N/A"} ·{" "}
+                            {payment.paymentDate || formatDate(payment.paidAt)}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          {duplicateMemberIds.has(payment.memberId) && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-500/20 text-red-400">
+                              DUPLICATE
+                            </span>
+                          )}
+                          {isPartial && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-400">
+                              PARTIAL of Rs. {formatAmount(expected)}
+                            </span>
+                          )}
+                          <span className="text-white font-semibold text-sm">
+                            Rs. {formatAmount(paid)}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div className="flex items-center justify-between pt-2 border-t border-gray-700">
+                    <span className="text-gray-400 text-sm">Total Collected</span>
+                    <span className="text-white font-bold">
+                      Rs. {formatAmount(totalCollected)}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Filters */}
           <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 mb-6">
@@ -546,7 +678,8 @@ const AdminPayments = () => {
                 >
                   <option value="all">All Members</option>
                   <option value="paid">Paid</option>
-                  <option value="unpaid">Unpaid</option>
+                  <option value="unpaid">Unpaid (excludes VIP)</option>
+                  <option value="vip">VIP — Fee Exempt</option>
                 </select>
               </div>
             </div>
@@ -581,6 +714,7 @@ const AdminPayments = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {filteredMembers.map((member) => {
                 const isPaid = checkPaymentStatus(member.id);
+                const exempt = isFeeExempt(member);
                 const memberPayments = getMemberPayments(member.id);
 
                 return (
@@ -631,13 +765,18 @@ const AdminPayments = () => {
                         <span className="text-gray-400">Payment Status:</span>
                         <span
                           className={`font-medium ${
-                            isPaid ? "text-green-600" : "text-red-600"
+                            isPaid
+                              ? "text-green-600"
+                              : exempt
+                                ? "text-amber-400"
+                                : "text-red-600"
                           }`}
                         >
-                          {isPaid ? "Paid" : "Unpaid"}
+                          {isPaid ? "Paid" : exempt ? "VIP — Exempt" : "Unpaid"}
                         </span>
                       </div>
-                      {member.nextPaymentDate && (() => {
+                      {/* VIPs have nothing due, so no overdue date is shown */}
+                      {!exempt && member.nextPaymentDate && (() => {
                         const nextDate = new Date(member.nextPaymentDate);
                         const today = new Date();
                         today.setHours(0,0,0,0);
@@ -709,7 +848,7 @@ const AdminPayments = () => {
                               <div className="flex-1">
                                 <div className="flex items-center gap-2 mb-1">
                                   <span className="text-white font-medium">
-                                    Rs. {payment.amount}
+                                    Rs. {formatAmount(toAmount(payment.amount))}
                                   </span>
                                   <span className="text-xs px-2 py-0.5 bg-gray-700 text-gray-300 rounded">
                                     {payment.paymentMethod}

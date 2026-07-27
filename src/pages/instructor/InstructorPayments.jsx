@@ -2,6 +2,14 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { useGymSettings } from "../../contexts/GymSettingsContext";
 import { nextDueDateOnCollectionDay } from "../../utils/paymentDates";
+import {
+  toAmount,
+  sumAmounts,
+  formatAmount,
+  isFeeExempt,
+  isPayingMember,
+  paymentsForMonth,
+} from "../../utils/paymentTotals";
 import AdminLayout from "../../components/AdminLayout";
 import MemberAvatar from "../../components/MemberAvatar";
 
@@ -207,18 +215,25 @@ const InstructorPayments = () => {
       m.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       m.email?.toLowerCase().includes(searchTerm.toLowerCase());
     const isPaid = checkPaymentStatus(m.id);
+    const exempt = isFeeExempt(m);
     const matchStatus =
       filterStatus === "all" ||
       (filterStatus === "paid" && isPaid) ||
-      (filterStatus === "unpaid" && !isPaid);
+      // VIPs owe nothing, so they are never part of the unpaid list
+      (filterStatus === "unpaid" && !isPaid && !exempt) ||
+      (filterStatus === "vip" && exempt);
     return matchSearch && matchStatus;
   });
 
-  const totalCollected = payments
-    .filter((p) => p.month === getCurrentMonth())
-    .reduce((sum, p) => sum + (p.amount || 0), 0);
+  // Plain sum of the payments recorded FOR this month — never an estimate.
+  const currentMonthPayments = paymentsForMonth(payments, getCurrentMonth());
+  const totalCollected = sumAmounts(currentMonthPayments);
 
-  const paidCount = members.filter((m) => checkPaymentStatus(m.id)).length;
+  // VIP members are fee-exempt: neither paid nor unpaid.
+  const payingMembers = members.filter(isPayingMember);
+  const vipCount = members.length - payingMembers.length;
+  const paidCount = payingMembers.filter((m) => checkPaymentStatus(m.id)).length;
+  const unpaidCount = payingMembers.length - paidCount;
 
   if (!canCollectPayments) {
     return (
@@ -250,14 +265,35 @@ const InstructorPayments = () => {
         {/* Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           {[
-            { label: "Total Members", value: members.length, color: "blue" },
-            { label: "Paid This Month", value: paidCount, color: "green" },
-            { label: "Unpaid", value: members.length - paidCount, color: "red" },
-            { label: "Collected", value: `Rs. ${totalCollected.toLocaleString()}`, color: "purple" },
-          ].map(({ label, value, color }) => (
+            {
+              label: "Total Members",
+              value: members.length,
+              color: "blue",
+              hint: `${payingMembers.length} paying${vipCount > 0 ? ` · ${vipCount} VIP` : ""}`,
+            },
+            {
+              label: "Paid This Month",
+              value: paidCount,
+              color: "green",
+              hint: `of ${payingMembers.length} paying members`,
+            },
+            {
+              label: "Unpaid",
+              value: unpaidCount,
+              color: "red",
+              hint: "VIP members excluded",
+            },
+            {
+              label: "Collected",
+              value: `Rs. ${formatAmount(totalCollected)}`,
+              color: "purple",
+              hint: `from ${currentMonthPayments.length} payment${currentMonthPayments.length === 1 ? "" : "s"}`,
+            },
+          ].map(({ label, value, color, hint }) => (
             <div key={label} className="bg-gray-800 border border-gray-700 rounded-xl p-4">
               <div className="text-gray-400 text-xs mb-1">{label}</div>
               <div className={`text-xl font-bold text-${color}-400`}>{value}</div>
+              {hint && <div className="text-gray-500 text-[11px] mt-1">{hint}</div>}
             </div>
           ))}
         </div>
@@ -283,7 +319,8 @@ const InstructorPayments = () => {
           >
             <option value="all">All Members</option>
             <option value="paid">Paid</option>
-            <option value="unpaid">Unpaid</option>
+            <option value="unpaid">Unpaid (excludes VIP)</option>
+            <option value="vip">VIP — Fee Exempt</option>
           </select>
         </div>
 
@@ -296,10 +333,13 @@ const InstructorPayments = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredMembers.map((member) => {
               const isPaid = checkPaymentStatus(member.id);
+              const exempt = isFeeExempt(member);
               const memberPayments = getMemberPayments(member.id);
               const isExpanded = expandedMember === member.id;
 
-              const nextDate = member.nextPaymentDate ? new Date(member.nextPaymentDate) : null;
+              // VIPs have nothing due, so no due date is shown for them
+              const nextDate =
+                !exempt && member.nextPaymentDate ? new Date(member.nextPaymentDate) : null;
               const today = new Date(); today.setHours(0,0,0,0);
               const diffDays = nextDate ? Math.ceil((nextDate - today) / (1000 * 60 * 60 * 24)) : null;
               const dueDateColor = diffDays === null ? "text-gray-400" : diffDays < 0 ? "text-red-500" : diffDays <= 7 ? "text-yellow-400" : "text-green-400";
@@ -334,8 +374,12 @@ const InstructorPayments = () => {
                     )}
                     <div className="flex justify-between">
                       <span className="text-gray-400">Status:</span>
-                      <span className={`font-medium ${isPaid ? "text-green-400" : "text-red-400"}`}>
-                        {isPaid ? "Paid" : "Unpaid"}
+                      <span
+                        className={`font-medium ${
+                          isPaid ? "text-green-400" : exempt ? "text-amber-400" : "text-red-400"
+                        }`}
+                      >
+                        {isPaid ? "Paid" : exempt ? "VIP — Exempt" : "Unpaid"}
                       </span>
                     </div>
                     {nextDate && (
@@ -381,7 +425,9 @@ const InstructorPayments = () => {
                         <div key={p.id} className="bg-gray-900 rounded-lg px-3 py-2">
                           <div className="flex items-center justify-between mb-0.5">
                             <span className="text-white text-xs font-medium">{formatMonth(p.month)}</span>
-                            <span className="text-green-400 text-xs font-medium">Rs. {p.amount?.toFixed(2)}</span>
+                            <span className="text-green-400 text-xs font-medium">
+                              Rs. {formatAmount(toAmount(p.amount))}
+                            </span>
                           </div>
                           <div className="flex items-center justify-between">
                             <span className="text-gray-500 text-xs">{p.paymentMethod}</span>

@@ -3,6 +3,7 @@ import { useAuth } from "../hooks/useAuth";
 import { useNotification } from "../contexts/NotificationContext";
 import Sidebar from "../components/Sidebar";
 import { isAdmin, validateGymId } from "../utils/authUtils";
+import { sumAmounts, formatAmount } from "../utils/paymentTotals";
 
 const Reports = () => {
   const { user } = useAuth();
@@ -243,7 +244,7 @@ const Reports = () => {
     const summaryRow = {
       "Payment ID": "TOTAL",
       "Member Name": `${data.length} payment${data.length === 1 ? "" : "s"}`,
-      Amount: data.reduce((sum, p) => sum + (p.Amount || 0), 0),
+      Amount: sumAmounts(data, (row) => row.Amount),
       "For Month": selectedMonth,
       "Payment Method": "",
       "Paid Date": "",
@@ -303,7 +304,7 @@ const Reports = () => {
 
     if (data.length === 0) return [];
 
-    const totalRevenue = data.reduce((sum, p) => sum + (p.Amount || 0), 0);
+    const totalRevenue = sumAmounts(data, (row) => row.Amount);
     const summaryRow = {
       "Payment ID": "TOTAL",
       "Member Name": `${data.length} transaction${data.length === 1 ? "" : "s"}`,
@@ -527,7 +528,7 @@ const Reports = () => {
                 <div className="bg-gray-900 rounded-lg p-4">
                   <div className="text-gray-400 text-sm mb-1">Total Payments</div>
                   <div className="text-2xl font-bold text-blue-600">
-                    Rs. {payments.reduce((sum, p) => sum + (p.amount || 0), 0)}
+                    Rs. {formatAmount(sumAmounts(payments))}
                   </div>
                 </div>
               </div>

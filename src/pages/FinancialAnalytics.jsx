@@ -18,6 +18,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
+import { toAmount, sumAmounts, memberFee } from "../utils/paymentTotals";
 
 const FinancialAnalytics = () => {
   const { user } = useAuth();
@@ -106,10 +107,7 @@ const FinancialAnalytics = () => {
 
   const calculateStats = (paymentsData, membersData) => {
     // Calculate total revenue
-    const totalRevenue = paymentsData.reduce(
-      (sum, payment) => sum + (payment.amount || 0),
-      0
-    );
+    const totalRevenue = sumAmounts(paymentsData);
 
     // Calculate this month and last month revenue
     const now = new Date();
@@ -120,23 +118,23 @@ const FinancialAnalytics = () => {
       1
     );
 
-    const thisMonthRevenue = paymentsData
-      .filter((p) => {
+    const thisMonthRevenue = sumAmounts(
+      paymentsData.filter((p) => {
         const paidDate = p.paidAt?.toDate
           ? p.paidAt.toDate()
           : new Date(p.paidAt);
         return paidDate >= firstDayThisMonth;
       })
-      .reduce((sum, p) => sum + (p.amount || 0), 0);
+    );
 
-    const lastMonthRevenue = paymentsData
-      .filter((p) => {
+    const lastMonthRevenue = sumAmounts(
+      paymentsData.filter((p) => {
         const paidDate = p.paidAt?.toDate
           ? p.paidAt.toDate()
           : new Date(p.paidAt);
         return paidDate >= firstDayLastMonth && paidDate < firstDayThisMonth;
       })
-      .reduce((sum, p) => sum + (p.amount || 0), 0);
+    );
 
     // Calculate average revenue per member
     const avgRevenuePerMember =
@@ -168,15 +166,13 @@ const FinancialAnalytics = () => {
         ? (totalPaidMembers / payingMembers.length) * 100
         : 0;
 
-    // Calculate outstanding amount (assuming avg membership fee of paying members)
-    const avgMembershipFee =
-      payingMembers.length > 0
-        ? payingMembers.reduce(
-            (sum, m) => sum + (parseFloat(m.membershipFee) || 0),
-            0
-          ) / payingMembers.length
-        : 0;
-    const outstandingAmount = totalUnpaidMembers * avgMembershipFee;
+    // Outstanding = the exact sum of what the unpaid members actually owe.
+    // It used to be (unpaid count × average fee), which invented totals that
+    // matched no real package price — e.g. 187 × 2,494.48 = 466,468.
+    const outstandingAmount = sumAmounts(
+      payingMembers.filter((m) => !paidMemberIds.has(m.id)),
+      memberFee
+    );
 
     // Calculate growth rate
     const growthRate =
@@ -231,7 +227,7 @@ const FinancialAnalytics = () => {
       });
 
       if (monthlyData[monthKey]) {
-        monthlyData[monthKey].revenue += payment.amount || 0;
+        monthlyData[monthKey].revenue += toAmount(payment.amount);
         monthlyData[monthKey].transactions += 1;
       }
     });
@@ -276,7 +272,7 @@ const FinancialAnalytics = () => {
       });
 
       if (dailyData[dateKey]) {
-        dailyData[dateKey].revenue += payment.amount || 0;
+        dailyData[dateKey].revenue += toAmount(payment.amount);
       }
     });
 

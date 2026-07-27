@@ -3,6 +3,12 @@ import { useAuth } from "../hooks/useAuth";
 import AdminLayout from "../components/AdminLayout";
 import { where } from "firebase/firestore";
 import MemberAvatar from "../components/MemberAvatar";
+import {
+  sumAmounts,
+  formatAmount,
+  isPayingMember,
+  memberFee,
+} from "../utils/paymentTotals";
 
 const PaymentAnalytics = () => {
   const { user } = useAuth();
@@ -39,10 +45,11 @@ const PaymentAnalytics = () => {
         orderBy("name", "asc")
       );
       const membersSnapshot = await getDocs(membersQuery);
-      const membersData = membersSnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
+      // The members collection also holds trainer records — they never pay
+      // a membership fee, so they must not appear in payment analytics.
+      const membersData = membersSnapshot.docs
+        .map((doc) => ({ id: doc.id, ...doc.data() }))
+        .filter((m) => !m.role || m.role === "member");
 
       const paymentsQuery = query(
         collection(db, "payments"),
@@ -78,22 +85,25 @@ const PaymentAnalytics = () => {
 
   const currentMonth = getCurrentMonth();
 
-  const paidThisMonth = members.filter((m) =>
+  // VIP members are fee-exempt — they are neither paid nor unpaid, and they
+  // never contribute to the outstanding balance or the collection rate.
+  const payingMembers = members.filter(isPayingMember);
+  const vipCount = members.length - payingMembers.length;
+
+  const paidThisMonth = payingMembers.filter((m) =>
     payments.some((p) => p.memberId === m.id && p.month === currentMonth)
   );
 
-  const unpaidThisMonth = members.filter(
+  const unpaidThisMonth = payingMembers.filter(
     (m) => !payments.some((p) => p.memberId === m.id && p.month === currentMonth)
   );
 
-  const totalOutstanding = unpaidThisMonth.reduce(
-    (sum, m) => sum + (parseFloat(m.membershipFee) || 0),
-    0
-  );
+  // Exact sum of what the unpaid members actually owe — not an average.
+  const totalOutstanding = sumAmounts(unpaidThisMonth, memberFee);
 
   const collectionRate =
-    members.length > 0
-      ? ((paidThisMonth.length / members.length) * 100).toFixed(1)
+    payingMembers.length > 0
+      ? ((paidThisMonth.length / payingMembers.length) * 100).toFixed(1)
       : 0;
 
   // Get last 6 months for revenue chart
@@ -108,12 +118,10 @@ const PaymentAnalytics = () => {
   };
 
   const last6Months = getLast6Months();
-  const monthlyRevenue = last6Months.map((month) => {
-    const total = payments
-      .filter((p) => p.month === month)
-      .reduce((sum, p) => sum + (p.amount || 0), 0);
-    return { month, total };
-  });
+  const monthlyRevenue = last6Months.map((month) => ({
+    month,
+    total: sumAmounts(payments.filter((p) => p.month === month)),
+  }));
 
   const maxRevenue = Math.max(...monthlyRevenue.map((m) => m.total), 1);
 
@@ -145,7 +153,9 @@ const PaymentAnalytics = () => {
     const dots = last12Months.map((month) => {
       if (month < joinMonth) return "gray";
       const paid = memberPayments.some((p) => p.month === month);
-      return paid ? "green" : "red";
+      if (paid) return "green";
+      // A VIP owes nothing, so an empty month is not a missed payment
+      return isPayingMember(member) ? "red" : "gray";
     });
 
     // Calculate average days to pay
@@ -237,6 +247,10 @@ const PaymentAnalytics = () => {
               </div>
             </div>
             <p className="text-2xl font-bold text-white">{members.length}</p>
+            <p className="text-sm text-gray-400 mt-1">
+              {payingMembers.length} paying
+              {vipCount > 0 ? ` · ${vipCount} VIP (no fee)` : ""}
+            </p>
           </div>
 
           <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
@@ -262,7 +276,7 @@ const PaymentAnalytics = () => {
             </div>
             <p className="text-2xl font-bold text-white">{unpaidThisMonth.length}</p>
             <p className="text-sm text-gray-400 mt-1">
-              Rs. {totalOutstanding.toLocaleString()} outstanding
+              Rs. {formatAmount(totalOutstanding)} outstanding
             </p>
           </div>
 
