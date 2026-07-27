@@ -6,6 +6,7 @@ import { isAdmin, validateGymId } from "../utils/authUtils";
 import { useGymSettings } from "../contexts/GymSettingsContext";
 import AttendanceLiveWidget from "../components/AttendanceLiveWidget";
 import MemberAvatar from "../components/MemberAvatar";
+import { toAmount, isFeeExempt } from "../utils/paymentTotals";
 
 const Dashboard = () => {
   const { user, logout } = useAuth();
@@ -87,7 +88,7 @@ const Dashboard = () => {
         const payment = doc.data();
         if (payment.status === "completed" || !payment.status) {
           // Treat payments without status as completed (legacy data)
-          totalRevenue += payment.amount || 0;
+          totalRevenue += toAmount(payment.amount);
         }
         if (payment.status === "pending") {
           pendingPayments++;
@@ -109,6 +110,9 @@ const Dashboard = () => {
       membersSnapshot.forEach((doc) => {
         const member = doc.data();
         if (member.status !== "active") return;
+        // Trainers and fee-exempt VIP members never owe a payment
+        if (member.role && member.role !== "member") return;
+        if (isFeeExempt(member)) return;
         if (paidMemberIds.has(doc.id)) return;
         // Check if nextPaymentDate has passed
         if (member.nextPaymentDate) {

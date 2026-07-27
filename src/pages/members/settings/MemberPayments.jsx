@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../../../hooks/useAuth";
+import { sumAmounts } from "../../../utils/paymentTotals";
 
 const MemberPayments = () => {
   const { user: currentUser } = useAuth();
@@ -94,7 +95,7 @@ const MemberPayments = () => {
   });
 
   const currentMonthPaid = checkPaymentStatus();
-  const totalPaid = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
+  const totalPaid = sumAmounts(payments);
   const availableYears = getAvailableYears();
 
   if (loading) {

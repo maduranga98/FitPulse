@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../hooks/useAuth";
 import Sidebar from "../components/Sidebar";
+import { sumAmounts } from "../utils/paymentTotals";
 import {
   LineChart,
   Line,
@@ -139,7 +140,7 @@ const OperationalAnalytics = () => {
   ) => {
     const totalMembers = members.length;
     const activeMembers = members.filter((m) => m.status === "active").length;
-    const totalRevenue = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
+    const totalRevenue = sumAmounts(payments);
     const totalWorkouts = workoutLogs.length;
     const totalSchedules = schedules.length;
     const pendingComplaints = complaints.filter(
