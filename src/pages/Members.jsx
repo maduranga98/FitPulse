@@ -7,6 +7,7 @@ import { nextDueDateOnCollectionDay, DEFAULT_DUE_DAY } from "../utils/paymentDat
 import { calculateBMI, validateBMIInputs } from "../utils/validationUtils";
 import { QRCodeSVG, QRCodeCanvas } from "qrcode.react";
 import { useGymSettings } from "../contexts/GymSettingsContext";
+import { isInactiveMember } from "../utils/paymentTotals";
 import { supabase } from "../services/supabaseClient";
 import { APP_URL } from "../config/app";
 import AccessControlCard from "../components/AccessControlCard";
@@ -75,6 +76,8 @@ const Members = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterLevel, setFilterLevel] = useState("all");
+  // Attendance-based activity, separate from the manual `status` field above
+  const [filterActivity, setFilterActivity] = useState("all");
   const [showQRModal, setShowQRModal] = useState(false);
   const [editingPackage, setEditingPackage] = useState(false);
   const [savingPackageEdit, setSavingPackageEdit] = useState(false);
@@ -843,8 +846,12 @@ const Members = () => {
     const matchesStatus =
       filterStatus === "all" || member.status === filterStatus;
     const matchesLevel = filterLevel === "all" || member.level === filterLevel;
+    const matchesActivity =
+      filterActivity === "all" ||
+      (filterActivity === "attending" && !isInactiveMember(member)) ||
+      (filterActivity === "inactive" && isInactiveMember(member));
 
-    return matchesSearch && matchesStatus && matchesLevel;
+    return matchesSearch && matchesStatus && matchesLevel && matchesActivity;
   });
 
   const stats = {
@@ -854,6 +861,9 @@ const Members = () => {
     beginner: members.filter((m) => m.level === "beginner").length,
     intermediate: members.filter((m) => m.level === "intermediate").length,
     advanced: members.filter((m) => m.level === "advanced").length,
+    // Attendance-inactive: no check-in within the gym's configured threshold,
+    // distinct from the manually-set `status` field above.
+    attendanceInactive: members.filter((m) => isInactiveMember(m)).length,
   };
 
   const closeCredentialsModal = () => {
@@ -1051,6 +1061,12 @@ const Members = () => {
                 {stats.advanced}
               </div>
             </div>
+            <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
+              <div className="text-gray-400 text-sm mb-1">Attendance Inactive</div>
+              <div className="text-2xl font-bold text-gray-400">
+                {stats.attendanceInactive}
+              </div>
+            </div>
           </div>
 
           {/* Pending Self-Registrations */}
@@ -1151,6 +1167,16 @@ const Members = () => {
               <option value="intermediate">Intermediate</option>
               <option value="advanced">Advanced</option>
             </select>
+            <select
+              value={filterActivity}
+              onChange={(e) => setFilterActivity(e.target.value)}
+              className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              title="Based on last attendance vs. the gym's inactivity threshold"
+            >
+              <option value="all">All Attendance</option>
+              <option value="attending">Attending</option>
+              <option value="inactive">Inactive ({stats.attendanceInactive})</option>
+            </select>
           </div>
 
           {/* Members Grid */}
@@ -1190,6 +1216,14 @@ const Members = () => {
                           {member.isVip && (
                             <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400">
                               VIP
+                            </span>
+                          )}
+                          {isInactiveMember(member) && (
+                            <span
+                              title="No attendance within the gym's inactivity threshold"
+                              className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-500/20 text-gray-400"
+                            >
+                              INACTIVE
                             </span>
                           )}
                           {member.accessBlocked && (

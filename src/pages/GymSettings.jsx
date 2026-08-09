@@ -41,6 +41,10 @@ const GymSettings = () => {
       reminderDays: [3, 1],
       ...src.payment,
     },
+    attendance: {
+      inactivityThresholdDays: 30,
+      ...src.attendance,
+    },
   });
 
   const [localSettings, setLocalSettings] = useState(() => buildLocalSettings(settings));
@@ -96,6 +100,9 @@ const GymSettings = () => {
 
   const updatePayment = (key, value) =>
     setLocalSettings((prev) => ({ ...prev, payment: { ...prev.payment, [key]: value } }));
+
+  const updateAttendance = (key, value) =>
+    setLocalSettings((prev) => ({ ...prev, attendance: { ...prev.attendance, [key]: value } }));
 
   // Toggles persist immediately so a refresh doesn't lose the change;
   // reverted if the save fails.
@@ -380,6 +387,42 @@ const GymSettings = () => {
                 className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
               <p className="text-xs text-gray-500 mt-1">Days before the due date to remind members.</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Member Activity */}
+        <div className="mt-6 bg-gray-800 border border-gray-700 rounded-xl p-5">
+          <h2 className="text-base font-bold text-white mb-1 flex items-center gap-2">
+            <svg className="w-5 h-5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            Member Activity
+          </h2>
+          <p className="text-gray-400 text-xs mb-4">
+            Members who haven&apos;t attended in this many days are marked inactive and are hidden
+            from Payments and Attendance until they check in again. Once an inactive member
+            attends, they automatically become active and are billed for the current month.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-1">
+                Inactivity Threshold (days)
+              </label>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={localSettings.attendance.inactivityThresholdDays}
+                onChange={(e) => {
+                  const n = parseInt(e.target.value);
+                  updateAttendance("inactivityThresholdDays", isNaN(n) || n < 1 ? 1 : n);
+                }}
+                className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Days since a member&apos;s last attendance before they&apos;re considered inactive.
+              </p>
             </div>
           </div>
         </div>

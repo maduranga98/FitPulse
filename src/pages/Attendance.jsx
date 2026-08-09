@@ -10,6 +10,7 @@ import { useGymSettings } from "../contexts/GymSettingsContext";
 import Sidebar from "../components/Sidebar";
 import { db } from "../config/firebase";
 import { collection, query, where, getDocs } from "firebase/firestore";
+import { isInactiveMember } from "../utils/paymentTotals";
 
 const Attendance = () => {
   const { user } = useAuth();
@@ -101,13 +102,16 @@ const Attendance = () => {
       const paidIds = new Set(paymentsSnap.docs.map((d) => d.data().memberId));
 
       // Unpaid = active non-VIP member, no payment this month, and not
-      // covered by a multi-month package (nextPaymentDate still in the future)
+      // covered by a multi-month package (nextPaymentDate still in the future).
+      // Attendance-inactive members are excluded — they owe nothing until
+      // they check in again.
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const unpaid = new Set(
         membersData
           .filter((m) => {
-            if (m.role === "trainer" || m.isVip || m.status !== "active") return false;
+            if (m.role === "trainer" || m.isVip || m.status !== "active" || isInactiveMember(m))
+              return false;
             if (paidIds.has(m.id)) return false;
             if (m.nextPaymentDate && new Date(m.nextPaymentDate) > today) return false;
             return true;
@@ -481,6 +485,11 @@ const Attendance = () => {
                           {unpaidIds.has(m.id) && (
                             <span className="ml-2 text-xs px-2 py-0.5 rounded-full text-red-400 bg-red-400/10 font-medium">
                               Unpaid
+                            </span>
+                          )}
+                          {isInactiveMember(m) && (
+                            <span className="ml-2 text-xs px-2 py-0.5 rounded-full text-gray-400 bg-gray-400/10 font-medium">
+                              Inactive
                             </span>
                           )}
                         </span>

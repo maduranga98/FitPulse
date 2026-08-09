@@ -29,6 +29,10 @@ const defaultSettings = {
     dueDay: 10, // Day of month payments are expected (1-28)
     reminderDays: [3, 1], // Days before due date to send reminders
   },
+  // Attendance-based activity config
+  attendance: {
+    inactivityThresholdDays: 30, // Days since last attendance before a member is considered inactive
+  },
 };
 
 const GymSettingsContext = createContext({

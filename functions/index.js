@@ -170,6 +170,43 @@ async function validateMemberStatus(memberId, gymId) {
 }
 
 /**
+ * Record a member's attendance-derived activity. Called from every
+ * attendance-write path (face recognition, HikCentral webhook, HikCentral
+ * OpenAPI) right after an attendance record is created.
+ *
+ * Stamps `lastAttendanceDate` so the daily `markInactiveMembers` job can
+ * compare it against the gym's configured threshold. If the member had
+ * previously been marked inactive (no attendance within the threshold),
+ * this check-in reactivates them (`activityStatus: "active"`) and pulls
+ * their `nextPaymentDate` up to today so they immediately require a
+ * payment for the current month, the same way any other due member would.
+ */
+async function markMemberAttendedNow(memberId, gymId, today) {
+  if (!memberId || !gymId) return;
+  try {
+    const db = admin.firestore();
+    const memberRef = db.collection("members").doc(memberId);
+    const memberSnap = await memberRef.get();
+    if (!memberSnap.exists) return;
+
+    const member = memberSnap.data();
+    const update = { lastAttendanceDate: today };
+
+    if (member.activityStatus === "inactive") {
+      update.activityStatus = "active";
+      update.nextPaymentDate = today;
+      console.log(
+        `✅ Member ${memberId} reactivated by attendance — due for current month payment`,
+      );
+    }
+
+    await memberRef.update(update);
+  } catch (error) {
+    console.error(`❌ Error updating attendance activity for member ${memberId}:`, error);
+  }
+}
+
+/**
  * Rate limiting: Check if too many operations for this entity recently
  */
 const operationCounts = new Map();
@@ -427,6 +464,7 @@ export const recognizeFace = functions.storage
               })),
             },
           });
+          await markMemberAttendedNow(bestMatch.id, bestMatch.gymId, today);
 
           console.log("✅ Attendance marked successfully!");
         }
@@ -1362,6 +1400,7 @@ export const hikvisionEvent = functions.https.onRequest(async (req, res) => {
       },
       createdAt: admin.firestore.Timestamp.now(),
     });
+    await markMemberAttendedNow(memberDoc.id, gymId, dateStr);
 
     // 6. Update device last heartbeat
     await deviceDoc.ref.update({
@@ -1806,6 +1845,7 @@ export const hikCentralWebhook = functions.https.onRequest(async (req, res) => {
         status: "present",
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
+      await markMemberAttendedNow(personCode, gymId, dateStr);
 
       // xii. Audit trail (gymId required)
       await db.collection("hikRawEvents").add({
@@ -2177,6 +2217,84 @@ export const sendPaymentReminders = functions.pubsub
             sentAt: admin.firestore.FieldValue.serverTimestamp(),
           });
           console.log(`✅ Payment reminder SMS sent to ${member.name}`);
+        }
+      }
+    }
+
+    return null;
+  });
+
+// ========================================
+// 💤 INACTIVE MEMBER DETECTION
+// ========================================
+
+/**
+ * Runs daily, before payment reminders. For every gym, compares each
+ * member's last attendance date against the gym's configured inactivity
+ * threshold (Gym Settings → Member Activity, default 30 days). Members who
+ * haven't attended within that window are marked `activityStatus: "inactive"`,
+ * which hides them from Payments/Attendance "unpaid" and outstanding-balance
+ * figures (see isInactiveMember/isPayingMember in src/utils/paymentTotals.js).
+ *
+ * Reactivation on attendance is handled separately and immediately, in
+ * markMemberAttendedNow — this job only ever needs to flip members TO
+ * inactive. The one exception is a gym raising its threshold: a member who
+ * no longer exceeds the new, looser threshold is flipped back to active
+ * here too, since they never actually stopped attending.
+ */
+export const markInactiveMembers = functions.pubsub
+  .schedule("0 1 * * *") // every day at 01:00, ahead of the 09:00 payment reminders
+  .timeZone("Asia/Colombo")
+  .onRun(async () => {
+    const db = admin.firestore();
+    const msPerDay = 1000 * 60 * 60 * 24;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const gymsSnap = await db.collection("gyms").get();
+
+    for (const gymDoc of gymsSnap.docs) {
+      const gym = gymDoc.data();
+      const gymId = gymDoc.id;
+      if (gym.status && gym.status !== "active") continue;
+
+      const thresholdDays =
+        parseInt(gym.settings?.attendance?.inactivityThresholdDays) || 30;
+
+      const membersSnap = await db
+        .collection("members")
+        .where("gymId", "==", gymId)
+        .where("status", "==", "active")
+        .get();
+
+      for (const memberDoc of membersSnap.docs) {
+        const member = memberDoc.data();
+        if (member.role && member.role !== "member") continue;
+
+        // Baseline for "days since last activity": last attendance date if
+        // they've ever attended, otherwise their join date (a member who
+        // never attends within the threshold after joining is inactive too).
+        const baseline = member.lastAttendanceDate || member.joinDate;
+        if (!baseline) continue; // nothing to compare against yet
+
+        const baseDate = baseline.toDate ? baseline.toDate() : new Date(baseline);
+        if (isNaN(baseDate.getTime())) continue;
+        baseDate.setHours(0, 0, 0, 0);
+
+        const daysSince = Math.floor((today - baseDate) / msPerDay);
+        const isInactive = member.activityStatus === "inactive";
+
+        if (daysSince > thresholdDays && !isInactive) {
+          await memberDoc.ref.update({ activityStatus: "inactive" });
+          console.log(
+            `💤 Member ${memberDoc.id} (${member.name}) marked inactive — ${daysSince}d since last attendance, threshold ${thresholdDays}d`,
+          );
+        } else if (daysSince <= thresholdDays && isInactive) {
+          // Threshold was raised and this member no longer exceeds it.
+          await memberDoc.ref.update({ activityStatus: "active" });
+          console.log(
+            `✅ Member ${memberDoc.id} (${member.name}) no longer exceeds the inactivity threshold, marked active`,
+          );
         }
       }
     }

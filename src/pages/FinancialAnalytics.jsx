@@ -18,7 +18,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
-import { toAmount, sumAmounts, memberFee } from "../utils/paymentTotals";
+import { toAmount, sumAmounts, memberFee, isInactiveMember } from "../utils/paymentTotals";
 
 const FinancialAnalytics = () => {
   const { user } = useAuth();
@@ -154,7 +154,10 @@ const FinancialAnalytics = () => {
     const activeMembers = membersData.filter(
       (m) => m.status === "active" && (!m.role || m.role === "member")
     );
-    const payingMembers = activeMembers.filter((m) => !m.isVip);
+    // Also excludes members who are attendance-inactive (no check-in within
+    // the gym's configured threshold) — they owe nothing until they attend
+    // again, so they must never count toward paid/unpaid or the collection rate.
+    const payingMembers = activeMembers.filter((m) => !m.isVip && !isInactiveMember(m));
     const totalPaidMembers = payingMembers.filter((m) =>
       paidMemberIds.has(m.id)
     ).length;
@@ -291,7 +294,7 @@ const FinancialAnalytics = () => {
       (m) => m.status === "active" && (!m.role || m.role === "member")
     );
     const vipMembers = activeMembers.filter((m) => m.isVip);
-    const payingMembers = activeMembers.filter((m) => !m.isVip);
+    const payingMembers = activeMembers.filter((m) => !m.isVip && !isInactiveMember(m));
     const memberPaymentStatus = [
       {
         name: "Paid",
