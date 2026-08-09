@@ -8,6 +8,7 @@ import {
   formatAmount,
   isFeeExempt,
   isPayingMember,
+  isInactiveMember,
   paymentsForMonth,
 } from "../../utils/paymentTotals";
 import AdminLayout from "../../components/AdminLayout";
@@ -216,12 +217,16 @@ const InstructorPayments = () => {
       m.email?.toLowerCase().includes(searchTerm.toLowerCase());
     const isPaid = checkPaymentStatus(m.id);
     const exempt = isFeeExempt(m);
+    const inactive = isInactiveMember(m);
     const matchStatus =
-      filterStatus === "all" ||
-      (filterStatus === "paid" && isPaid) ||
+      // Inactive members owe nothing and are hidden from every status
+      // except the dedicated "Inactive" tab.
+      (filterStatus === "all" && !inactive) ||
+      (filterStatus === "paid" && !inactive && isPaid) ||
       // VIPs owe nothing, so they are never part of the unpaid list
-      (filterStatus === "unpaid" && !isPaid && !exempt) ||
-      (filterStatus === "vip" && exempt);
+      (filterStatus === "unpaid" && !inactive && !isPaid && !exempt) ||
+      (filterStatus === "vip" && !inactive && exempt) ||
+      (filterStatus === "inactive" && inactive);
     return matchSearch && matchStatus;
   });
 
@@ -229,9 +234,11 @@ const InstructorPayments = () => {
   const currentMonthPayments = paymentsForMonth(payments, getCurrentMonth());
   const totalCollected = sumAmounts(currentMonthPayments);
 
-  // VIP members are fee-exempt: neither paid nor unpaid.
+  // VIP and inactive members are fee-exempt: neither paid nor unpaid.
+  const activeMembers = members.filter((m) => !isInactiveMember(m));
   const payingMembers = members.filter(isPayingMember);
-  const vipCount = members.length - payingMembers.length;
+  const vipCount = activeMembers.length - payingMembers.length;
+  const inactiveCount = members.length - activeMembers.length;
   const paidCount = payingMembers.filter((m) => checkPaymentStatus(m.id)).length;
   const unpaidCount = payingMembers.length - paidCount;
 
@@ -269,7 +276,7 @@ const InstructorPayments = () => {
               label: "Total Members",
               value: members.length,
               color: "blue",
-              hint: `${payingMembers.length} paying${vipCount > 0 ? ` · ${vipCount} VIP` : ""}`,
+              hint: `${payingMembers.length} paying${vipCount > 0 ? ` · ${vipCount} VIP` : ""}${inactiveCount > 0 ? ` · ${inactiveCount} inactive` : ""}`,
             },
             {
               label: "Paid This Month",
@@ -281,7 +288,7 @@ const InstructorPayments = () => {
               label: "Unpaid",
               value: unpaidCount,
               color: "red",
-              hint: "VIP members excluded",
+              hint: `Active unpaid only — VIP${inactiveCount > 0 ? " and inactive" : ""} excluded`,
             },
             {
               label: "Collected",
@@ -317,10 +324,11 @@ const InstructorPayments = () => {
             onChange={(e) => setFilterStatus(e.target.value)}
             className="px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
-            <option value="all">All Members</option>
+            <option value="all">All Active Members</option>
             <option value="paid">Paid</option>
-            <option value="unpaid">Unpaid (excludes VIP)</option>
+            <option value="unpaid">Active Unpaid (excludes VIP)</option>
             <option value="vip">VIP — Fee Exempt</option>
+            <option value="inactive">Inactive ({inactiveCount})</option>
           </select>
         </div>
 
@@ -353,6 +361,9 @@ const InstructorPayments = () => {
                         <span className="truncate">{member.name}</span>
                         {member.isVip && (
                           <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400 flex-shrink-0">VIP</span>
+                        )}
+                        {isInactiveMember(member) && (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-500/20 text-gray-400 flex-shrink-0">INACTIVE</span>
                         )}
                       </div>
                       <div className="text-gray-400 text-xs truncate">{member.email || member.mobile || "—"}</div>

@@ -15,6 +15,7 @@ import {
   Mail,
   Phone,
 } from "lucide-react";
+import { isInactiveMember } from "../../utils/paymentTotals";
 
 const InstructorMembers = () => {
   const { user } = useAuth();
@@ -25,6 +26,7 @@ const InstructorMembers = () => {
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+  const [filterActivity, setFilterActivity] = useState("all");
   const [selectedMember, setSelectedMember] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
 
@@ -178,10 +180,17 @@ const InstructorMembers = () => {
     return { label: "Obese", color: "text-red-400" };
   };
 
-  const filteredMembers = members.filter((member) =>
-    (member?.name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (member?.email || "").toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredMembers = members.filter((member) => {
+    const matchesSearch =
+      (member?.name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (member?.email || "").toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesActivity =
+      filterActivity === "all" ||
+      (filterActivity === "attending" && !isInactiveMember(member)) ||
+      (filterActivity === "inactive" && isInactiveMember(member));
+    return matchesSearch && matchesActivity;
+  });
+  const inactiveCount = members.filter((m) => isInactiveMember(m)).length;
 
   if (loading) {
     return (
@@ -213,16 +222,28 @@ const InstructorMembers = () => {
             </div>
           </div>
 
-          {/* Search */}
-          <div className="relative max-w-md">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-            <input
-              type="text"
-              placeholder="Search members..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-            />
+          {/* Search & Filters */}
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="relative max-w-md flex-1">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <input
+                type="text"
+                placeholder="Search members..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+            <select
+              value={filterActivity}
+              onChange={(e) => setFilterActivity(e.target.value)}
+              className="px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+              title="Based on last attendance vs. the gym's inactivity threshold"
+            >
+              <option value="all">All Attendance</option>
+              <option value="attending">Attending</option>
+              <option value="inactive">Inactive ({inactiveCount})</option>
+            </select>
           </div>
         </div>
 
@@ -252,6 +273,14 @@ const InstructorMembers = () => {
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium capitalize ${member.level === "advanced" ? "bg-red-600/20 text-red-400" : member.level === "intermediate" ? "bg-yellow-600/20 text-yellow-400" : "bg-green-600/20 text-green-400"}`}>
                           {member.level || "beginner"}
                         </span>
+                        {isInactiveMember(member) && (
+                          <span
+                            title="No attendance within the gym's inactivity threshold"
+                            className="ml-1 text-xs px-2 py-0.5 rounded-full font-medium bg-gray-600/20 text-gray-400"
+                          >
+                            Inactive
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div className="space-y-1">

@@ -10,6 +10,7 @@ import {
   formatAmount,
   isFeeExempt,
   isPayingMember,
+  isInactiveMember,
   paymentsForMonth,
 } from "../utils/paymentTotals";
 import MemberAvatar from "../components/MemberAvatar";
@@ -360,12 +361,17 @@ const AdminPayments = () => {
 
     const isPaid = checkPaymentStatus(member.id);
     const exempt = isFeeExempt(member);
+    const inactive = isInactiveMember(member);
     const matchesStatus =
-      filterStatus === "all" ||
-      (filterStatus === "paid" && isPaid) ||
+      // Inactive members (no attendance within the configured threshold) owe
+      // nothing and are hidden from every status except the dedicated
+      // "Inactive" tab — payments only ever shows ACTIVE unpaid, never a mix.
+      (filterStatus === "all" && !inactive) ||
+      (filterStatus === "paid" && !inactive && isPaid) ||
       // VIPs owe nothing, so they are never part of the unpaid list
-      (filterStatus === "unpaid" && !isPaid && !exempt) ||
-      (filterStatus === "vip" && exempt);
+      (filterStatus === "unpaid" && !inactive && !isPaid && !exempt) ||
+      (filterStatus === "vip" && !inactive && exempt) ||
+      (filterStatus === "inactive" && inactive);
 
     return matchesSearch && matchesStatus;
   });
@@ -376,9 +382,13 @@ const AdminPayments = () => {
   const currentMonthPayments = paymentsForMonth(payments, getCurrentMonth());
   const totalCollected = sumAmounts(currentMonthPayments);
 
-  // VIP members are fee-exempt, so they count as neither paid nor unpaid.
+  // VIP and inactive members are excluded from paying totals: VIPs are
+  // fee-exempt, inactive members (no attendance within the threshold) owe
+  // nothing until they attend again.
+  const activeMembers = members.filter((m) => !isInactiveMember(m));
   const payingMembers = members.filter(isPayingMember);
-  const vipMembersCount = members.length - payingMembers.length;
+  const vipMembersCount = activeMembers.length - payingMembers.length;
+  const inactiveMembersCount = members.length - activeMembers.length;
   const paidMembersCount = payingMembers.filter((m) =>
     checkPaymentStatus(m.id)
   ).length;
@@ -480,6 +490,7 @@ const AdminPayments = () => {
               <p className="text-xs text-gray-500 mt-1">
                 {payingMembers.length} paying
                 {vipMembersCount > 0 ? ` · ${vipMembersCount} VIP (no fee)` : ""}
+                {inactiveMembersCount > 0 ? ` · ${inactiveMembersCount} inactive` : ""}
               </p>
             </div>
 
@@ -529,9 +540,8 @@ const AdminPayments = () => {
                 {unpaidMembersCount}
               </p>
               <p className="text-xs text-gray-500 mt-1">
-                {vipMembersCount > 0
-                  ? `${vipMembersCount} VIP member${vipMembersCount === 1 ? "" : "s"} excluded`
-                  : "VIP members excluded"}
+                Active unpaid only — VIP
+                {inactiveMembersCount > 0 ? " and inactive members" : " members"} excluded
               </p>
             </div>
 
@@ -676,10 +686,13 @@ const AdminPayments = () => {
                   onChange={(e) => setFilterStatus(e.target.value)}
                   className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-600"
                 >
-                  <option value="all">All Members</option>
+                  <option value="all">All Active Members</option>
                   <option value="paid">Paid</option>
-                  <option value="unpaid">Unpaid (excludes VIP)</option>
+                  <option value="unpaid">Active Unpaid (excludes VIP)</option>
                   <option value="vip">VIP — Fee Exempt</option>
+                  <option value="inactive">
+                    Inactive ({inactiveMembersCount})
+                  </option>
                 </select>
               </div>
             </div>
@@ -735,6 +748,11 @@ const AdminPayments = () => {
                           {member.isVip && (
                             <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400 flex-shrink-0">
                               VIP
+                            </span>
+                          )}
+                          {isInactiveMember(member) && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-500/20 text-gray-400 flex-shrink-0">
+                              INACTIVE
                             </span>
                           )}
                         </h3>

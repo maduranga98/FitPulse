@@ -37,7 +37,19 @@ export function formatAmount(value) {
 // they must never be counted as unpaid, nor added to an outstanding balance.
 export const isFeeExempt = (member) => member?.isVip === true;
 
-export const isPayingMember = (member) => !isFeeExempt(member);
+// Attendance-based activity, distinct from the manual admin `status` field
+// (active/inactive/blocked). `activityStatus` is maintained automatically:
+// a scheduled job flips a member to "inactive" once too much time has
+// passed since their last attendance, and a check-in flips them back to
+// "active". Missing/undefined activityStatus means "never evaluated yet"
+// and is treated as active so existing members aren't retroactively hidden.
+export const isInactiveMember = (member) => member?.activityStatus === "inactive";
+
+// Inactive members are excluded from "unpaid" the same way VIPs are: while
+// inactive they owe nothing, so they must never show up in an outstanding
+// balance or an "unpaid" list. Payments/attendance screens should show
+// "active unpaid" only, never "active + inactive unpaid" combined.
+export const isPayingMember = (member) => !isFeeExempt(member) && !isInactiveMember(member);
 
 /** The fee actually expected from a member this cycle (0 for VIPs). */
 export const memberFee = (member) =>

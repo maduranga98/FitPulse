@@ -7,6 +7,7 @@ import {
   sumAmounts,
   formatAmount,
   isPayingMember,
+  isInactiveMember,
   memberFee,
 } from "../utils/paymentTotals";
 
@@ -88,7 +89,9 @@ const PaymentAnalytics = () => {
   // VIP members are fee-exempt — they are neither paid nor unpaid, and they
   // never contribute to the outstanding balance or the collection rate.
   const payingMembers = members.filter(isPayingMember);
-  const vipCount = members.length - payingMembers.length;
+  const activeMembers = members.filter((m) => !isInactiveMember(m));
+  const vipCount = activeMembers.length - payingMembers.length;
+  const inactiveCount = members.length - activeMembers.length;
 
   const paidThisMonth = payingMembers.filter((m) =>
     payments.some((p) => p.memberId === m.id && p.month === currentMonth)
@@ -250,6 +253,7 @@ const PaymentAnalytics = () => {
             <p className="text-sm text-gray-400 mt-1">
               {payingMembers.length} paying
               {vipCount > 0 ? ` · ${vipCount} VIP (no fee)` : ""}
+              {inactiveCount > 0 ? ` · ${inactiveCount} inactive` : ""}
             </p>
           </div>
 
