@@ -33,10 +33,19 @@ const AccessControlCard = ({ member, gymId, user, onMemberUpdated }) => {
         user,
       });
       setPending({ commandId, type });
-      unsubRef.current = subscribeToDeviceCommand(gymId, commandId, (cmd) => {
+
+      let unsub = null;
+      let settled = false;
+      const stopWatching = () => {
+        settled = true;
+        unsub?.();
+        unsubRef.current = null;
+      };
+
+      unsub = subscribeToDeviceCommand(gymId, commandId, (cmd) => {
         if (!cmd) return;
         if (cmd.status === "completed") {
-          unsubRef.current?.();
+          stopWatching();
           setPending(null);
           showSuccess(
             type === "block"
@@ -48,13 +57,17 @@ const AccessControlCard = ({ member, gymId, user, onMemberUpdated }) => {
             accessBlockedReason: type === "block" ? reason.trim() || null : null,
           });
         } else if (cmd.status === "failed") {
-          unsubRef.current?.();
+          stopWatching();
           setPending(null);
           showError(
             `Device ${type} failed: ${cmd.errorMessage || "unknown error"}`
           );
         }
       });
+
+      // If the callback already fired, unsub was still null inside it.
+      if (settled) unsub();
+      else unsubRef.current = unsub;
     } catch (err) {
       showError(`Could not queue ${type} command: ${err.message}`);
     }

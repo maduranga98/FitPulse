@@ -111,6 +111,17 @@ sudo systemctl enable --now fitpulse-relay
 journalctl -u fitpulse-relay -f
 ```
 
+## Offline test (no hardware)
+
+```bash
+npm test
+```
+
+Runs the block/unblock logic against a mock terminal that reproduces the
+firmware behavior that broke this in the field: it returns extra fields
+from Search, and silently ignores (while answering `200 OK`) any Modify
+that echoes them back. Guards against reintroducing that bug.
+
 ## Testing directly against the device (no app / Firestore)
 
 `test-device.js` runs the relay's exact ISAPI code against the terminal,
