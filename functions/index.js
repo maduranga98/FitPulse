@@ -2392,7 +2392,6 @@ export const autoBlockUnpaidMembers = functions.pubsub
 
       const dueDay = parseInt(paymentCfg.dueDay) || 10;
       const graceDays = Math.max(0, parseInt(paymentCfg.autoBlockGraceDays) || 0);
-      const blockFromDay = dueDay + graceDays;
 
       const membersSnap = await db
         .collection("members")
@@ -2419,7 +2418,8 @@ export const autoBlockUnpaidMembers = functions.pubsub
             member,
             paidThisMonth: !paidSnap.empty,
             today,
-            blockFromDay,
+            dueDay,
+            graceDays,
           })
         ) {
           continue;

@@ -25,12 +25,12 @@ const check = (label, fn) => {
 };
 
 // Gym collects on the 10th, no grace → blocking starts on day 10.
-const blockFromDay = 10;
+const dueDay = 10;
 const today = new Date(2026, 8, 15); // 15 Sep 2026
 today.setHours(0, 0, 0, 0);
 
-const overdue = (member, paidThisMonth = false) =>
-  isPaymentOverdue({ member, paidThisMonth, today, blockFromDay });
+const overdue = (member, paidThisMonth = false, graceDays = 0) =>
+  isPaymentOverdue({ member, paidThisMonth, today, dueDay, graceDays });
 
 // ── never blocked ────────────────────────────────────────────────────
 check("a member who paid this month is not overdue", () =>
@@ -120,7 +120,7 @@ check("no due date and the collection day hasn't arrived → not overdue", () =>
       member: { joinDate: "2025-01-05" },
       paidThisMonth: false,
       today: early,
-      blockFromDay,
+      dueDay,
     }),
     false
   )
@@ -132,10 +132,33 @@ check("a grace period pushes the block day back", () =>
       member: { joinDate: "2025-01-05" },
       paidThisMonth: false,
       today, // the 15th
-      blockFromDay: 17, // collection day 10 + 7 days grace
+      dueDay, // 10
+      graceDays: 7, // blocked from day 17
     }),
     false
   )
+);
+
+// ── the grace period applies to due dates too ────────────────────────
+// The settings screen promises "blocked from day dueDay + grace"; that has
+// to hold for members who DO have a nextPaymentDate, not just the fallback.
+check("a due date inside the grace period is not yet overdue", () =>
+  // Due 10 Sep, 7 days grace → not blocked until the 18th.
+  assert.strictEqual(overdue({ nextPaymentDate: "2026-09-10" }, false, 7), false)
+);
+
+check("...and is overdue once the grace period has passed", () =>
+  // Due 10 Sep, 4 days grace → the grace ended on the 14th.
+  assert.strictEqual(overdue({ nextPaymentDate: "2026-09-10" }, false, 4), true)
+);
+
+check("the last day of the grace period is still not overdue", () =>
+  // Due 10 Sep + 5 days grace = the 15th, which is today.
+  assert.strictEqual(overdue({ nextPaymentDate: "2026-09-10" }, false, 5), false)
+);
+
+check("grace never blocks someone early", () =>
+  assert.strictEqual(overdue({ nextPaymentDate: "2026-11-10" }, false, 7), false)
 );
 
 check("monthKey pads single-digit months", () =>

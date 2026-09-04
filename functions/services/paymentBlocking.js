@@ -6,6 +6,9 @@
  * collecting a fee a few days late. Every rule errs towards NOT blocking.
  */
 
+/** Fallback collection day when a gym has none configured. */
+export const DEFAULT_DUE_DAY = 10;
+
 /** YYYY-MM for a Date. */
 export function monthKey(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
@@ -38,13 +41,22 @@ export function skipReason(member) {
  * multi-month packages — a member on a 3-month package legitimately has no
  * payment in months 2 and 3 and must not be blocked for it. The month-based
  * rule is only a fallback for members with no nextPaymentDate recorded.
+ *
+ * The gym's grace period applies to BOTH paths: whatever the settings screen
+ * promises ("blocked from day dueDay + grace") has to hold for every unpaid
+ * member, not only the ones missing a due date.
  */
-export function isPaymentOverdue({ member, paidThisMonth, today, blockFromDay }) {
+export function isPaymentOverdue({ member, paidThisMonth, today, dueDay, graceDays = 0 }) {
   if (paidThisMonth) return false;
+
+  const grace = Math.max(0, parseInt(graceDays) || 0);
+  const blockFromDay = (parseInt(dueDay) || DEFAULT_DUE_DAY) + grace;
 
   const nextDue = toDateOrNull(member.nextPaymentDate);
   if (nextDue) {
+    // Overdue only once the due date AND the grace period have passed.
     nextDue.setHours(0, 0, 0, 0);
+    nextDue.setDate(nextDue.getDate() + grace);
     return nextDue < today;
   }
 
