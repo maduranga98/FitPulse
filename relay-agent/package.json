@@ -7,7 +7,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "test": "node test-isapi.js",
+    "test": "node test-isapi.js && node test-queue.js",
     "doctor": "node doctor.js"
   },
   "dependencies": {
