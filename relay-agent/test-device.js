@@ -10,7 +10,7 @@
 // Actions:
 //   status   — Search the user and print their current UserInfo/Valid
 //   block    — set an already-elapsed validity window (door stays shut)
-//   unblock  — restore validity (uses --begin/--end, or now → +10 years)
+//   unblock  — set a validity window 10 years into the future
 
 const { blockUser, unblockUser, searchUser } = require("./isapi");
 
@@ -31,7 +31,7 @@ const action = arg("action", "status");
 
 if (!device.ip || !device.password || !employeeNo) {
   console.error(
-    "Usage: node test-device.js --ip <device-ip> --user admin --pass '<password>' --employee <memberCode> --action status|block|unblock [--begin <ISO>] [--end <ISO>]"
+    "Usage: node test-device.js --ip <device-ip> --user admin --pass '<password>' --employee <memberCode> --action status|block|unblock [--name <name>]"
   );
   process.exit(1);
 }
@@ -47,17 +47,13 @@ if (!device.ip || !device.password || !employeeNo) {
           ` — ${expired ? "EXPIRED (blocked)" : "active"}`
       );
     } else if (action === "block") {
-      await blockUser(device, employeeNo);
+      const name = arg("name") || (await searchUser(device, employeeNo)).name;
+      await blockUser(device, employeeNo, name);
       const after = await searchUser(device, employeeNo);
       console.log(`\nBLOCK VERIFIED — device Valid is now: ${JSON.stringify(after.Valid)}`);
     } else if (action === "unblock") {
-      const begin = arg("begin");
-      const end = arg("end");
-      await unblockUser(
-        device,
-        employeeNo,
-        begin && end ? { beginTime: begin, endTime: end } : null
-      );
+      const name = arg("name") || (await searchUser(device, employeeNo)).name;
+      await unblockUser(device, employeeNo, name);
       const after = await searchUser(device, employeeNo);
       console.log(`\nUNBLOCK VERIFIED — device Valid is now: ${JSON.stringify(after.Valid)}`);
     } else {

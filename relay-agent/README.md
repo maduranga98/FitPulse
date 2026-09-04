@@ -19,18 +19,28 @@ Cloud Functions run on GCP and **cannot** reach a gym's private
 
 ## How block/unblock works on the device
 
-- Blocking does **not** delete face/fingerprint enrollment. It keeps
-  `Valid.enable: true` and sets the validity window to an already-elapsed
-  range (end = yesterday). The face is still recognized; the door stays shut.
-- `Valid.enable: false` means "long-term user, ignore validity period" —
-  the **opposite** of blocking. The relay never sets it to false.
-- Unblocking restores the member's original validity window, captured in
-  `members/{id}.deviceValidPeriod` on the first block. Zero re-enrollment.
-- Before modifying, the relay always `Search`es the current `UserInfo` and
-  echoes all fields back (minus read-only ones: `password`, `numOfCard`,
-  `numOfFP`, `numOfFace`, `faceURL`, `PersonInfoExtends`).
-- `UserInfo/Modify` is tried as `PUT` first, falling back to `POST` if the
-  firmware answers `methodNotAllowed` — both variants exist in the field.
+It is **one call**, and the validity window is the entire mechanism:
+
+```
+PUT http://<device-ip>/ISAPI/AccessControl/UserInfo/Modify?format=json
+```
+
+(HTTP Digest auth with the device admin user; body is the payload verified
+in Postman, with only `Valid` changing.)
+
+- **Block** → `beginTime: 2020-01-01T00:00:00`, `endTime: yesterday 23:59:59`.
+  The window has elapsed, so the device refuses the user at the door on its
+  own. Face/fingerprint enrollment is untouched.
+- **Unblock** → `beginTime: today 00:00:00`, `endTime: today + 10 years`.
+- `Valid.enable` is always `true`. `enable: false` means "long-term user,
+  ignore the validity period" — the **opposite** of blocking.
+- Door rights are **not** touched: the same static `doorRight` / `RightPlan`
+  from the verified payload is sent every time. Nothing else about the user
+  is read or rewritten.
+- `UserInfo/Modify` is sent as `PUT` (what the Postman test uses), falling
+  back to `POST` once if the firmware answers `methodNotAllowed`.
+- `UserInfo/Search` is only used to read a member's name when the app has
+  none, and by `test-device.js --action status`.
 
 ## Setup (per gym)
 
@@ -117,10 +127,11 @@ journalctl -u fitpulse-relay -f
 npm test
 ```
 
-Runs the block/unblock logic against a mock terminal that reproduces the
-firmware behavior that broke this in the field: it returns extra fields
-from Search, and silently ignores (while answering `200 OK`) any Modify
-that echoes them back. Guards against reintroducing that bug.
+Runs the block/unblock logic against a mock terminal that enforces the two
+firmware rules that broke this in the field: a Modify body containing any
+field outside the accepted set is silently ignored (while answering
+`200 OK`), and `beginTime` must be earlier than `endTime`. Guards against
+reintroducing either bug.
 
 ## Testing directly against the device (no app / Firestore)
 
@@ -132,16 +143,15 @@ so results are directly comparable with Postman:
 node test-device.js --ip 192.168.8.126 --user admin --pass 'SECRET' \
   --employee PGNA117X --action status
 
-# Block / unblock (each verifies the window on the device afterwards)
+# Block / unblock (each reads the window back from the device afterwards)
 node test-device.js --ip 192.168.8.126 --user admin --pass 'SECRET' \
   --employee PGNA117X --action block
 node test-device.js --ip 192.168.8.126 --user admin --pass 'SECRET' \
-  --employee PGNA117X --action unblock \
-  --begin 2026-06-02T00:00:00 --end 2036-06-01T23:59:59
+  --employee PGNA117X --action unblock
 ```
 
-It prints the full Modify request body and the device's response, and
-fails loudly if the device claims OK without applying the change.
+It prints the full Modify request body, the device's response, and the
+resulting validity window.
 
 ## Debugging in the field
 

@@ -1,49 +1,31 @@
 // Hikvision ISAPI AccessControl helpers (DS-K1T343MFX and similar).
 //
-// Hard-won firmware facts baked in here:
-// - Valid.enable=false means "ignore validity period" (long-term user),
-//   NOT "disable user". Blocking is done by keeping enable=true and
-//   setting an already-elapsed beginTime/endTime window.
-// - beginTime must be strictly earlier than endTime or the device
-//   returns badJsonContent.
-// - The Modify body must contain EXACTLY the field set proven to work on
-//   the real hardware (see MODIFY_FIELDS below, from the Postman test).
-//   Echoing back everything Search returns can make firmware answer
-//   200 OK while silently ignoring the change — extra/read-only fields
-//   (numOfFace, userVerifyMode, checkUser, …) poison the request.
-// - Some firmwares accept PUT on UserInfo/Modify, others only POST
-//   (returning methodNotAllowed for PUT). We try PUT, fall back to POST.
+// Blocking and unblocking a member is ONE call — the validity window is the
+// whole mechanism:
+//
+//   PUT /ISAPI/AccessControl/UserInfo/Modify?format=json  (digest auth)
+//
+// - Block   → Valid window is set to an already-elapsed range (end = yesterday).
+//             The device stops recognising the user for door opening by itself.
+// - Unblock → Valid window is set to a long future range (10 years out).
+//
+// Notes that cost real hardware time to learn:
+// - Valid.enable=false means "long-term user, ignore the validity period" —
+//   the OPPOSITE of blocking. It always stays true.
+// - beginTime must be strictly earlier than endTime, or the device answers
+//   badJsonContent.
+// - The body must be exactly the field set below (the payload verified in
+//   Postman). Echoing back everything UserInfo/Search returns makes some
+//   firmwares answer 200 OK while silently ignoring the change.
+// - Door rights are NOT touched here: the same static doorRight/RightPlan
+//   from the verified payload is sent every time. Access is governed purely
+//   by the dates.
 
 const crypto = require("crypto");
 const { digestRequest } = require("./digest");
 const log = require("./logger");
 
-// Field whitelist for the Modify body — exactly the set AND order from the
-// payload verified working against the real DS-K1T343MFX in Postman
-// (employeeNo, then these up to Valid, then the rest). Values are taken
-// from the device's Search response when present so nothing gets
-// overwritten with a guess; Valid is replaced by us.
-const MODIFY_FIELDS_BEFORE_VALID = [
-  "name",
-  "userType",
-  "onlyVerify",
-  "closeDelayEnabled",
-];
-const MODIFY_FIELDS_AFTER_VALID = [
-  "belongGroup",
-  "doorRight",
-  "RightPlan",
-  "maxOpenDoorTime",
-  "openDoorTime",
-  "roomNumber",
-  "floorNumber",
-  "localUIRight",
-  "gender",
-  "groupId",
-  "localAtndPlanTemplateId",
-];
-
-// "YYYY-MM-DDTHH:mm:ss" in the relay host's local time (device uses timeType: local)
+// "YYYY-MM-DDTHH:mm:ss" in the relay host's local time (timeType: "local").
 function toLocalIso(date) {
   const p = (n) => String(n).padStart(2, "0");
   return (
@@ -52,11 +34,58 @@ function toLocalIso(date) {
   );
 }
 
-function yesterdayEnd() {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  d.setHours(23, 59, 59, 0);
-  return toLocalIso(d);
+// Expired window → device blocks the user and the door.
+function blockedWindow() {
+  const end = new Date();
+  end.setDate(end.getDate() - 1);
+  end.setHours(23, 59, 59, 0);
+  return {
+    enable: true,
+    beginTime: "2020-01-01T00:00:00",
+    endTime: toLocalIso(end),
+    timeType: "local",
+  };
+}
+
+// Long future window → device lets the user in again.
+function activeWindow(years = 10) {
+  const begin = new Date();
+  begin.setHours(0, 0, 0, 0);
+  const end = new Date(begin);
+  end.setFullYear(end.getFullYear() + years);
+  end.setDate(end.getDate() - 1);
+  end.setHours(23, 59, 59, 0);
+  return {
+    enable: true,
+    beginTime: toLocalIso(begin),
+    endTime: toLocalIso(end),
+    timeType: "local",
+  };
+}
+
+// Exactly the body proven against the real DS-K1T343MFX.
+function buildPayload(employeeNo, name, valid) {
+  return {
+    UserInfo: {
+      employeeNo: String(employeeNo),
+      name: name || String(employeeNo),
+      userType: "normal",
+      onlyVerify: false,
+      closeDelayEnabled: false,
+      Valid: valid,
+      belongGroup: "",
+      doorRight: "1",
+      RightPlan: [{ doorNo: 1, planTemplateNo: "1" }],
+      maxOpenDoorTime: 0,
+      openDoorTime: 0,
+      roomNumber: 0,
+      floorNumber: 0,
+      localUIRight: false,
+      gender: "male",
+      groupId: 1,
+      localAtndPlanTemplateId: 0,
+    },
+  };
 }
 
 function throwIsapiError(action, res) {
@@ -66,6 +95,8 @@ function throwIsapiError(action, res) {
   );
 }
 
+// Read the user back — used only to keep the device's stored name when the
+// app has none, and to log/verify what the device ended up with.
 async function searchUser(device, employeeNo) {
   const res = await digestRequest({
     host: device.ip,
@@ -90,131 +121,59 @@ async function searchUser(device, employeeNo) {
   if (search?.responseStatusStrg === "NO MATCH" || matches.length === 0) {
     throw new Error(`employeeNo ${employeeNo} not found on device ${device.ip}`);
   }
-  // Duplicate-employeeNo edge case seen during testing: fail loudly rather
-  // than modify an ambiguous record.
-  const exact = matches.filter((u) => String(u.employeeNo) === String(employeeNo));
-  if (exact.length > 1) {
-    throw new Error(
-      `employeeNo ${employeeNo} matches ${exact.length} users on device ${device.ip} — resolve duplicates on the device first`
-    );
-  }
-  return exact[0] || matches[0];
-}
-
-async function modifyUser(device, userInfo, method) {
-  const body = { UserInfo: userInfo };
-  log.info(`${method} UserInfo/Modify → ${device.ip}: ${JSON.stringify(body)}`);
-  const res = await digestRequest({
-    host: device.ip,
-    port: device.port || 80,
-    method,
-    path: "/ISAPI/AccessControl/UserInfo/Modify?format=json",
-    username: device.username,
-    password: device.password,
-    jsonBody: body,
-  });
-  log.info(
-    `${method} UserInfo/Modify ← HTTP ${res.status}: ${(res.body || "").slice(0, 300)}`
+  return (
+    matches.find((u) => String(u.employeeNo) === String(employeeNo)) || matches[0]
   );
-  if (res.status !== 200) throwIsapiError(`UserInfo/Modify (${method})`, res);
-  const statusCode = res.json?.statusCode;
-  if (statusCode !== undefined && statusCode !== 1) {
-    throwIsapiError(`UserInfo/Modify (${method})`, res);
-  }
-  return res.json;
 }
 
-// Some firmwares only accept PUT on UserInfo/Modify, others only POST —
-// and worse, a firmware can answer 200 OK for the wrong method without
-// actually applying the change. So after each attempt we Search the user
-// back and check the validity window really changed; only a verified
-// write counts as success.
-async function modifyAndVerify(device, employeeNo, payload, isApplied) {
+// PUT is what the verified Postman request uses; a few firmwares only take
+// POST and answer methodNotAllowed to PUT, so fall back once.
+async function setValidity(device, employeeNo, name, valid) {
+  const body = buildPayload(employeeNo, name, valid);
   let lastError = null;
+
   for (const method of ["PUT", "POST"]) {
-    try {
-      await modifyUser(device, payload, method);
-    } catch (err) {
-      lastError = err;
-      continue;
-    }
-    const after = await searchUser(device, employeeNo);
+    log.info(`${method} UserInfo/Modify → ${device.ip}: ${JSON.stringify(body)}`);
+    const res = await digestRequest({
+      host: device.ip,
+      port: device.port || 80,
+      method,
+      path: "/ISAPI/AccessControl/UserInfo/Modify?format=json",
+      username: device.username,
+      password: device.password,
+      jsonBody: body,
+    });
     log.info(
-      `verify after ${method}: device Valid is now ${JSON.stringify(after.Valid)}`
+      `${method} UserInfo/Modify ← HTTP ${res.status}: ${(res.body || "").slice(0, 300)}`
     );
-    if (isApplied(after.Valid || {})) return after;
-    lastError = new Error(
-      `device accepted UserInfo/Modify via ${method} but did not apply it — ` +
-        `Valid is still ${JSON.stringify(after.Valid)}`
-    );
+
+    const ok =
+      res.status === 200 &&
+      (res.json?.statusCode === undefined || res.json.statusCode === 1);
+    if (ok) return;
+
+    lastError = () => throwIsapiError(`UserInfo/Modify (${method})`, res);
   }
-  throw lastError;
+  lastError();
 }
 
-function buildModifyPayload(current, employeeNo, valid) {
-  const payload = { employeeNo: String(employeeNo) };
-  for (const f of MODIFY_FIELDS_BEFORE_VALID) {
-    if (current[f] !== undefined) payload[f] = current[f];
-  }
-  payload.Valid = valid;
-  for (const f of MODIFY_FIELDS_AFTER_VALID) {
-    if (current[f] !== undefined) payload[f] = current[f];
-  }
-  return payload;
+/** Block: expire the validity window. */
+async function blockUser(device, employeeNo, name) {
+  await setValidity(device, employeeNo, name, blockedWindow());
 }
 
-/**
- * Block: keep Valid.enable=true, force the validity window into the past.
- * Returns { current, payload } — current is the pre-modification UserInfo
- * (used to capture the original validity window on first block).
- */
-async function blockUser(device, employeeNo) {
-  const current = await searchUser(device, employeeNo);
-  const endTime = yesterdayEnd();
-  let beginTime = current.Valid?.beginTime || "2020-01-01T00:00:00";
-  if (beginTime >= endTime) beginTime = "2020-01-01T00:00:00";
-
-  const payload = buildModifyPayload(current, employeeNo, {
-    enable: true,
-    beginTime,
-    endTime,
-    timeType: current.Valid?.timeType || "local",
-  });
-  // Applied = validity is enforced and already expired.
-  await modifyAndVerify(device, employeeNo, payload, (valid) => {
-    return valid.enable === true && new Date(valid.endTime) < new Date();
-  });
-  return { current };
+/** Unblock: push the validity window years into the future. */
+async function unblockUser(device, employeeNo, name) {
+  await setValidity(device, employeeNo, name, activeWindow());
 }
 
-/**
- * Unblock: restore the member's original validity window.
- * validPeriod: { beginTime, endTime } captured at enrollment / first block.
- */
-async function unblockUser(device, employeeNo, validPeriod) {
-  const current = await searchUser(device, employeeNo);
-
-  let { beginTime, endTime } = validPeriod || {};
-  if (!beginTime || !endTime || beginTime >= endTime) {
-    // No stored window — grant a fresh 10-year validity from now.
-    const now = new Date();
-    const end = new Date(now);
-    end.setFullYear(end.getFullYear() + 10);
-    beginTime = toLocalIso(now);
-    endTime = toLocalIso(end);
-  }
-
-  const payload = buildModifyPayload(current, employeeNo, {
-    enable: true,
-    beginTime,
-    endTime,
-    timeType: current.Valid?.timeType || "local",
-  });
-  // Applied = validity window extends into the future again.
-  await modifyAndVerify(device, employeeNo, payload, (valid) => {
-    return new Date(valid.endTime) > new Date();
-  });
-  return { current };
-}
-
-module.exports = { blockUser, unblockUser, searchUser, toLocalIso };
+module.exports = {
+  blockUser,
+  unblockUser,
+  searchUser,
+  setValidity,
+  blockedWindow,
+  activeWindow,
+  buildPayload,
+  toLocalIso,
+};

@@ -12,7 +12,7 @@
 require("dotenv").config();
 const admin = require("firebase-admin");
 const log = require("./logger");
-const { blockUser, unblockUser } = require("./isapi");
+const { blockUser, unblockUser, searchUser } = require("./isapi");
 
 const GYM_ID = process.env.GYM_ID;
 if (!GYM_ID) {
@@ -74,27 +74,21 @@ async function loadDevices() {
   return devices.filter((d) => d.username && d.password);
 }
 
-async function executeOnDevice(device, command, memberData) {
+async function executeOnDevice(device, command) {
   const employeeNo = command.employeeNo;
-  let current;
+
+  // The Modify body carries the user's name, so use the app's name and only
+  // fall back to reading it off the device when the member has none.
+  let name = command.memberName || "";
+  if (!name) name = (await searchUser(device, employeeNo)).name || "";
+
   if (command.type === "block") {
-    ({ current } = await blockUser(device, employeeNo));
+    await blockUser(device, employeeNo, name);
   } else if (command.type === "unblock") {
-    ({ current } = await unblockUser(
-      device,
-      employeeNo,
-      memberData?.deviceValidPeriod || null
-    ));
+    await unblockUser(device, employeeNo, name);
   } else {
     throw new Error(`Unknown command type: ${command.type}`);
   }
-  // If this name doesn't match the member, the face may be enrolled under
-  // a DIFFERENT employeeNo — the door would still open via that record.
-  log.info(
-    `Device record for employeeNo ${employeeNo} on ${device.name}: ` +
-      `name="${current.name || "?"}" (app member: "${command.memberName || "?"}")`
-  );
-  return command.type === "block" ? { originalValid: current.Valid || null } : {};
 }
 
 async function processCommand(doc) {
@@ -120,9 +114,9 @@ async function processCommand(doc) {
     throw e;
   }
 
-  const memberRef = command.memberId ? db.collection("members").doc(command.memberId) : null;
-  const memberSnap = memberRef ? await memberRef.get() : null;
-  const memberData = memberSnap?.exists ? memberSnap.data() : null;
+  const memberRef = command.memberId
+    ? db.collection("members").doc(command.memberId)
+    : null;
 
   const devices = await loadDevices();
   if (devices.length === 0) {
@@ -136,15 +130,13 @@ async function processCommand(doc) {
     return;
   }
 
-  let originalValid = null;
   const errors = [];
 
   for (const device of devices) {
     let lastError = null;
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       try {
-        const result = await executeOnDevice(device, command, memberData);
-        if (result.originalValid) originalValid = result.originalValid;
+        await executeOnDevice(device, command);
         lastError = null;
         log.info(`${label}: OK on ${device.name} (${device.ip}), attempt ${attempt}`);
         break;
@@ -185,18 +177,6 @@ async function processCommand(doc) {
             accessBlockedReason: null,
             accessBlockedBy: null,
           };
-    // Capture the original validity window on first block so unblock
-    // restores the real enrollment window, never a guess.
-    if (
-      command.type === "block" &&
-      originalValid &&
-      !memberData?.deviceValidPeriod
-    ) {
-      update.deviceValidPeriod = {
-        beginTime: originalValid.beginTime || null,
-        endTime: originalValid.endTime || null,
-      };
-    }
     await memberRef.update(update);
   }
 
