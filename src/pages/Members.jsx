@@ -14,7 +14,19 @@ import AccessControlCard from "../components/AccessControlCard";
 import {
   createDeviceCommand,
   subscribeToDeviceCommand,
+  subscribeToRelayStatus,
+  RELAY_STALE_MS,
+  COMMAND_TIMEOUT_MS,
 } from "../services/deviceAccessService";
+
+// "3 minutes ago" / "2 hours ago" for the relay heartbeat.
+const formatRelaySeen = (date, now) => {
+  const secs = Math.max(0, Math.round((now - date.getTime()) / 1000));
+  if (secs < 60) return `${secs}s ago`;
+  if (secs < 3600) return `${Math.round(secs / 60)} min ago`;
+  if (secs < 86400) return `${Math.round(secs / 3600)} hr ago`;
+  return date.toLocaleString();
+};
 
 const HikStatus = ({ member, onRetry, retrying }) => {
   if (member.hikCentralSynced === true) {
@@ -128,6 +140,13 @@ const Members = () => {
   // door-access command currently being executed by the gym's relay agent
   const [deviceCommands, setDeviceCommands] = useState({});
   const deviceUnsubsRef = useRef({});
+  const deviceTimersRef = useRef({});
+  // Heartbeat from the gym's relay agent — without it, door commands sit in
+  // the queue forever, so the tab says so instead of spinning.
+  const [relay, setRelay] = useState({ lastSeenAt: null, host: null, loaded: false });
+  const [now, setNow] = useState(() => Date.now());
+  const relayOnline =
+    !!relay.lastSeenAt && now - relay.lastSeenAt.getTime() < RELAY_STALE_MS;
   const [generatedCredentials, setGeneratedCredentials] = useState(null);
   const [bmiInfo, setBmiInfo] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -140,13 +159,30 @@ const Members = () => {
     fetchPendingRegistrations();
   }, [currentGymId]);
 
-  // Drop any in-flight device-command listeners when leaving the page
+  // Drop any in-flight device-command listeners and timers when leaving
   useEffect(() => {
     const unsubs = deviceUnsubsRef.current;
+    const timers = deviceTimersRef.current;
     return () => {
       Object.values(unsubs).forEach((unsub) => unsub?.());
+      Object.values(timers).forEach((t) => clearTimeout(t));
     };
   }, []);
+
+  // Relay heartbeat, and a ticker so "online" decays on its own once the
+  // heartbeat stops arriving.
+  useEffect(() => {
+    if (!currentGymId || activeTab !== "blocked") return;
+    const unsub = subscribeToRelayStatus(currentGymId, (status) =>
+      setRelay({ ...status, loaded: true })
+    );
+    const tick = setInterval(() => setNow(Date.now()), 15000);
+    setNow(Date.now());
+    return () => {
+      unsub();
+      clearInterval(tick);
+    };
+  }, [currentGymId, activeTab]);
 
   useEffect(() => {
     if (memberForm.weight && memberForm.height) {
@@ -403,9 +439,10 @@ const Members = () => {
         [member.id]: { status: "pending" },
       }));
 
-      // Drop any listener still running from an earlier click on this member.
+      // Drop any listener/timer still running from an earlier click.
       deviceUnsubsRef.current[member.id]?.();
       delete deviceUnsubsRef.current[member.id];
+      clearTimeout(deviceTimersRef.current[member.id]);
 
       let unsub = null;
       let settled = false;
@@ -413,7 +450,23 @@ const Members = () => {
         settled = true;
         unsub?.();
         delete deviceUnsubsRef.current[member.id];
+        clearTimeout(deviceTimersRef.current[member.id]);
+        delete deviceTimersRef.current[member.id];
       };
+
+      // Nothing else ever resolves a command the relay never picks up, so
+      // give up rather than showing "syncing…" indefinitely.
+      deviceTimersRef.current[member.id] = setTimeout(() => {
+        if (settled) return;
+        stopWatching();
+        const why =
+          "the gym's relay agent did not respond — check that it is running on the gym PC";
+        setDeviceCommands((prev) => ({
+          ...prev,
+          [member.id]: { status: "failed", error: why, timedOut: true },
+        }));
+        showError(`Door access unchanged for ${member.name}: ${why}`);
+      }, COMMAND_TIMEOUT_MS);
 
       unsub = subscribeToDeviceCommand(currentGymId, commandId, (cmd) => {
         if (!cmd) return;
@@ -1421,6 +1474,33 @@ const Members = () => {
                 agent to close door access on the terminal. Face enrollment is
                 kept, so unblocking restores access with no re-enrollment.
               </p>
+
+              {/* The terminal is only reachable from inside the gym, so door
+                  changes depend on the relay agent running there. Say so up
+                  front instead of letting commands queue invisibly. */}
+              {relay.loaded && !relayOnline && (
+                <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3">
+                  <p className="text-amber-400 text-sm font-medium">
+                    Gym relay agent is offline — door access will not change
+                  </p>
+                  <p className="text-amber-200/70 text-xs mt-1">
+                    {relay.lastSeenAt
+                      ? `Last seen ${formatRelaySeen(relay.lastSeenAt, now)}${relay.host ? ` on ${relay.host}` : ""}. `
+                      : "It has never run for this gym. "}
+                    Blocking still stops app login immediately, and any door
+                    command is queued and applied as soon as the relay is
+                    running again. Start it on the gym PC with{" "}
+                    <code className="font-mono text-amber-300">npm start</code>{" "}
+                    in <code className="font-mono text-amber-300">relay-agent/</code>.
+                  </p>
+                </div>
+              )}
+              {relay.loaded && relayOnline && (
+                <p className="mb-4 flex items-center gap-2 text-xs text-green-500">
+                  <span className="w-2 h-2 rounded-full bg-green-500" />
+                  Gym relay agent online{relay.host ? ` (${relay.host})` : ""}
+                </p>
+              )}
               <div className="space-y-2">
                 {members
                   .filter(
@@ -1437,7 +1517,12 @@ const Members = () => {
                     const doorPill = deviceCmd?.status === "pending"
                       ? { text: "Door: syncing…", cls: "bg-blue-600/20 text-blue-400" }
                       : deviceCmd?.status === "failed"
-                        ? { text: "Door: sync failed", cls: "bg-amber-600/20 text-amber-400" }
+                        ? {
+                          text: deviceCmd.timedOut
+                            ? "Door: relay offline"
+                            : "Door: sync failed",
+                          cls: "bg-amber-600/20 text-amber-400",
+                        }
                         : member.accessBlocked
                           ? { text: "Door: blocked", cls: "bg-red-600/20 text-red-500" }
                           : { text: "Door: open", cls: "bg-green-600/20 text-green-500" };
