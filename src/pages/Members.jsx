@@ -9,6 +9,10 @@ import { useGymSettings } from "../contexts/GymSettingsContext";
 import { supabase } from "../services/supabaseClient";
 import { APP_URL } from "../config/app";
 import AccessControlCard from "../components/AccessControlCard";
+import {
+  createDeviceCommand,
+  subscribeToDeviceCommand,
+} from "../services/deviceAccessService";
 
 const HikStatus = ({ member, onRetry, retrying }) => {
   if (member.hikCentralSynced === true) {
@@ -108,6 +112,10 @@ const Members = () => {
 
   const [activeTab, setActiveTab] = useState("members");
   const [blockingId, setBlockingId] = useState(null);
+  // memberId → { status: "pending"|"completed"|"failed", error? } for the
+  // door-access command currently being executed by the gym's relay agent
+  const [deviceCommands, setDeviceCommands] = useState({});
+  const deviceUnsubsRef = useRef({});
   const [generatedCredentials, setGeneratedCredentials] = useState(null);
   const [bmiInfo, setBmiInfo] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -119,6 +127,14 @@ const Members = () => {
     fetchMembers();
     fetchPendingRegistrations();
   }, [currentGymId]);
+
+  // Drop any in-flight device-command listeners when leaving the page
+  useEffect(() => {
+    const unsubs = deviceUnsubsRef.current;
+    return () => {
+      Object.values(unsubs).forEach((unsub) => unsub?.());
+    };
+  }, []);
 
   useEffect(() => {
     if (memberForm.weight && memberForm.height) {
@@ -323,26 +339,95 @@ const Members = () => {
     }));
   };
 
+  // Blocking a member has two independent effects, and both must happen:
+  //   1. status: "blocked"  → they can no longer log in to the app
+  //   2. a device command   → the on-prem relay expires their validity
+  //      window on the Hikvision terminal so the door stops opening
+  // (2) is queued for the relay because the terminal is only reachable on
+  // the gym's LAN. The app-login block is applied immediately; the door
+  // result arrives asynchronously and is reported separately.
   const handleBlockMember = async (member) => {
     if (!userIsAdmin) {
       showError("You don't have permission to block members");
       return;
     }
-    const newStatus = member.status === "blocked" ? "active" : "blocked";
+    const blocking = member.status !== "blocked";
+    const newStatus = blocking ? "blocked" : "active";
     setBlockingId(member.id);
     try {
       const { db } = await import("../config/firebase");
       const { doc, updateDoc } = await import("firebase/firestore");
       await updateDoc(doc(db, "members", member.id), { status: newStatus });
       showSuccess(
-        newStatus === "blocked"
-          ? `${member.name}'s access has been blocked`
-          : `${member.name}'s access has been restored`,
+        blocking
+          ? `${member.name} can no longer log in to the app`
+          : `${member.name}'s app access has been restored`,
       );
       fetchMembers();
+
+      if (!member.memberCode) {
+        showWarning(
+          `${member.name} has no member code, so their door access on the terminal could not be changed.`,
+        );
+        return;
+      }
+
+      const commandId = await createDeviceCommand({
+        gymId: currentGymId,
+        member,
+        type: blocking ? "block" : "unblock",
+        reason: blocking ? "Blocked by staff" : null,
+        user,
+      });
+      setDeviceCommands((prev) => ({
+        ...prev,
+        [member.id]: { status: "pending" },
+      }));
+
+      // Drop any listener still running from an earlier click on this member.
+      deviceUnsubsRef.current[member.id]?.();
+      delete deviceUnsubsRef.current[member.id];
+
+      let unsub = null;
+      let settled = false;
+      const stopWatching = () => {
+        settled = true;
+        unsub?.();
+        delete deviceUnsubsRef.current[member.id];
+      };
+
+      unsub = subscribeToDeviceCommand(currentGymId, commandId, (cmd) => {
+        if (!cmd) return;
+        if (cmd.status === "completed") {
+          stopWatching();
+          setDeviceCommands((prev) => ({
+            ...prev,
+            [member.id]: { status: "completed" },
+          }));
+          showSuccess(
+            blocking
+              ? `${member.name}'s door access is now blocked at the terminal`
+              : `${member.name}'s door access has been restored at the terminal`,
+          );
+          fetchMembers();
+        } else if (cmd.status === "failed") {
+          stopWatching();
+          setDeviceCommands((prev) => ({
+            ...prev,
+            [member.id]: { status: "failed", error: cmd.errorMessage },
+          }));
+          showError(
+            `Door access unchanged for ${member.name}: ${cmd.errorMessage || "the gym's relay agent reported a failure"}`,
+          );
+        }
+      });
+
+      // If the callback already fired, unsub was still null inside it.
+      if (settled) unsub();
+      else deviceUnsubsRef.current[member.id] = unsub;
     } catch (error) {
       console.error("Error updating block status:", error);
-      showError("Failed to update access");
+      showError("Failed to update access: " + error.message);
     } finally {
       setBlockingId(null);
     }
@@ -1206,7 +1291,9 @@ const Members = () => {
                 />
               </div>
               <p className="text-gray-400 text-sm mb-4">
-                Blocked members cannot log in to the app. Use this to revoke or restore access per member.
+                Blocking stops app login immediately and tells the gym's relay
+                agent to close door access on the terminal. Face enrollment is
+                kept, so unblocking restores access with no re-enrollment.
               </p>
               <div className="space-y-2">
                 {members
@@ -1218,6 +1305,16 @@ const Members = () => {
                   )
                   .map((member) => {
                     const isBlocked = member.status === "blocked";
+                    const deviceCmd = deviceCommands[member.id];
+                    // Door state is tracked separately from app login: the
+                    // relay confirms it asynchronously and can fail on its own.
+                    const doorPill = deviceCmd?.status === "pending"
+                      ? { text: "Door: syncing…", cls: "bg-blue-600/20 text-blue-400" }
+                      : deviceCmd?.status === "failed"
+                        ? { text: "Door: sync failed", cls: "bg-amber-600/20 text-amber-400" }
+                        : member.accessBlocked
+                          ? { text: "Door: blocked", cls: "bg-red-600/20 text-red-500" }
+                          : { text: "Door: open", cls: "bg-green-600/20 text-green-500" };
                     return (
                       <div
                         key={member.id}
@@ -1245,15 +1342,23 @@ const Members = () => {
                           </div>
                         </div>
                         <div className="flex items-center gap-3 flex-shrink-0">
-                          <span
-                            className={`px-2 py-1 rounded text-xs font-medium ${
-                              isBlocked
-                                ? "bg-red-600/20 text-red-500"
-                                : "bg-green-600/20 text-green-500"
-                            }`}
-                          >
-                            {isBlocked ? "Blocked" : "Allowed"}
-                          </span>
+                          <div className="flex flex-col items-end gap-1">
+                            <span
+                              className={`px-2 py-1 rounded text-xs font-medium ${
+                                isBlocked
+                                  ? "bg-red-600/20 text-red-500"
+                                  : "bg-green-600/20 text-green-500"
+                              }`}
+                            >
+                              {isBlocked ? "App: blocked" : "App: allowed"}
+                            </span>
+                            <span
+                              title={deviceCmd?.error || undefined}
+                              className={`px-2 py-1 rounded text-xs font-medium ${doorPill.cls}`}
+                            >
+                              {doorPill.text}
+                            </span>
+                          </div>
                           <button
                             onClick={() => handleBlockMember(member)}
                             disabled={blockingId === member.id}
