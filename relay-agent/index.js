@@ -14,6 +14,7 @@ const os = require("os");
 const admin = require("firebase-admin");
 const log = require("./logger");
 const { blockUser, unblockUser, searchUser } = require("./isapi");
+const { orderCommandChanges } = require("./queueOrder");
 
 const GYM_ID = process.env.GYM_ID;
 if (!GYM_ID) {
@@ -288,15 +289,30 @@ async function main() {
 
   commandsRef.onSnapshot(
     (snap) => {
-      snap.docChanges().forEach((change) => {
-        if (change.type !== "added" && change.type !== "modified") return;
+      // A snapshot carrying a backlog (the relay was down while staff kept
+      // clicking) arrives in document-ID order, NOT the order the commands
+      // were issued. Applying them that way leaves the device in whatever
+      // state the alphabetically-last command asked for, which can be the
+      // opposite of what staff last pressed. Order by createdAt so the last
+      // intent is the one that sticks.
+      const changes = orderCommandChanges(
+        snap.docChanges().filter((c) => c.type === "added" || c.type === "modified")
+      );
+
+      if (changes.length > 1) {
+        log.info(
+          `Draining ${changes.length} queued command(s) in the order they were issued`
+        );
+      }
+
+      for (const change of changes) {
         const doc = change.doc;
         queue = queue
           .then(() => processCommand(doc))
           .catch((err) =>
             log.error(`Unhandled error processing ${doc.id}: ${err.stack || err.message}`)
           );
-      });
+      }
     },
     (err) => {
       log.error(`Firestore listener error: ${err.message} — exiting so pm2/systemd restarts us`);
