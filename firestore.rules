@@ -602,6 +602,18 @@ service cloud.firestore {
     }
 
     // ============================================
+    // RELAY STATUS (heartbeat from the on-prem agent)
+    // The relay writes lastSeenAt every ~30s via the
+    // Admin SDK. The app reads it to tell "relay is
+    // offline" apart from "relay is still working",
+    // so a queued command never spins forever.
+    // ============================================
+    match /gyms/{gymId}/relayStatus/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // ============================================
     // DEVICE COMMANDS (block/unblock access queue)
     // AccessControlCard.jsx creates:
     //   type, employeeNo, memberId, memberName, gymId,

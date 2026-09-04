@@ -4,6 +4,7 @@ import {
   createDeviceCommand,
   subscribeToDeviceCommand,
   cancelDeviceCommand,
+  COMMAND_TIMEOUT_MS,
 } from "../services/deviceAccessService";
 
 // Door access control card shown on the member detail modal (Owner/Manager
@@ -15,9 +16,13 @@ const AccessControlCard = ({ member, gymId, user, onMemberUpdated }) => {
   const [reason, setReason] = useState("Non-payment");
   const [pending, setPending] = useState(null); // { commandId, type }
   const unsubRef = useRef(null);
+  const timerRef = useRef(null);
 
   useEffect(() => {
-    return () => unsubRef.current?.();
+    return () => {
+      unsubRef.current?.();
+      clearTimeout(timerRef.current);
+    };
   }, []);
 
   const blocked = member.accessBlocked === true;
@@ -40,7 +45,21 @@ const AccessControlCard = ({ member, gymId, user, onMemberUpdated }) => {
         settled = true;
         unsub?.();
         unsubRef.current = null;
+        clearTimeout(timerRef.current);
       };
+
+      // Nothing resolves a command the relay never picks up, so stop waiting
+      // rather than spinning forever on "Waiting for gym relay…".
+      timerRef.current = setTimeout(() => {
+        if (settled) return;
+        stopWatching();
+        setPending(null);
+        showError(
+          `Device ${type} not confirmed: the gym's relay agent did not respond. ` +
+            "Check that it is running on the gym PC — the command stays queued " +
+            "and runs as soon as it is back."
+        );
+      }, COMMAND_TIMEOUT_MS);
 
       unsub = subscribeToDeviceCommand(gymId, commandId, (cmd) => {
         if (!cmd) return;

@@ -121,6 +121,44 @@ sudo systemctl enable --now fitpulse-relay
 journalctl -u fitpulse-relay -f
 ```
 
+## Nothing happens when I click Block ("Door: syncing…")
+
+That means the command reached Firestore and **no relay consumed it** — no
+ISAPI call was ever made. Run the diagnostics on the gym machine:
+
+```bash
+npm run doctor
+# or, to also check one member on the device:
+npm run doctor -- --employee PGNA117X
+```
+
+It walks the whole chain — `.env` → Firebase credentials → the gym document
+→ devices and their credentials → TCP reachability → ISAPI digest auth →
+the member's record on the device → commands stuck in the queue → whether a
+relay is heartbeating — and prints the fix for whatever fails. It writes
+nothing to the device.
+
+The usual causes, in order of how often they bite:
+
+1. **The relay isn't running.** Start it (`npm start`). Any commands already
+   queued are picked up immediately — a stuck "syncing…" resolves on its own
+   within a second or two.
+2. **`GYM_ID` doesn't match the gym you clicked in.** Commands queue under a
+   gym nobody is watching. The relay now refuses to start on an unknown
+   `GYM_ID`, and `doctor` names the mismatch.
+3. **The machine isn't on the terminal's LAN**, or the device IP changed
+   (give the terminal a DHCP reservation).
+4. **No device credentials**, so the relay skips the device. Set
+   `adminUsername` / `adminPassword` on `gyms/{gymId}/deviceConfig/{deviceId}`.
+5. **`memberCode` ≠ the `employeeNo` enrolled on the device.** The relay
+   fails loudly with `employeeNo … not found`.
+
+While the relay runs it writes a heartbeat to
+`gyms/{gymId}/relayStatus/agent` every 30s. The app's Block Access tab reads
+it and shows "Gym relay agent is offline" instead of waiting forever, and a
+command with no response after 60s is marked failed rather than left
+spinning.
+
 ## Offline test (no hardware)
 
 ```bash

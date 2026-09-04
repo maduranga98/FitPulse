@@ -10,6 +10,7 @@
 // See README.md for setup (service account, .env, pm2/systemd).
 
 require("dotenv").config();
+const os = require("os");
 const admin = require("firebase-admin");
 const log = require("./logger");
 const { blockUser, unblockUser, searchUser } = require("./isapi");
@@ -20,8 +21,16 @@ if (!GYM_ID) {
   process.exit(1);
 }
 
+const VERSION = require("./package.json").version;
+const STARTED_AT = new Date().toISOString();
+
 const MAX_ATTEMPTS = Number(process.env.MAX_ATTEMPTS || 3);
 const RETRY_BASE_MS = Number(process.env.RETRY_BASE_MS || 5000);
+// The app treats the relay as offline if the heartbeat goes stale, so it can
+// say "relay offline" instead of spinning on "syncing…" forever.
+const HEARTBEAT_MS = Number(process.env.HEARTBEAT_MS || 30000);
+// A command left in "processing" by a crash/restart is retried after this.
+const STALE_PROCESSING_MS = Number(process.env.STALE_PROCESSING_MS || 120000);
 
 admin.initializeApp({
   credential: admin.credential.applicationDefault(),
@@ -29,6 +38,52 @@ admin.initializeApp({
 const db = admin.firestore();
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+const gymRef = () => db.collection("gyms").doc(GYM_ID);
+
+// gyms/{gymId}/relayStatus/agent — readable by the app (Firestore rules deny
+// client writes), so the Block Access tab can show whether this process is
+// alive before anyone waits on a command.
+async function writeHeartbeat(extra = {}) {
+  try {
+    await gymRef()
+      .collection("relayStatus")
+      .doc("agent")
+      .set(
+        {
+          lastSeenAt: admin.firestore.FieldValue.serverTimestamp(),
+          host: os.hostname(),
+          startedAt: STARTED_AT,
+          heartbeatMs: HEARTBEAT_MS,
+          version: VERSION,
+          ...extra,
+        },
+        { merge: true }
+      );
+  } catch (err) {
+    log.warn(`Heartbeat write failed: ${err.message}`);
+  }
+}
+
+// A relay that died mid-command leaves the doc in "processing" forever, and
+// the app would wait on it just as forever. Hand those back to the queue.
+async function requeueStaleCommands() {
+  const cutoff = new Date(Date.now() - STALE_PROCESSING_MS);
+  const stale = await gymRef()
+    .collection("deviceCommands")
+    .where("status", "==", "processing")
+    .get();
+
+  const orphans = stale.docs.filter((d) => {
+    const startedAt = d.data().processingStartedAt?.toDate?.();
+    return !startedAt || startedAt < cutoff;
+  });
+  for (const d of orphans) {
+    log.warn(`Requeuing stale command ${d.id} left in "processing"`);
+    await d.ref.update({ status: "pending" });
+  }
+  return orphans.length;
+}
 
 // Devices are configured in the app (Devices page) under gyms/{gymId}/devices.
 // Credentials are resolved in priority order:
@@ -191,11 +246,43 @@ async function processCommand(doc) {
 // Serialize command processing — commands for the same member must not race.
 let queue = Promise.resolve();
 
-function main() {
-  log.info(`Relay agent starting for gym ${GYM_ID}`);
-  const commandsRef = db
-    .collection("gyms")
-    .doc(GYM_ID)
+async function main() {
+  log.info(`Relay agent v${VERSION} starting for gym ${GYM_ID} on ${os.hostname()}`);
+
+  // Fail fast and loudly on the mistake that silently breaks everything:
+  // a GYM_ID that doesn't exist. Commands would queue under a gym nobody
+  // is watching and the app would spin on "syncing…" indefinitely.
+  const gymSnap = await gymRef().get();
+  if (!gymSnap.exists) {
+    log.error(
+      `GYM_ID "${GYM_ID}" does not exist in Firestore. Fix .env — ` +
+        `commands from the app will never be picked up. Run "npm run doctor".`
+    );
+    process.exit(1);
+  }
+  log.info(`Watching gym "${gymSnap.data().name || GYM_ID}"`);
+
+  const devices = await loadDevices();
+  if (devices.length === 0) {
+    log.warn(
+      "No devices with credentials configured for this gym — commands will " +
+        'fail until one is set up. Run "npm run doctor" for details.'
+    );
+  } else {
+    log.info(
+      `${devices.length} device(s) configured: ${devices
+        .map((d) => `${d.name} (${d.ip})`)
+        .join(", ")}`
+    );
+  }
+
+  await writeHeartbeat({ deviceCount: devices.length });
+  setInterval(() => writeHeartbeat().catch(() => {}), HEARTBEAT_MS).unref?.();
+
+  const requeued = await requeueStaleCommands();
+  if (requeued > 0) log.info(`Requeued ${requeued} stale command(s)`);
+
+  const commandsRef = gymRef()
     .collection("deviceCommands")
     .where("status", "==", "pending");
 
@@ -218,4 +305,7 @@ function main() {
   );
 }
 
-main();
+main().catch((err) => {
+  log.error(`Relay agent failed to start: ${err.stack || err.message}`);
+  process.exit(1);
+});
