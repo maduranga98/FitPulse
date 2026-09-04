@@ -39,6 +39,8 @@ const GymSettings = () => {
     payment: {
       dueDay: 10,
       reminderDays: [3, 1],
+      autoBlockUnpaid: false,
+      autoBlockGraceDays: 0,
       ...src.payment,
     },
     attendance: {
@@ -388,6 +390,79 @@ const GymSettings = () => {
               />
               <p className="text-xs text-gray-500 mt-1">Days before the due date to remind members.</p>
             </div>
+          </div>
+
+          {/* Automatic door blocking for unpaid members */}
+          <div className="mt-5 pt-5 border-t border-gray-700">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium text-gray-300">
+                  Block door access for unpaid members
+                </p>
+                <p className="text-xs text-gray-500 mt-1 max-w-xl">
+                  Each night, members still unpaid after the collection day lose
+                  door access at the terminal. Recording a payment restores it
+                  automatically. VIP and inactive members are never blocked, and
+                  app login is never affected — only the door.
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={localSettings.payment.autoBlockUnpaid === true}
+                onClick={() =>
+                  updatePayment(
+                    "autoBlockUnpaid",
+                    !localSettings.payment.autoBlockUnpaid,
+                  )
+                }
+                className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full transition ${
+                  localSettings.payment.autoBlockUnpaid
+                    ? "bg-blue-600"
+                    : "bg-gray-600"
+                }`}
+              >
+                <span
+                  className={`inline-block h-5 w-5 transform rounded-full bg-white transition mt-0.5 ${
+                    localSettings.payment.autoBlockUnpaid
+                      ? "translate-x-5"
+                      : "translate-x-0.5"
+                  }`}
+                />
+              </button>
+            </div>
+
+            {localSettings.payment.autoBlockUnpaid && (
+              <div className="mt-4 max-w-xs">
+                <label className="block text-sm font-medium text-gray-300 mb-1">
+                  Grace period (days)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="28"
+                  value={localSettings.payment.autoBlockGraceDays ?? 0}
+                  onChange={(e) =>
+                    updatePayment(
+                      "autoBlockGraceDays",
+                      Math.max(0, Math.min(28, parseInt(e.target.value) || 0)),
+                    )
+                  }
+                  className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Days after the collection day before blocking. Members are
+                  blocked from day{" "}
+                  {(parseInt(localSettings.payment.dueDay) || 10) +
+                    (parseInt(localSettings.payment.autoBlockGraceDays) || 0)}{" "}
+                  of the month.
+                </p>
+                <p className="text-xs text-amber-400/80 mt-2">
+                  Needs the gym relay agent running — the terminal is only
+                  reachable from inside the gym.
+                </p>
+              </div>
+            )}
           </div>
         </div>
 
