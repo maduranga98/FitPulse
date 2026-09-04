@@ -37,7 +37,7 @@ const AdminPayments = () => {
   });
   const [submitting, setSubmitting] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const [filterStatus, setFilterStatus] = useState("all");
+  const [filterStatus, setFilterStatus] = useState("unpaid");
   const [expandedMember, setExpandedMember] = useState(null);
   const [showCollectionBreakdown, setShowCollectionBreakdown] = useState(false);
 
@@ -50,6 +50,29 @@ const AdminPayments = () => {
       fetchData();
     }
   }, [isAdmin]);
+
+  // Modal UX: Escape closes it and the page behind it stops scrolling, so the
+  // form never fights the list for the scroll gesture on a phone.
+  useEffect(() => {
+    if (!showPaymentModal) return;
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") closePaymentModal();
+    };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [showPaymentModal]);
+
+  const closePaymentModal = () => {
+    setShowPaymentModal(false);
+    setSelectedMember(null);
+    setSelectedPayment(null);
+    setIsEditMode(false);
+  };
 
   const fetchData = async () => {
     try {
@@ -394,6 +417,93 @@ const AdminPayments = () => {
   ).length;
   const unpaidMembersCount = payingMembers.length - paidMembersCount;
 
+  // Every member shown under the "Paid" tab — VIPs included, since a VIP with
+  // an optional payment recorded is genuinely paid for the month.
+  const paidTabCount = activeMembers.filter((m) =>
+    checkPaymentStatus(m.id)
+  ).length;
+
+  // Outstanding is the sum of the real package fees still uncollected — never
+  // a count multiplied by an average.
+  const outstandingTotal = sumAmounts(
+    payingMembers.filter((m) => !checkPaymentStatus(m.id)),
+    (m) => m.membershipFee
+  );
+
+  const statusTabs = [
+    {
+      id: "unpaid",
+      label: "Unpaid",
+      count: unpaidMembersCount,
+      accent: "text-red-400",
+      activeClass: "bg-red-500/15 text-red-300 border-red-500/40",
+    },
+    {
+      id: "paid",
+      label: "Paid",
+      count: paidTabCount,
+      accent: "text-green-400",
+      activeClass: "bg-green-500/15 text-green-300 border-green-500/40",
+    },
+    {
+      id: "all",
+      label: "All Active",
+      count: activeMembers.length,
+      accent: "text-purple-400",
+      activeClass: "bg-purple-500/15 text-purple-300 border-purple-500/40",
+    },
+    ...(vipMembersCount > 0
+      ? [
+          {
+            id: "vip",
+            label: "VIP",
+            count: vipMembersCount,
+            accent: "text-amber-400",
+            activeClass: "bg-amber-500/15 text-amber-300 border-amber-500/40",
+          },
+        ]
+      : []),
+    ...(inactiveMembersCount > 0
+      ? [
+          {
+            id: "inactive",
+            label: "Inactive",
+            count: inactiveMembersCount,
+            accent: "text-gray-400",
+            activeClass: "bg-gray-600/40 text-gray-200 border-gray-500",
+          },
+        ]
+      : []),
+  ];
+
+  const activeTab =
+    statusTabs.find((tab) => tab.id === filterStatus) || statusTabs[0];
+
+  const tabHints = {
+    unpaid: `Rs. ${formatAmount(outstandingTotal)} still to collect for ${formatMonth(getCurrentMonth())}`,
+    paid: `Rs. ${formatAmount(totalCollected)} collected for ${formatMonth(getCurrentMonth())}`,
+    all: "Every active member, paid or not",
+    vip: "Fee-exempt members — nothing is owed",
+    inactive: "No recent attendance — excluded from unpaid",
+  };
+
+  const emptyStates = {
+    unpaid: {
+      title: "Everyone has paid",
+      body: `No outstanding payments for ${formatMonth(getCurrentMonth())}.`,
+    },
+    paid: {
+      title: "No payments yet",
+      body: `Nothing has been recorded for ${formatMonth(getCurrentMonth())}.`,
+    },
+    all: { title: "No members found", body: "No members match your search." },
+    vip: { title: "No VIP members", body: "No fee-exempt members yet." },
+    inactive: {
+      title: "No inactive members",
+      body: "Every member has attended recently.",
+    },
+  };
+
   // Members with more than one payment recorded for the same month — a
   // common reason a monthly total looks higher than expected.
   const duplicateMemberIds = new Set(
@@ -472,11 +582,11 @@ const AdminPayments = () => {
         {/* Main Content - Scrollable */}
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
           {/* Stats Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
+            <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 sm:p-6">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-gray-400 text-sm">Total Members</span>
-                <div className="w-10 h-10 bg-purple-600/20 rounded-lg flex items-center justify-center">
+                <span className="text-gray-400 text-xs sm:text-sm">Total Members</span>
+                <div className="w-8 h-8 sm:w-10 sm:h-10 flex-shrink-0 bg-purple-600/20 rounded-lg flex items-center justify-center">
                   <svg
                     className="w-5 h-5 text-purple-600"
                     fill="currentColor"
@@ -486,7 +596,7 @@ const AdminPayments = () => {
                   </svg>
                 </div>
               </div>
-              <p className="text-2xl font-bold text-white">{members.length}</p>
+              <p className="text-xl sm:text-2xl font-bold text-white">{members.length}</p>
               <p className="text-xs text-gray-500 mt-1">
                 {payingMembers.length} paying
                 {vipMembersCount > 0 ? ` · ${vipMembersCount} VIP (no fee)` : ""}
@@ -494,10 +604,10 @@ const AdminPayments = () => {
               </p>
             </div>
 
-            <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
+            <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 sm:p-6">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-gray-400 text-sm">Paid This Month</span>
-                <div className="w-10 h-10 bg-green-600/20 rounded-lg flex items-center justify-center">
+                <span className="text-gray-400 text-xs sm:text-sm">Paid This Month</span>
+                <div className="w-8 h-8 sm:w-10 sm:h-10 flex-shrink-0 bg-green-600/20 rounded-lg flex items-center justify-center">
                   <svg
                     className="w-5 h-5 text-green-600"
                     fill="currentColor"
@@ -511,7 +621,7 @@ const AdminPayments = () => {
                   </svg>
                 </div>
               </div>
-              <p className="text-2xl font-bold text-white">
+              <p className="text-xl sm:text-2xl font-bold text-white">
                 {paidMembersCount}
               </p>
               <p className="text-xs text-gray-500 mt-1">
@@ -519,10 +629,10 @@ const AdminPayments = () => {
               </p>
             </div>
 
-            <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
+            <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 sm:p-6">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-gray-400 text-sm">Unpaid</span>
-                <div className="w-10 h-10 bg-red-600/20 rounded-lg flex items-center justify-center">
+                <span className="text-gray-400 text-xs sm:text-sm">Unpaid</span>
+                <div className="w-8 h-8 sm:w-10 sm:h-10 flex-shrink-0 bg-red-600/20 rounded-lg flex items-center justify-center">
                   <svg
                     className="w-5 h-5 text-red-600"
                     fill="currentColor"
@@ -536,7 +646,7 @@ const AdminPayments = () => {
                   </svg>
                 </div>
               </div>
-              <p className="text-2xl font-bold text-white">
+              <p className="text-xl sm:text-2xl font-bold text-white">
                 {unpaidMembersCount}
               </p>
               <p className="text-xs text-gray-500 mt-1">
@@ -545,10 +655,10 @@ const AdminPayments = () => {
               </p>
             </div>
 
-            <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
+            <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 sm:p-6">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-gray-400 text-sm">Total Collected</span>
-                <div className="w-10 h-10 bg-blue-600/20 rounded-lg flex items-center justify-center">
+                <span className="text-gray-400 text-xs sm:text-sm">Total Collected</span>
+                <div className="w-8 h-8 sm:w-10 sm:h-10 flex-shrink-0 bg-blue-600/20 rounded-lg flex items-center justify-center">
                   <svg
                     className="w-5 h-5 text-blue-600"
                     fill="currentColor"
@@ -563,7 +673,7 @@ const AdminPayments = () => {
                   </svg>
                 </div>
               </div>
-              <p className="text-2xl font-bold text-white">
+              <p className="text-xl sm:text-2xl font-bold text-white">
                 Rs. {formatAmount(totalCollected)}
               </p>
               <p className="text-xs text-gray-500 mt-1">
@@ -661,41 +771,97 @@ const AdminPayments = () => {
             </div>
           )}
 
-          {/* Filters */}
-          <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 mb-6">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Search Members
-                </label>
-                <input
-                  type="text"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Search by name or email..."
-                  className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-600"
+          {/* Search + status tabs */}
+          <div className="bg-gray-800 border border-gray-700 rounded-xl p-3 sm:p-4 mb-6">
+            <div className="relative">
+              <svg
+                className="w-5 h-5 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z"
                 />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Payment Status
-                </label>
-                <select
-                  value={filterStatus}
-                  onChange={(e) => setFilterStatus(e.target.value)}
-                  className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-600"
+              </svg>
+              <input
+                type="search"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search by name or email..."
+                className="w-full pl-10 pr-10 py-2.5 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-600"
+              />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm("")}
+                  aria-label="Clear search"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-gray-500 hover:text-white rounded-md transition"
                 >
-                  <option value="all">All Active Members</option>
-                  <option value="paid">Paid</option>
-                  <option value="unpaid">Active Unpaid (excludes VIP)</option>
-                  <option value="vip">VIP — Fee Exempt</option>
-                  <option value="inactive">
-                    Inactive ({inactiveMembersCount})
-                  </option>
-                </select>
-              </div>
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M6 18L18 6M6 6l12 12"
+                    />
+                  </svg>
+                </button>
+              )}
             </div>
+
+            {/* Paid / Unpaid tabs — scrollable on narrow screens */}
+            <div
+              role="tablist"
+              aria-label="Payment status"
+              className="mt-3 flex gap-2 overflow-x-auto pb-1 -mb-1 scrollbar-none"
+            >
+              {statusTabs.map((tab) => {
+                const isActive = filterStatus === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={isActive}
+                    onClick={() => setFilterStatus(tab.id)}
+                    className={`flex items-center gap-2 px-3.5 py-2 rounded-lg border text-sm font-medium whitespace-nowrap transition active:scale-95 ${
+                      isActive
+                        ? tab.activeClass
+                        : "bg-gray-900 border-gray-700 text-gray-400 hover:text-white hover:border-gray-600"
+                    }`}
+                  >
+                    {tab.label}
+                    <span
+                      className={`px-1.5 py-0.5 rounded text-xs font-bold ${
+                        isActive
+                          ? "bg-black/25"
+                          : `bg-gray-800 ${tab.accent}`
+                      }`}
+                    >
+                      {tab.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <p className="text-xs text-gray-500 mt-2">
+              {tabHints[filterStatus]}
+              {searchTerm
+                ? ` · ${filteredMembers.length} match${
+                    filteredMembers.length === 1 ? "" : "es"
+                  } for "${searchTerm}"`
+                : ""}
+            </p>
           </div>
 
           {/* Members List */}
@@ -717,10 +883,14 @@ const AdminPayments = () => {
                 </svg>
               </div>
               <h3 className="text-xl font-bold text-white mb-2">
-                No Members Found
+                {searchTerm
+                  ? "No members found"
+                  : (emptyStates[filterStatus] || emptyStates.all).title}
               </h3>
               <p className="text-gray-400">
-                No members match your current filters.
+                {searchTerm
+                  ? `Nothing matches "${searchTerm}" in the ${activeTab.label} list.`
+                  : (emptyStates[filterStatus] || emptyStates.all).body}
               </p>
             </div>
           ) : (
@@ -733,7 +903,7 @@ const AdminPayments = () => {
                 return (
                   <div
                     key={member.id}
-                    className="bg-gray-800 border border-gray-700 rounded-xl p-6 hover:border-gray-600 transition"
+                    className="bg-gray-800 border border-gray-700 rounded-xl p-4 sm:p-5 hover:border-gray-600 transition"
                   >
                     <div className="flex items-start gap-4 mb-4">
                       <MemberAvatar
@@ -938,23 +1108,37 @@ const AdminPayments = () => {
 
       {/* Payment Modal */}
       {showPaymentModal && selectedMember && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-gray-800 rounded-2xl border border-gray-700 w-full max-w-md">
-            <div className="border-b border-gray-700 p-6 flex items-center justify-between">
-              <div>
-                <h2 className="text-2xl font-bold text-white">
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 overscroll-contain"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) closePaymentModal();
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="bg-gray-800 border border-gray-700 shadow-2xl w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl flex flex-col max-h-[92dvh] sm:max-h-[88dvh]"
+          >
+            {/* Grab handle — mobile sheet affordance */}
+            <div className="sm:hidden pt-3 pb-1 flex justify-center flex-shrink-0">
+              <span className="h-1 w-10 rounded-full bg-gray-600" />
+            </div>
+
+            <div className="flex-shrink-0 border-b border-gray-700 p-4 sm:p-6 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="text-lg sm:text-2xl font-bold text-white">
                   {isEditMode ? "Edit Payment" : "Record Payment"}
                 </h2>
-                <p className="text-gray-400 text-sm mt-1">
+                <p className="text-gray-400 text-sm mt-1 truncate">
                   {selectedMember.name}
                 </p>
                 {selectedMember.membershipFee > 0 ? (
-                  <div className="flex items-center gap-3 mt-2">
-                    <span className="text-sm px-2 py-1 bg-purple-600/20 text-purple-400 rounded">
+                  <div className="flex flex-wrap items-center gap-2 mt-2">
+                    <span className="text-xs sm:text-sm px-2 py-1 bg-purple-600/20 text-purple-400 rounded">
                       Rs. {selectedMember.membershipFee}
                     </span>
                     {selectedMember.packageDuration > 0 && (
-                      <span className="text-sm px-2 py-1 bg-blue-600/20 text-blue-400 rounded">
+                      <span className="text-xs sm:text-sm px-2 py-1 bg-blue-600/20 text-blue-400 rounded">
                         {selectedMember.packageDuration} Month{selectedMember.packageDuration > 1 ? 's' : ''} plan
                       </span>
                     )}
@@ -962,11 +1146,10 @@ const AdminPayments = () => {
                 ) : null}
               </div>
               <button
-                onClick={() => {
-                  setShowPaymentModal(false);
-                  setSelectedMember(null);
-                }}
-                className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition"
+                type="button"
+                onClick={closePaymentModal}
+                aria-label="Close"
+                className="p-2 -mr-1 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition flex-shrink-0"
               >
                 <svg
                   className="w-6 h-6"
@@ -984,172 +1167,175 @@ const AdminPayments = () => {
               </button>
             </div>
 
-            <form onSubmit={handleSubmitPayment} className="p-6 space-y-4">
-              {selectedMember.isVip && (
-                <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 text-amber-400 text-sm">
-                  This member is a <span className="font-semibold">VIP</span> — no membership fee is collected. You can still record an optional payment below if needed.
-                </div>
-              )}
+            <form
+              onSubmit={handleSubmitPayment}
+              className="flex flex-col flex-1 min-h-0"
+            >
+              <div className="flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6 space-y-4">
+                {selectedMember.isVip && (
+                  <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 text-amber-400 text-sm">
+                    This member is a <span className="font-semibold">VIP</span> — no membership fee is collected. You can still record an optional payment below if needed.
+                  </div>
+                )}
 
-              {/* Member fee summary — always shown for consistency */}
-              {!selectedMember.isVip && (
-                <div className="bg-gray-900 border border-gray-700 rounded-lg p-3 flex items-center justify-between text-sm">
-                  <span className="text-gray-400">Member Package Fee</span>
-                  <span className={selectedMember.membershipFee > 0 ? "text-white font-semibold" : "text-gray-500"}>
-                    {selectedMember.membershipFee > 0
-                      ? `Rs. ${Number(selectedMember.membershipFee).toLocaleString()}`
-                      : "Not set"}
-                  </span>
-                </div>
-              )}
-
-              {/* Fully paid toggle */}
-              {selectedMember.membershipFee > 0 && !isEditMode ? (
-                <label className="flex items-center gap-3 cursor-pointer bg-gray-900 border border-gray-700 rounded-lg px-4 py-3">
-                  <input
-                    type="checkbox"
-                    checked={paymentForm.fullyPaid}
-                    onChange={(e) =>
-                      setPaymentForm({
-                        ...paymentForm,
-                        fullyPaid: e.target.checked,
-                        amount: e.target.checked
-                          ? selectedMember.membershipFee
-                          : paymentForm.amount,
-                      })
-                    }
-                    className="w-4 h-4 accent-green-600"
-                  />
-                  <span className="text-sm font-medium text-white">
-                    Fully paid
-                    <span className="text-gray-400 font-normal ml-2">
-                      (collect the full package fee)
+                {/* Member fee summary — always shown for consistency */}
+                {!selectedMember.isVip && (
+                  <div className="bg-gray-900 border border-gray-700 rounded-lg p-3 flex items-center justify-between text-sm">
+                    <span className="text-gray-400">Member Package Fee</span>
+                    <span className={selectedMember.membershipFee > 0 ? "text-white font-semibold" : "text-gray-500"}>
+                      {selectedMember.membershipFee > 0
+                        ? `Rs. ${Number(selectedMember.membershipFee).toLocaleString()}`
+                        : "Not set"}
                     </span>
-                  </span>
-                </label>
-              ) : null}
+                  </div>
+                )}
 
-              {/* Amount */}
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Amount (Rs.) *
-                </label>
-                <input
-                  type="number"
-                  value={paymentForm.amount}
-                  onChange={(e) =>
-                    setPaymentForm({ ...paymentForm, amount: e.target.value })
-                  }
-                  disabled={paymentForm.fullyPaid && selectedMember.membershipFee > 0 && !isEditMode}
-                  className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-600 disabled:opacity-60"
-                  placeholder="Enter amount"
-                  required
-                  min="0"
-                  step="0.01"
-                />
-                {/* Remaining for partial payments */}
-                {!paymentForm.fullyPaid && selectedMember.membershipFee > 0 ? (
-                  <p className="text-xs mt-2 text-yellow-500">
-                    Remaining: Rs.{" "}
-                    {Math.max(
-                      (parseFloat(selectedMember.membershipFee) || 0) -
-                        (parseFloat(paymentForm.amount) || 0),
-                      0,
-                    ).toLocaleString()}
-                  </p>
-                ) : null}
-              </div>
-
-              {/* Month + Day */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Month *
+                {/* Fully paid toggle */}
+                {selectedMember.membershipFee > 0 && !isEditMode ? (
+                  <label className="flex items-center gap-3 cursor-pointer bg-gray-900 border border-gray-700 rounded-lg px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={paymentForm.fullyPaid}
+                      onChange={(e) =>
+                        setPaymentForm({
+                          ...paymentForm,
+                          fullyPaid: e.target.checked,
+                          amount: e.target.checked
+                            ? selectedMember.membershipFee
+                            : paymentForm.amount,
+                        })
+                      }
+                      className="w-4 h-4 accent-green-600"
+                    />
+                    <span className="text-sm font-medium text-white">
+                      Fully paid
+                      <span className="text-gray-400 font-normal ml-2">
+                        (collect the full package fee)
+                      </span>
+                    </span>
                   </label>
-                  <input
-                    type="month"
-                    value={paymentForm.month}
-                    onChange={(e) =>
-                      setPaymentForm({ ...paymentForm, month: e.target.value })
-                    }
-                    className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-600"
-                    required
-                  />
-                </div>
+                ) : null}
+
+                {/* Amount */}
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Day *
+                    Amount (Rs.) *
                   </label>
                   <input
                     type="number"
-                    min="1"
-                    max={daysInMonth(paymentForm.month)}
-                    value={paymentForm.day}
+                    value={paymentForm.amount}
                     onChange={(e) =>
-                      setPaymentForm({ ...paymentForm, day: e.target.value })
+                      setPaymentForm({ ...paymentForm, amount: e.target.value })
+                    }
+                    disabled={paymentForm.fullyPaid && selectedMember.membershipFee > 0 && !isEditMode}
+                    className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-600 disabled:opacity-60"
+                    placeholder="Enter amount"
+                    required
+                    min="0"
+                    step="0.01"
+                  />
+                  {/* Remaining for partial payments */}
+                  {!paymentForm.fullyPaid && selectedMember.membershipFee > 0 ? (
+                    <p className="text-xs mt-2 text-yellow-500">
+                      Remaining: Rs.{" "}
+                      {Math.max(
+                        (parseFloat(selectedMember.membershipFee) || 0) -
+                          (parseFloat(paymentForm.amount) || 0),
+                        0,
+                      ).toLocaleString()}
+                    </p>
+                  ) : null}
+                </div>
+
+                {/* Month + Day */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Month *
+                    </label>
+                    <input
+                      type="month"
+                      value={paymentForm.month}
+                      onChange={(e) =>
+                        setPaymentForm({ ...paymentForm, month: e.target.value })
+                      }
+                      className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-600"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Day *
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max={daysInMonth(paymentForm.month)}
+                      value={paymentForm.day}
+                      onChange={(e) =>
+                        setPaymentForm({ ...paymentForm, day: e.target.value })
+                      }
+                      className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-600"
+                      required
+                    />
+                  </div>
+                </div>
+
+                {/* Payment Method */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Payment Method *
+                  </label>
+                  <select
+                    value={paymentForm.paymentMethod}
+                    onChange={(e) =>
+                      setPaymentForm({
+                        ...paymentForm,
+                        paymentMethod: e.target.value,
+                      })
                     }
                     className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-600"
                     required
+                  >
+                    {paymentMethods.map((method) => (
+                      <option key={method} value={method}>
+                        {method}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Notes */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Notes (Optional)
+                  </label>
+                  <textarea
+                    value={paymentForm.notes}
+                    onChange={(e) =>
+                      setPaymentForm({ ...paymentForm, notes: e.target.value })
+                    }
+                    className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-600 resize-none"
+                    placeholder="Additional notes..."
+                    rows="3"
                   />
                 </div>
+
               </div>
 
-              {/* Payment Method */}
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Payment Method *
-                </label>
-                <select
-                  value={paymentForm.paymentMethod}
-                  onChange={(e) =>
-                    setPaymentForm({
-                      ...paymentForm,
-                      paymentMethod: e.target.value,
-                    })
-                  }
-                  className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-600"
-                  required
-                >
-                  {paymentMethods.map((method) => (
-                    <option key={method} value={method}>
-                      {method}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Notes */}
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Notes (Optional)
-                </label>
-                <textarea
-                  value={paymentForm.notes}
-                  onChange={(e) =>
-                    setPaymentForm({ ...paymentForm, notes: e.target.value })
-                  }
-                  className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-600 resize-none"
-                  placeholder="Additional notes..."
-                  rows="3"
-                />
-              </div>
-
-              {/* Submit Buttons */}
-              <div className="flex gap-3 pt-2">
+              {/* Submit Buttons — pinned so they are always reachable */}
+              <div className="flex-shrink-0 border-t border-gray-700 bg-gray-800 p-4 sm:p-6 pb-[max(1rem,env(safe-area-inset-bottom))] sm:pb-6 flex gap-3 rounded-b-2xl">
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowPaymentModal(false);
-                    setSelectedMember(null);
-                  }}
-                  className="flex-1 px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-medium transition active:scale-95"
+                  onClick={closePaymentModal}
+                  className="flex-1 px-4 sm:px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-medium transition active:scale-95"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="flex-1 px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-lg font-medium transition active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 px-4 sm:px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-lg font-medium transition active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {submitting
                     ? isEditMode
