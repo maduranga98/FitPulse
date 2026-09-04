@@ -28,6 +28,10 @@ const defaultSettings = {
   payment: {
     dueDay: 10, // Day of month payments are expected (1-28)
     reminderDays: [3, 1], // Days before due date to send reminders
+    // Automatically block door access for members still unpaid after the
+    // collection day (+ grace). Off by default — it locks real people out.
+    autoBlockUnpaid: false,
+    autoBlockGraceDays: 0,
   },
   // Attendance-based activity config
   attendance: {

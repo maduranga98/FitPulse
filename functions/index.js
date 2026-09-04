@@ -9,6 +9,11 @@ import { ImageAnnotatorClient } from "@google-cloud/vision";
 import process from "process";
 import * as metaWhatsAppService from "./services/metaWhatsAppService.js";
 import * as hik from "./services/hikCentralService.js";
+import {
+  monthKey,
+  isPaymentOverdue,
+  skipReason,
+} from "./services/paymentBlocking.js";
 // import { createClient } from "@supabase/supabase-js";
 import ws from "ws";
 import express from "express";
@@ -2299,5 +2304,192 @@ export const markInactiveMembers = functions.pubsub
       }
     }
 
+    return null;
+  });
+
+// ========================================
+// 🚪 AUTOMATIC DOOR BLOCKING FOR UNPAID MEMBERS
+// ========================================
+/**
+ * Blocks door access for members who have not paid by the gym's payment
+ * collection day, and restores it the moment a payment is recorded.
+ *
+ * Opt-in per gym: settings.payment.autoBlockUnpaid must be true. Blocking
+ * a paying customer out of the gym by mistake is worse than collecting a
+ * fee late, so every rule below errs towards NOT blocking.
+ *
+ * Never auto-blocked:
+ *   - VIP members (isVip) — fee-exempt, they owe nothing
+ *   - inactive members (activityStatus) — they owe nothing until they attend
+ *   - members with no memberCode — nothing to match on the device
+ *   - members not on a "member" role, or whose status isn't active
+ *   - anyone already blocked at the door
+ *
+ * Only DOOR access is touched. App login is deliberately left alone so an
+ * overdue member can still open the app and see what they owe.
+ *
+ * The command is queued for the gym's relay agent exactly like a manual
+ * block; the relay does the ISAPI call. autoBlocked:true marks the member
+ * so a payment can lift it — a manual block is never lifted automatically.
+ */
+
+/** Queue a door command for the relay agent, same shape the app writes. */
+async function queueDeviceCommand(db, { gymId, member, memberId, type, reason }) {
+  return db
+    .collection("gyms")
+    .doc(gymId)
+    .collection("deviceCommands")
+    .add({
+      type,
+      employeeNo: member.memberCode,
+      memberId,
+      memberName: member.name || "",
+      gymId,
+      reason: reason || null,
+      status: "pending",
+      errorMessage: null,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      completedAt: null,
+      createdBy: null,
+      createdByName: "Automatic (unpaid)",
+    });
+}
+
+/** True if a block/unblock for this member is already waiting on the relay. */
+async function hasQueuedCommand(db, gymId, memberId) {
+  // Single equality filter only — served by the automatic single-field
+  // index, so this never depends on a composite index being deployed.
+  // A member has a handful of commands at most, so filtering here is cheap.
+  const snap = await db
+    .collection("gyms")
+    .doc(gymId)
+    .collection("deviceCommands")
+    .where("memberId", "==", memberId)
+    .get();
+  return snap.docs.some((d) =>
+    ["pending", "processing"].includes(d.data().status)
+  );
+}
+
+export const autoBlockUnpaidMembers = functions.pubsub
+  .schedule("0 2 * * *") // daily at 02:00, after markInactiveMembers (01:00)
+  .timeZone("Asia/Colombo")
+  .onRun(async () => {
+    const db = admin.firestore();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const thisMonth = monthKey(today);
+
+    const gymsSnap = await db.collection("gyms").get();
+
+    for (const gymDoc of gymsSnap.docs) {
+      const gym = gymDoc.data();
+      const gymId = gymDoc.id;
+      if (gym.status && gym.status !== "active") continue;
+
+      const paymentCfg = gym.settings?.payment || {};
+      if (paymentCfg.autoBlockUnpaid !== true) continue;
+
+      const dueDay = parseInt(paymentCfg.dueDay) || 10;
+      const graceDays = Math.max(0, parseInt(paymentCfg.autoBlockGraceDays) || 0);
+      const blockFromDay = dueDay + graceDays;
+
+      const membersSnap = await db
+        .collection("members")
+        .where("gymId", "==", gymId)
+        .where("status", "==", "active")
+        .get();
+
+      let blocked = 0;
+      for (const memberDoc of membersSnap.docs) {
+        const member = memberDoc.data();
+        const memberId = memberDoc.id;
+
+        if (skipReason(member)) continue;
+
+        const paidSnap = await db
+          .collection("payments")
+          .where("memberId", "==", memberId)
+          .where("month", "==", thisMonth)
+          .limit(1)
+          .get();
+
+        if (
+          !isPaymentOverdue({
+            member,
+            paidThisMonth: !paidSnap.empty,
+            today,
+            blockFromDay,
+          })
+        ) {
+          continue;
+        }
+
+        if (await hasQueuedCommand(db, gymId, memberId)) continue;
+
+        await queueDeviceCommand(db, {
+          gymId,
+          member,
+          memberId,
+          type: "block",
+          reason: `Automatic — no payment recorded for ${thisMonth}`,
+        });
+        // autoBlocked is what makes the block reversible by a payment. The
+        // relay sets accessBlocked once the device confirms.
+        await memberDoc.ref.update({
+          autoBlocked: true,
+          autoBlockedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        blocked++;
+        console.log(
+          `🚪 Auto-block queued for ${member.name} (${member.memberCode}) — unpaid for ${thisMonth}`,
+        );
+      }
+
+      if (blocked > 0) {
+        console.log(`🚪 Gym ${gymId}: queued ${blocked} auto-block command(s)`);
+      }
+    }
+
+    return null;
+  });
+
+/**
+ * A recorded payment lifts an automatic block immediately — nobody should
+ * have to remember to unblock someone who just paid at the desk.
+ *
+ * Only blocks this system applied (autoBlocked) are lifted. A member blocked
+ * by staff for another reason stays blocked until staff unblock them.
+ */
+export const unblockOnPaymentRecorded = functions.firestore
+  .document("payments/{paymentId}")
+  .onCreate(async (snap) => {
+    const payment = snap.data();
+    if (!payment?.memberId) return null;
+
+    const db = admin.firestore();
+    const memberRef = db.collection("members").doc(payment.memberId);
+    const memberSnap = await memberRef.get();
+    if (!memberSnap.exists) return null;
+
+    const member = memberSnap.data();
+    if (member.autoBlocked !== true) return null; // manual block, or not blocked
+    if (!member.memberCode || !member.gymId) return null;
+
+    await queueDeviceCommand(db, {
+      gymId: member.gymId,
+      member,
+      memberId: payment.memberId,
+      type: "unblock",
+      reason: null,
+    });
+    await memberRef.update({
+      autoBlocked: false,
+      autoBlockedAt: null,
+    });
+
+    console.log(
+      `🚪 Payment recorded for ${member.name} (${member.memberCode}) — auto-unblock queued`,
+    );
     return null;
   });
