@@ -33,6 +33,8 @@ const InstructorExercises = () => {
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [browseSelectedCategory, setBrowseSelectedCategory] = useState("all");
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editingExercise, setEditingExercise] = useState(null);
+  const [savingExercise, setSavingExercise] = useState(false);
   const [showBrowseModal, setShowBrowseModal] = useState(false); // Browse common exercises
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -158,35 +160,150 @@ const InstructorExercises = () => {
     }
   };
 
-  const handleCreateExercise = async (e) => {
+  // One submit path for the modal: it creates a new exercise, or updates the
+  // one being edited. Both write the same shape so an edited exercise can't
+  // drift from a freshly created one.
+  const handleSaveExercise = async (e) => {
     e.preventDefault();
+    if (savingExercise) return;
+    setSavingExercise(true);
 
     try {
       const { db } = await import("../../config/firebase");
-      const { collection, addDoc, Timestamp } = await import(
+      const { collection, addDoc, doc, updateDoc, Timestamp } = await import(
         "firebase/firestore"
       );
 
       const exerciseData = {
         ...exerciseForm,
         gymId: currentGymId,
-        createdBy: user.id,
-        createdByName: user.name,
-        createdAt: Timestamp.now(),
         repsCount: parseInt(exerciseForm.repsCount) || null,
         sets: parseInt(exerciseForm.sets) || null,
         duration: parseInt(exerciseForm.duration) || null,
+        steps: exerciseForm.steps.filter((step) => step.trim() !== ""),
+        targetedSections: exerciseForm.targetedSections.filter(
+          (section) => section.trim() !== ""
+        ),
+        photoURLs: exerciseForm.photoURLs.filter((url) => url.trim() !== ""),
+        videoURLs: exerciseForm.videoURLs.filter((url) => url.trim() !== ""),
       };
 
-      await addDoc(collection(db, "gym_exercises"), exerciseData);
+      if (editingExercise) {
+        // Keep the original author and creation time — an edit is not a
+        // re-creation.
+        await updateDoc(doc(db, "gym_exercises", editingExercise.id), {
+          ...exerciseData,
+          updatedAt: Timestamp.now(),
+          updatedBy: user.id,
+          updatedByName: user.name,
+        });
+        alert("Exercise updated successfully! ✅");
+      } else {
+        await addDoc(collection(db, "gym_exercises"), {
+          ...exerciseData,
+          createdBy: user.id,
+          createdByName: user.name,
+          createdAt: Timestamp.now(),
+        });
+        alert("Exercise created successfully! 🎉");
+      }
 
-      alert("Exercise created successfully! 🎉");
-      setShowCreateModal(false);
-      resetForm();
+      closeExerciseModal();
       fetchData();
     } catch (error) {
-      console.error("Error creating exercise:", error);
-      alert("Failed to create exercise. Please try again.");
+      console.error("Error saving exercise:", error);
+      alert(
+        `Failed to ${editingExercise ? "update" : "create"} exercise. Please try again.`
+      );
+    } finally {
+      setSavingExercise(false);
+    }
+  };
+
+  // Only exercises this gym created live in gym_exercises and can be changed.
+  // Library exercises are shared across gyms — an instructor removes those
+  // from their own list instead (handleToggleSelection).
+  const isEditableExercise = (exercise) =>
+    exercise?.source === "gym" && exercise?.gymId === currentGymId;
+
+  const handleEditExercise = (exercise) => {
+    if (!isEditableExercise(exercise)) {
+      alert(
+        "Library exercises are shared with every gym and can't be edited. Remove it from your list instead."
+      );
+      return;
+    }
+    setEditingExercise(exercise);
+    setExerciseForm({
+      name: exercise.name || "",
+      category: exercise.category || "",
+      steps: exercise.steps?.length > 0 ? exercise.steps : [""],
+      targetedSections:
+        exercise.targetedSections?.length > 0 ? exercise.targetedSections : [""],
+      repsCount: exercise.repsCount ?? "",
+      sets: exercise.sets ?? "",
+      duration: exercise.duration ?? "",
+      difficulty: exercise.difficulty || "beginner",
+      equipment: exercise.equipment || "",
+      notes: exercise.notes || "",
+      photoURLs: exercise.photoURLs?.length > 0 ? exercise.photoURLs : [""],
+      videoURLs: exercise.videoURLs?.length > 0 ? exercise.videoURLs : [""],
+    });
+    setShowCreateModal(true);
+  };
+
+  const closeExerciseModal = () => {
+    setShowCreateModal(false);
+    setEditingExercise(null);
+    resetForm();
+  };
+
+  const handleDeleteExercise = async (exercise) => {
+    if (!isEditableExercise(exercise)) {
+      alert(
+        "Library exercises are shared with every gym and can't be deleted. Remove it from your list instead."
+      );
+      return;
+    }
+
+    try {
+      const { db } = await import("../../config/firebase");
+      const { collection, getDocs, query, where, doc, deleteDoc } =
+        await import("firebase/firestore");
+
+      // Members may already have this exercise assigned. Those assignment
+      // records are the member's own history and are left alone — the
+      // instructor is told how many exist before they decide.
+      let assignedCount = 0;
+      try {
+        const assignmentsSnapshot = await getDocs(
+          query(
+            collection(db, "exercise_assignments"),
+            where("exerciseId", "==", exercise.id),
+            where("gymId", "==", currentGymId)
+          )
+        );
+        assignedCount = assignmentsSnapshot.size;
+      } catch (countError) {
+        console.warn("Could not count assignments:", countError);
+      }
+
+      const warning =
+        assignedCount > 0
+          ? `\n\n${assignedCount} member assignment(s) reference it. Their records stay, but the exercise details will no longer open.`
+          : "";
+      if (
+        !confirm(`Delete "${exercise.name}"? This can't be undone.${warning}`)
+      ) {
+        return;
+      }
+
+      await deleteDoc(doc(db, "gym_exercises", exercise.id));
+      alert("Exercise deleted successfully.");
+      fetchData();
+    } catch (error) {
+      console.error("Error deleting exercise:", error);
+      alert("Failed to delete exercise. Please try again.");
     }
   };
 
@@ -516,7 +633,11 @@ const InstructorExercises = () => {
                 Browse Library
               </button>
               <button
-                onClick={() => setShowCreateModal(true)}
+                onClick={() => {
+                  setEditingExercise(null);
+                  resetForm();
+                  setShowCreateModal(true);
+                }}
                 className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition flex items-center gap-2"
               >
                 <Plus className="w-5 h-5" />
@@ -702,6 +823,36 @@ const InstructorExercises = () => {
                       <Eye className="w-4 h-4" />
                       View
                     </button>
+
+                    {isEditableExercise(exercise) ? (
+                      <>
+                        <button
+                          onClick={() => handleEditExercise(exercise)}
+                          title="Edit exercise"
+                          aria-label={`Edit ${exercise.name}`}
+                          className="py-2 px-3 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-600/50 rounded-lg transition"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteExercise(exercise)}
+                          title="Delete exercise"
+                          aria-label={`Delete ${exercise.name}`}
+                          className="py-2 px-3 bg-red-600/20 hover:bg-red-600/30 text-red-400 border border-red-600/50 rounded-lg transition"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => handleToggleSelection(exercise.id)}
+                        title="Remove from my list"
+                        aria-label={`Remove ${exercise.name} from my list`}
+                        className="py-2 px-3 bg-gray-700/60 hover:bg-red-600/30 text-gray-400 hover:text-red-400 border border-gray-600 hover:border-red-600/50 rounded-lg transition"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -815,21 +966,26 @@ const InstructorExercises = () => {
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
             <div className="bg-gray-800 rounded-xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-bold text-white">
-                  Create Exercise
-                </h2>
+                <div>
+                  <h2 className="text-2xl font-bold text-white">
+                    {editingExercise ? "Edit Exercise" : "Create Exercise"}
+                  </h2>
+                  {editingExercise && (
+                    <p className="text-sm text-gray-400 mt-1">
+                      {editingExercise.name}
+                    </p>
+                  )}
+                </div>
                 <button
-                  onClick={() => {
-                    setShowCreateModal(false);
-                    resetForm();
-                  }}
+                  type="button"
+                  onClick={closeExerciseModal}
                   className="text-gray-400 hover:text-white transition"
                 >
                   <X className="w-6 h-6" />
                 </button>
               </div>
 
-              <form onSubmit={handleCreateExercise} className="space-y-4">
+              <form onSubmit={handleSaveExercise} className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">
                     Exercise Name *
@@ -1137,20 +1293,24 @@ const InstructorExercises = () => {
                 <div className="flex gap-3 pt-4">
                   <button
                     type="button"
-                    onClick={() => {
-                      setShowCreateModal(false);
-                      resetForm();
-                    }}
+                    onClick={closeExerciseModal}
                     className="flex-1 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-medium transition"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition flex items-center justify-center gap-2"
+                    disabled={savingExercise || uploadingFiles}
+                    className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Save className="w-4 h-4" />
-                    Create Exercise
+                    {savingExercise
+                      ? editingExercise
+                        ? "Saving..."
+                        : "Creating..."
+                      : editingExercise
+                        ? "Save Changes"
+                        : "Create Exercise"}
                   </button>
                 </div>
               </form>
@@ -1433,13 +1593,38 @@ const InstructorExercises = () => {
                 )}
               </div>
 
-              <div className="mt-6">
+              <div className="mt-6 flex flex-col sm:flex-row gap-3">
                 <button
                   onClick={() => setShowViewModal(false)}
-                  className="w-full py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-medium transition"
+                  className="flex-1 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-medium transition"
                 >
                   Close
                 </button>
+                {isEditableExercise(selectedExercise) && (
+                  <>
+                    <button
+                      onClick={() => {
+                        setShowViewModal(false);
+                        handleEditExercise(selectedExercise);
+                      }}
+                      className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition flex items-center justify-center gap-2"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                      Edit
+                    </button>
+                    <button
+                      onClick={async () => {
+                        const exercise = selectedExercise;
+                        setShowViewModal(false);
+                        await handleDeleteExercise(exercise);
+                      }}
+                      className="flex-1 py-3 bg-red-600/20 hover:bg-red-600/30 text-red-400 border border-red-600/50 rounded-lg font-medium transition flex items-center justify-center gap-2"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Delete
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </div>
