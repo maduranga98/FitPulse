@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { sendInstructorCredentialsSMS } from "../services/smsService";
 import AdminLayout from "../components/AdminLayout";
+import CredentialsSmsPanel from "../components/CredentialsSmsPanel";
 import {
   Users,
   Plus,
@@ -430,6 +431,21 @@ const InstructorManagement = () => {
                     </p>
                   )}
 
+                  {/* Credentials go out by SMS once, when the account is
+                      created, and that send can fail unnoticed. No history is
+                      loaded here — one query per card would be wasteful for a
+                      button nobody has pressed yet. */}
+                  <div className="mb-4">
+                    <CredentialsSmsPanel
+                      person={instructor}
+                      gymId={currentUser?.gymId}
+                      kind="instructor"
+                      sentBy={currentUser?.name || currentUser?.username || null}
+                      compact
+                      withHistory={false}
+                    />
+                  </div>
+
                   <div className="flex gap-2 pt-3 border-t border-gray-700">
                     <button
                       onClick={() => handleOpenModal(instructor)}
@@ -553,6 +569,21 @@ const InstructorManagement = () => {
                   <p className="text-xs text-gray-500">No phone number — share credentials manually.</p>
                 ) : null}
               </div>
+
+              {/* A failed first send is recoverable without leaving this
+                  screen — the credentials are still on it. */}
+              {successData.phone && !successData.smsSent && (
+                <div className="mt-3">
+                  <CredentialsSmsPanel
+                    person={successData}
+                    gymId={currentUser?.gymId}
+                    kind="instructor"
+                    sentBy={currentUser?.name || currentUser?.username || null}
+                    compact
+                    withHistory={false}
+                  />
+                </div>
+              )}
 
               <button
                 onClick={() => setSuccessData(null)}

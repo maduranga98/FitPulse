@@ -259,9 +259,16 @@ const InstructorDashboard = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-1">
             <div className="bg-gray-800 rounded-xl border border-gray-700 p-6">
-              <h2 className="text-xl font-bold text-white mb-4">
-                Your Profile
-              </h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-bold text-white">Your Profile</h2>
+                <button
+                  onClick={() => navigate("/instructor/profile")}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-blue-400 hover:text-white hover:bg-blue-600 rounded-lg transition"
+                >
+                  <Settings className="w-4 h-4" />
+                  Manage
+                </button>
+              </div>
               
               <div className="flex items-center gap-4 mb-6">
                 <div className="w-16 h-16 bg-gradient-to-br from-blue-600 to-purple-600 rounded-full flex items-center justify-center">

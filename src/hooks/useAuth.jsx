@@ -171,8 +171,29 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
   };
 
+  /**
+   * Merge freshly saved profile fields into the signed-in user.
+   *
+   * The session is the localStorage copy written at login, so a profile edit
+   * that only writes to Firestore leaves the sidebar and greetings showing the
+   * OLD name until the next sign-in. Callers pass just the fields they saved;
+   * identity fields (id, role, gymId) are never taken from the caller.
+   */
+  const updateUser = (fields) => {
+    setUser((current) => {
+      if (!current) return current;
+      const safeFields = { ...(fields || {}) };
+      delete safeFields.id;
+      delete safeFields.role;
+      delete safeFields.gymId;
+      const next = { ...current, ...safeFields };
+      localStorage.setItem("gymUser", JSON.stringify(next));
+      return next;
+    });
+  };
+
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, login, logout, loading, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

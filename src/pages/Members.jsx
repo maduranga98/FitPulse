@@ -8,9 +8,15 @@ import { calculateBMI, validateBMIInputs } from "../utils/validationUtils";
 import { QRCodeSVG, QRCodeCanvas } from "qrcode.react";
 import { useGymSettings } from "../contexts/GymSettingsContext";
 import { isInactiveMember } from "../utils/paymentTotals";
+import {
+  getAttendanceSummary,
+  getInactiveReason,
+  formatDate as formatMemberDate,
+} from "../utils/memberActivity";
 import { supabase } from "../services/supabaseClient";
 import { APP_URL } from "../config/app";
 import AccessControlCard from "../components/AccessControlCard";
+import CredentialsSmsPanel from "../components/CredentialsSmsPanel";
 import {
   createDeviceCommand,
   subscribeToDeviceCommand,
@@ -27,6 +33,33 @@ const formatRelaySeen = (date, now) => {
   if (secs < 3600) return `${Math.round(secs / 60)} min ago`;
   if (secs < 86400) return `${Math.round(secs / 3600)} hr ago`;
   return date.toLocaleString();
+};
+
+// One-line "last seen" for a member card. Reads `lastAttendanceDate` — the
+// field the check-in path stamps — so no extra query is needed per member.
+// Muted for a member who is still active; amber for an inactive one, where
+// the date is the whole reason they are inactive.
+const LastSeen = ({ member }) => {
+  const { summaryLabel, neverAttended } = getAttendanceSummary(member);
+  const inactive = isInactiveMember(member);
+
+  return (
+    <div className="flex items-center justify-between text-sm">
+      <span className="text-gray-400">Last seen:</span>
+      <span
+        title={
+          neverAttended
+            ? "This member has never checked in"
+            : "Last recorded gym check-in"
+        }
+        className={`font-medium text-right ${
+          inactive || neverAttended ? "text-amber-400" : "text-white"
+        }`}
+      >
+        {summaryLabel}
+      </span>
+    </div>
+  );
 };
 
 const HikStatus = ({ member, onRetry, retrying }) => {
@@ -93,6 +126,7 @@ const Members = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterLevel, setFilterLevel] = useState("all");
+  const [sortBy, setSortBy] = useState("name");
   const [showQRModal, setShowQRModal] = useState(false);
   const [editingPackage, setEditingPackage] = useState(false);
   const [savingPackageEdit, setSavingPackageEdit] = useState(false);
@@ -620,9 +654,14 @@ const Members = () => {
       }
 
       setGeneratedCredentials({
+        // id and phone are carried through so the credentials screen can send
+        // the SMS again itself if the automatic one did not arrive.
+        id: memberRef.id,
         username,
         password,
         name: memberForm.name,
+        mobile: memberForm.mobile,
+        whatsapp: memberForm.whatsapp,
         memberCode,
         devicePIN,
         profileImageUrl,
@@ -996,6 +1035,19 @@ const Members = () => {
     return matchesQuery && matchesStatus && matchesLevel;
   });
 
+  // Sorting is applied on a copy — `filteredMembers` above is already a new
+  // array from .filter(), but sorting it in place would still be a footgun if
+  // that ever changes.
+  const sortedMembers = [...filteredMembers].sort((a, b) => {
+    if (sortBy === "name") return (a.name || "").localeCompare(b.name || "");
+    // "Longest absent first" is the ordering an admin actually wants when
+    // working through the inactive list, so a member who has NEVER attended
+    // sorts to the very top rather than to the bottom as a missing value.
+    const aDays = getAttendanceSummary(a).daysSince ?? Number.MAX_SAFE_INTEGER;
+    const bDays = getAttendanceSummary(b).daysSince ?? Number.MAX_SAFE_INTEGER;
+    return sortBy === "lastSeenOldest" ? bDays - aDays : aDays - bDays;
+  });
+
   const stats = {
     total: members.length,
     active: members.filter((m) => m.status === "active" && !isInactiveMember(m))
@@ -1306,11 +1358,21 @@ const Members = () => {
               <option value="intermediate">Intermediate</option>
               <option value="advanced">Advanced</option>
             </select>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              title="Sort by last attendance to work through lapsed members"
+              className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="name">Sort: Name</option>
+              <option value="lastSeenOldest">Sort: Away longest</option>
+              <option value="lastSeenNewest">Sort: Most recent visit</option>
+            </select>
           </div>
 
           {/* Members Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredMembers.length === 0 ? (
+            {sortedMembers.length === 0 ? (
               <div className="col-span-full text-center py-12">
                 <p className="text-gray-400 text-lg">No members found</p>
                 {userIsAdmin && (
@@ -1323,7 +1385,7 @@ const Members = () => {
                 )}
               </div>
             ) : (
-              filteredMembers.map((member) => (
+              sortedMembers.map((member) => (
                 <div
                   key={member.id}
                   className="bg-gray-800 border border-gray-700 rounded-xl p-5 hover:border-gray-600 transition"
@@ -1414,6 +1476,7 @@ const Members = () => {
                       <span className="text-gray-400">Age:</span>
                       <span className="text-white">{member.age} years</span>
                     </div>
+                    <LastSeen member={member} />
                   </div>
 
                   <div className="flex gap-2">
@@ -2267,6 +2330,19 @@ const Members = () => {
                 </div>
               </div>
 
+              {/* The credentials SMS goes out automatically a moment after the
+                  member is created. If it does not arrive, it can be sent from
+                  right here rather than hunting for the member again. */}
+              <div className="mb-4">
+                <CredentialsSmsPanel
+                  person={generatedCredentials}
+                  gymId={currentGymId}
+                  kind="member"
+                  sentBy={user?.name || user?.username || null}
+                  compact
+                />
+              </div>
+
               <div className="flex gap-3">
                 <button
                   onClick={() => {
@@ -2336,6 +2412,51 @@ const Members = () => {
             </div>
 
             <div className="p-6">
+              {/* Why this member is inactive, and when they were last here.
+                  Shown before anything else because it is the first thing an
+                  admin opening an inactive member's profile wants to know. */}
+              {isInactiveMember(viewMember) && (
+                <div className="mb-6 bg-amber-500/10 border border-amber-500/30 rounded-lg p-4">
+                  <div className="flex items-start gap-3">
+                    <svg
+                      className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
+                    <div className="min-w-0">
+                      <div className="text-amber-300 font-semibold text-sm">
+                        Inactive — {getInactiveReason(viewMember)}
+                      </div>
+                      <div className="text-amber-200/80 text-sm mt-1">
+                        {(() => {
+                          const {
+                            neverAttended,
+                            dateLabel,
+                            relativeLabel,
+                            daysSince,
+                            joinDate,
+                          } = getAttendanceSummary(viewMember);
+                          if (neverAttended) {
+                            return joinDate
+                              ? `Never checked in since joining on ${formatMemberDate(joinDate)} (${daysSince} days).`
+                              : "No attendance has ever been recorded for this member.";
+                          }
+                          return `Last attendance: ${dateLabel} — ${relativeLabel}.`;
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {userIsAdmin && (
                 <>
                   <div className="mb-4 flex gap-3">
@@ -2559,6 +2680,36 @@ const Members = () => {
                       {viewMember.status}
                     </span>
                   </div>
+                  <div className="bg-gray-900 rounded-lg p-4">
+                    <div className="text-gray-400 text-sm mb-1">
+                      Last Attendance
+                    </div>
+                    {(() => {
+                      const { neverAttended, dateLabel, relativeLabel } =
+                        getAttendanceSummary(viewMember);
+                      if (neverAttended) {
+                        return (
+                          <div className="text-amber-400 font-medium">
+                            Never attended
+                          </div>
+                        );
+                      }
+                      return (
+                        <div
+                          className={`font-medium ${
+                            isInactiveMember(viewMember)
+                              ? "text-amber-400"
+                              : "text-white"
+                          }`}
+                        >
+                          {dateLabel}
+                          <span className="block text-xs text-gray-400 mt-0.5">
+                            {relativeLabel}
+                          </span>
+                        </div>
+                      );
+                    })()}
+                  </div>
                   {!editingPackage ? (
                     <>
                       {viewMember.membershipFee != null && (
@@ -2766,6 +2917,18 @@ const Members = () => {
                         </div>
                       </div>
                     </div>
+                  </div>
+                  {/* The credentials SMS is sent once, automatically, by the
+                      onMemberCreated function — and it can fail without anyone
+                      noticing. This says whether it actually went out, and
+                      sends it again on demand. */}
+                  <div className="mt-3">
+                    <CredentialsSmsPanel
+                      person={viewMember}
+                      gymId={currentGymId}
+                      kind="member"
+                      sentBy={user?.name || user?.username || null}
+                    />
                   </div>
                 </div>
               )}

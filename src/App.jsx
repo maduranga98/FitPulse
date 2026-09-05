@@ -55,6 +55,7 @@ import InstructorAddMember from "./pages/instructor/InstructorAddMember";
 import InstructorPayments from "./pages/instructor/InstructorPayments";
 import InstructorSupplements from "./pages/instructor/InstructorSupplements";
 import InstructorPackages from "./pages/instructor/InstructorPackages";
+import InstructorProfile from "./pages/instructor/InstructorProfile";
 import GymSettings from "./pages/GymSettings";
 import SelfRegister from "./pages/SelfRegister";
 import DeviceManagement from "./pages/DeviceManagement";
@@ -681,6 +682,16 @@ function App() {
                   <ProtectedRoute>
                     <RoleRoute allowedRoles={["trainer"]}>
                       <InstructorPackages />
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/instructor/profile"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute allowedRoles={["trainer"]}>
+                      <InstructorProfile />
                     </RoleRoute>
                   </ProtectedRoute>
                 }

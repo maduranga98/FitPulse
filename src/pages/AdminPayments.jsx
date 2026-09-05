@@ -13,6 +13,10 @@ import {
   isInactiveMember,
   paymentsForMonth,
 } from "../utils/paymentTotals";
+import {
+  getAttendanceSummary,
+  getInactiveReason,
+} from "../utils/memberActivity";
 import MemberAvatar from "../components/MemberAvatar";
 import { matchesSearch } from "../utils/searchUtils";
 
@@ -82,17 +86,30 @@ const AdminPayments = () => {
         "firebase/firestore"
       );
 
-      // Fetch members (active only)
+      // Fetch EVERY member of the gym — active and inactive alike.
+      //
+      // This query used to carry `where("status", "==", "active")`, which meant
+      // a member an admin had set to inactive was never loaded at all: they
+      // could not be searched for and a payment could not be recorded against
+      // them, even though the "Inactive" tab implied they would be there (it
+      // only ever showed members the attendance job had flagged, who are still
+      // status: "active"). Inactive members still settle outstanding dues, so
+      // the screen has to be able to reach them.
+      //
+      // Which members COUNT toward the money figures has not changed — that is
+      // decided below by isPayingMember/isInactiveMember, not by this query.
+      //
+      // Sorting is client-side: an equality filter plus orderBy on another
+      // field needs a composite index, and the list is a single gym's members.
       const membersQuery = query(
         collection(db, "members"),
-        where("gymId", "==", currentGymId),
-        where("status", "==", "active"),
-        orderBy("name", "asc")
+        where("gymId", "==", currentGymId)
       );
       const membersSnapshot = await getDocs(membersQuery);
       const membersData = membersSnapshot.docs
         .map((doc) => ({ id: doc.id, ...doc.data() }))
-        .filter((m) => !m.role || m.role === "member");
+        .filter((m) => !m.role || m.role === "member")
+        .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
 
       // Fetch payments
       const paymentsQuery = query(
@@ -389,19 +406,43 @@ const AdminPayments = () => {
     const isPaid = checkPaymentStatus(member.id);
     const exempt = isFeeExempt(member);
     const inactive = isInactiveMember(member);
+    // Blocked members were never loaded by this screen before the query was
+    // widened, so they stay out of every money-focused tab — widening the
+    // query must not quietly add them to outstanding balances.
+    const blocked = member.status === "blocked";
     const matchesStatus =
       // Inactive members — set inactive by an admin, or flipped by the
-      // attendance job — owe nothing and are hidden from every status except
-      // the dedicated "Inactive" tab: payments only ever shows ACTIVE unpaid.
-      (filterStatus === "all" && !inactive) ||
-      (filterStatus === "paid" && !inactive && isPaid) ||
+      // attendance job — owe nothing and are hidden from the money-focused
+      // tabs: payments only ever shows ACTIVE unpaid. "Everyone" is the
+      // deliberate escape hatch for recording a payment against anyone.
+      filterStatus === "everyone" ||
+      (filterStatus === "all" && !inactive && !blocked) ||
+      (filterStatus === "paid" && !inactive && !blocked && isPaid) ||
       // VIPs owe nothing, so they are never part of the unpaid list
-      (filterStatus === "unpaid" && !inactive && !isPaid && !exempt) ||
-      (filterStatus === "vip" && !inactive && exempt) ||
+      (filterStatus === "unpaid" && !inactive && !blocked && !isPaid && !exempt) ||
+      (filterStatus === "vip" && !inactive && !blocked && exempt) ||
       (filterStatus === "inactive" && inactive);
 
     return matchesQuery && matchesStatus;
   });
+
+  // Members a search matches that the CURRENT tab hides. Without this, a
+  // search for an inactive member from the default "Unpaid" tab looks like the
+  // member does not exist, which is exactly the confusion the "Everyone" tab
+  // exists to resolve — so the UI offers the jump instead of staying silent.
+  const hiddenSearchMatches =
+    searchTerm.trim() && filterStatus !== "everyone"
+      ? members.filter(
+          (member) =>
+            matchesSearch(
+              searchTerm,
+              member.name,
+              member.email,
+              member.mobile,
+              member.memberCode
+            ) && !filteredMembers.some((m) => m.id === member.id)
+        ).length
+      : 0;
 
   // "Total Collected" is the plain sum of the payments recorded FOR this
   // month — no averages, no projections. Keeping the list around lets the
@@ -409,13 +450,22 @@ const AdminPayments = () => {
   const currentMonthPayments = paymentsForMonth(payments, getCurrentMonth());
   const totalCollected = sumAmounts(currentMonthPayments);
 
+  // Every money figure below is computed over BILLABLE members only. Blocked
+  // members are excluded here because they were never loaded at all before
+  // this screen started fetching the whole roster — the widened query exists
+  // so an inactive member can be found and paid for, not to change any total.
+  const billableMembers = members.filter((m) => m.status !== "blocked");
+  const blockedMembersCount = members.length - billableMembers.length;
+
   // VIP and inactive members are excluded from paying totals: VIPs are
   // fee-exempt, inactive members owe
   // nothing until they attend again.
-  const activeMembers = members.filter((m) => !isInactiveMember(m));
-  const payingMembers = members.filter(isPayingMember);
+  const activeMembers = billableMembers.filter((m) => !isInactiveMember(m));
+  const payingMembers = billableMembers.filter(isPayingMember);
   const vipMembersCount = activeMembers.length - payingMembers.length;
-  const inactiveMembersCount = members.length - activeMembers.length;
+  // Counted with the same predicate the "Inactive" tab filters by, so the
+  // badge on the tab always matches the number of cards behind it.
+  const inactiveMembersCount = members.filter(isInactiveMember).length;
   const paidMembersCount = payingMembers.filter((m) =>
     checkPaymentStatus(m.id)
   ).length;
@@ -478,6 +528,16 @@ const AdminPayments = () => {
           },
         ]
       : []),
+    // Always present, even when nothing is inactive: it is the one tab
+    // guaranteed to contain every member, so it is where you look when a
+    // member you expected is missing from the others.
+    {
+      id: "everyone",
+      label: "All Members",
+      count: members.length,
+      accent: "text-blue-400",
+      activeClass: "bg-blue-500/15 text-blue-300 border-blue-500/40",
+    },
   ];
 
   const activeTab =
@@ -489,6 +549,8 @@ const AdminPayments = () => {
     all: "Every active member, paid or not",
     vip: "Fee-exempt members — nothing is owed",
     inactive: "Inactive members — excluded from unpaid",
+    everyone:
+      "Every member in the gym, active and inactive — record a payment for anyone",
   };
 
   const emptyStates = {
@@ -505,6 +567,10 @@ const AdminPayments = () => {
     inactive: {
       title: "No inactive members",
       body: "Every member has attended recently.",
+    },
+    everyone: {
+      title: "No members yet",
+      body: "Add members from the Members page to start recording payments.",
     },
   };
 
@@ -605,6 +671,7 @@ const AdminPayments = () => {
                 {payingMembers.length} paying
                 {vipMembersCount > 0 ? ` · ${vipMembersCount} VIP (no fee)` : ""}
                 {inactiveMembersCount > 0 ? ` · ${inactiveMembersCount} inactive` : ""}
+                {blockedMembersCount > 0 ? ` · ${blockedMembersCount} blocked` : ""}
               </p>
             </div>
 
@@ -866,6 +933,33 @@ const AdminPayments = () => {
                   } for "${searchTerm}"`
                 : ""}
             </p>
+
+            {hiddenSearchMatches > 0 && (
+              <button
+                type="button"
+                onClick={() => setFilterStatus("everyone")}
+                className="mt-2 w-full flex items-center gap-2 text-left px-3 py-2 rounded-lg bg-blue-500/10 border border-blue-500/30 text-blue-300 text-xs font-medium hover:bg-blue-500/20 transition"
+              >
+                <svg
+                  className="w-4 h-4 flex-shrink-0"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+                <span>
+                  {hiddenSearchMatches} more member
+                  {hiddenSearchMatches === 1 ? "" : "s"} match "{searchTerm}"
+                  outside this tab — show all members
+                </span>
+              </button>
+            )}
           </div>
 
           {/* Members List */}
@@ -925,14 +1019,30 @@ const AdminPayments = () => {
                             </span>
                           )}
                           {isInactiveMember(member) && (
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-500/20 text-gray-400 flex-shrink-0">
+                            <span
+                              title={getInactiveReason(member)}
+                              className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400 flex-shrink-0"
+                            >
                               INACTIVE
+                            </span>
+                          )}
+                          {member.status === "blocked" && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-500/20 text-red-400 flex-shrink-0">
+                              BLOCKED
                             </span>
                           )}
                         </h3>
                         <p className="text-sm text-gray-400 truncate">
                           {member.email}
                         </p>
+                        {/* Why they are inactive, on the card itself, so an
+                            admin can decide whether to chase the payment
+                            without opening the member's profile. */}
+                        {isInactiveMember(member) && (
+                          <p className="text-xs text-amber-400/80 truncate mt-0.5">
+                            Last seen: {getAttendanceSummary(member).summaryLabel}
+                          </p>
+                        )}
                       </div>
                     </div>
 
@@ -1179,6 +1289,20 @@ const AdminPayments = () => {
                 {selectedMember.isVip && (
                   <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 text-amber-400 text-sm">
                     This member is a <span className="font-semibold">VIP</span> — no membership fee is collected. You can still record an optional payment below if needed.
+                  </div>
+                )}
+
+                {/* Recording a payment is always allowed for an inactive
+                    member — they still settle outstanding dues — but the
+                    payment alone does not make them active again, so say so
+                    rather than letting the admin assume it did. */}
+                {isInactiveMember(selectedMember) && (
+                  <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 text-amber-300 text-sm">
+                    <span className="font-semibold">Inactive member</span> —{" "}
+                    {getInactiveReason(selectedMember)?.toLowerCase()}. Last
+                    seen {getAttendanceSummary(selectedMember).summaryLabel}.
+                    The payment will be recorded normally; their status changes
+                    on their next check-in, or from the Members page.
                   </div>
                 )}
 
