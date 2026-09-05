@@ -10,6 +10,7 @@ import {
   collection,
   addDoc,
   doc,
+  updateDoc,
   onSnapshot,
   deleteDoc,
   serverTimestamp,
@@ -46,6 +47,29 @@ export const createDeviceCommand = async ({ gymId, member, type, reason, user })
     createdByName: user?.name || user?.username || null,
   });
   return ref.id;
+};
+
+/**
+ * Record that staff decided this member's door state by hand, so the nightly
+ * unpaid-member job doesn't undo it.
+ *
+ * Unblocking is the case that matters: without this, a member let back in by
+ * an owner or trainer while still unpaid would be blocked again at 02:00.
+ * The exemption is scoped to the current month — next month's collection day
+ * starts the automation again.
+ */
+export const markManualAccessOverride = async (memberId, type) => {
+  if (!memberId) return;
+  const fields =
+    type === "unblock"
+      ? {
+          autoBlocked: false,
+          autoBlockedAt: null,
+          autoBlockExemptMonth: new Date().toISOString().slice(0, 7),
+        }
+      : // A staff block is never lifted automatically by a payment.
+        { autoBlocked: false };
+  await updateDoc(doc(db, "members", memberId), fields);
 };
 
 /**
