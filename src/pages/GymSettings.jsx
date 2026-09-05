@@ -400,10 +400,13 @@ const GymSettings = () => {
                   Block door access for unpaid members
                 </p>
                 <p className="text-xs text-gray-500 mt-1 max-w-xl">
-                  Each night, members still unpaid after the collection day lose
-                  door access at the terminal. Recording a payment restores it
-                  automatically. VIP and inactive members are never blocked, and
-                  app login is never affected — only the door.
+                  Each night, members with no payment recorded for the current
+                  month lose door access at the terminal once the collection day
+                  has passed. Settling an older month does not count — the
+                  current month has to be recorded before access returns, in
+                  whichever order the months are entered. VIP and inactive
+                  members are never blocked, and app login is never affected —
+                  only the door.
                 </p>
               </div>
               <button

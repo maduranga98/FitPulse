@@ -4,12 +4,15 @@ import {
   createDeviceCommand,
   subscribeToDeviceCommand,
   cancelDeviceCommand,
+  markManualAccessOverride,
   COMMAND_TIMEOUT_MS,
 } from "../services/deviceAccessService";
 
-// Door access control card shown on the member detail modal (Owner/Manager
-// only). Blocking is executed by the on-prem relay agent, so the UI queues
-// a command and waits for the relay to confirm before flipping state.
+// Door access control card shown on the member detail modal, for owners,
+// managers and trainers alike — whoever is at the desk when a member has to
+// be locked out or let back in. Blocking is executed by the on-prem relay
+// agent, so the UI queues a command and waits for the relay to confirm
+// before flipping state.
 const AccessControlCard = ({ member, gymId, user, onMemberUpdated }) => {
   const { showSuccess, showError } = useNotification();
   const [confirmType, setConfirmType] = useState(null); // "block" | "unblock" | null
@@ -66,6 +69,12 @@ const AccessControlCard = ({ member, gymId, user, onMemberUpdated }) => {
         if (cmd.status === "completed") {
           stopWatching();
           setPending(null);
+          // A hand-made decision outranks the nightly unpaid-member job:
+          // without this, someone let back in while still unpaid would be
+          // blocked again at 02:00.
+          markManualAccessOverride(member.id, type).catch((err) =>
+            console.warn("Could not record the manual access override:", err)
+          );
           showSuccess(
             type === "block"
               ? `${member.name}'s door access has been blocked`

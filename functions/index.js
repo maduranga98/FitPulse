@@ -13,6 +13,7 @@ import {
   monthKey,
   isPaymentOverdue,
   skipReason,
+  coverageThroughMonth,
 } from "./services/paymentBlocking.js";
 // import { createClient } from "@supabase/supabase-js";
 import ws from "ws";
@@ -2312,7 +2313,12 @@ export const markInactiveMembers = functions.pubsub
 // ========================================
 /**
  * Blocks door access for members who have not paid by the gym's payment
- * collection day, and restores it the moment a payment is recorded.
+ * collection day, and restores it the moment the month is settled.
+ *
+ * "Paid" means a payment recorded FOR the current month, not money that
+ * arrived during it: a member who settles August in September still owes
+ * September and stays blocked until September is recorded too. Recording
+ * the two months in either order gives the same result.
  *
  * Opt-in per gym: settings.payment.autoBlockUnpaid must be true. Blocking
  * a paying customer out of the gym by mistake is worse than collecting a
@@ -2324,6 +2330,7 @@ export const markInactiveMembers = functions.pubsub
  *   - members with no memberCode — nothing to match on the device
  *   - members not on a "member" role, or whose status isn't active
  *   - anyone already blocked at the door
+ *   - anyone an owner or trainer unblocked by hand this month
  *
  * Only DOOR access is touched. App login is deliberately left alone so an
  * overdue member can still open the app and see what they owe.
@@ -2353,6 +2360,15 @@ async function queueDeviceCommand(db, { gymId, member, memberId, type, reason })
       createdBy: null,
       createdByName: "Automatic (unpaid)",
     });
+}
+
+/** Every payment record for a member (single equality filter, no index needed). */
+async function memberPayments(db, memberId) {
+  const snap = await db
+    .collection("payments")
+    .where("memberId", "==", memberId)
+    .get();
+  return snap.docs.map((d) => d.data());
 }
 
 /** True if a block/unblock for this member is already waiting on the relay. */
@@ -2404,23 +2420,15 @@ export const autoBlockUnpaidMembers = functions.pubsub
         const member = memberDoc.data();
         const memberId = memberDoc.id;
 
-        if (skipReason(member)) continue;
+        if (skipReason(member, thisMonth)) continue;
 
-        const paidSnap = await db
-          .collection("payments")
-          .where("memberId", "==", memberId)
-          .where("month", "==", thisMonth)
-          .limit(1)
-          .get();
+        // Every payment for the member: which MONTHS they cover is what
+        // decides this, and a single equality filter needs no composite
+        // index. A member has a few dozen payments at most.
+        const payments = await memberPayments(db, memberId);
 
         if (
-          !isPaymentOverdue({
-            member,
-            paidThisMonth: !paidSnap.empty,
-            today,
-            dueDay,
-            graceDays,
-          })
+          !isPaymentOverdue({ member, payments, today, dueDay, graceDays })
         ) {
           continue;
         }
@@ -2455,8 +2463,14 @@ export const autoBlockUnpaidMembers = functions.pubsub
   });
 
 /**
- * A recorded payment lifts an automatic block immediately — nobody should
- * have to remember to unblock someone who just paid at the desk.
+ * A recorded payment lifts an automatic block as soon as the member is no
+ * longer overdue — nobody should have to remember to unblock someone who
+ * just paid at the desk.
+ *
+ * Paying an OLDER month does not lift the block on its own: a member who
+ * settles August in September still owes September, so the same rule the
+ * nightly job uses is re-run over all of their payments. Recording the two
+ * months in either order ends with the door open.
  *
  * Only blocks this system applied (autoBlocked) are lifted. A member blocked
  * by staff for another reason stays blocked until staff unblock them.
@@ -2475,6 +2489,24 @@ export const unblockOnPaymentRecorded = functions.firestore
     const member = memberSnap.data();
     if (member.autoBlocked !== true) return null; // manual block, or not blocked
     if (!member.memberCode || !member.gymId) return null;
+
+    const gymSnap = await db.collection("gyms").doc(member.gymId).get();
+    const paymentCfg = gymSnap.data()?.settings?.payment || {};
+    const dueDay = parseInt(paymentCfg.dueDay) || 10;
+    const graceDays = Math.max(0, parseInt(paymentCfg.autoBlockGraceDays) || 0);
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const payments = await memberPayments(db, payment.memberId);
+
+    if (isPaymentOverdue({ member, payments, today, dueDay, graceDays })) {
+      console.log(
+        `🚪 Payment recorded for ${member.name} (${member.memberCode}) but ` +
+          `${monthKey(today)} is still unpaid (covered through ` +
+          `${coverageThroughMonth(payments, member) || "nothing"}) — stays blocked`,
+      );
+      return null;
+    }
 
     await queueDeviceCommand(db, {
       gymId: member.gymId,

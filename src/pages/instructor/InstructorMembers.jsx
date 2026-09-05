@@ -16,6 +16,7 @@ import {
   Phone,
 } from "lucide-react";
 import { isInactiveMember } from "../../utils/paymentTotals";
+import AccessControlCard from "../../components/AccessControlCard";
 
 const InstructorMembers = () => {
   const { user } = useAuth();
@@ -281,6 +282,18 @@ const InstructorMembers = () => {
                             Inactive
                           </span>
                         )}
+                        {member.accessBlocked === true && (
+                          <span
+                            title={
+                              member.accessBlockedReason
+                                ? `Door blocked — ${member.accessBlockedReason}`
+                                : "Door access is blocked at the terminal"
+                            }
+                            className="ml-1 text-xs px-2 py-0.5 rounded-full font-medium bg-[#FF6B6B]/20 text-[#FF6B6B]"
+                          >
+                            Door blocked
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div className="space-y-1">
@@ -359,6 +372,23 @@ const InstructorMembers = () => {
                   <X className="w-6 h-6" />
                 </button>
               </div>
+
+              {/* Door access — trainers block and unblock at the desk, so
+                  they don't have to find an owner to lock out a member who
+                  hasn't paid (or let one back in who just has). */}
+              <AccessControlCard
+                member={selectedMember}
+                gymId={currentGymId}
+                user={user}
+                onMemberUpdated={(fields) => {
+                  setSelectedMember((m) => (m ? { ...m, ...fields } : m));
+                  setMembers((prev) =>
+                    prev.map((m) =>
+                      m.id === selectedMember.id ? { ...m, ...fields } : m
+                    )
+                  );
+                }}
+              />
 
               {/* Member Info */}
               <div className="space-y-4 mb-6">
