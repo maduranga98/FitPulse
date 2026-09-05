@@ -16,6 +16,7 @@ import {
   Copy,
   Check,
 } from "lucide-react";
+import { matchesSearch } from "../utils/searchUtils";
 
 const InstructorManagement = () => {
   const { user: currentUser } = useAuth();
@@ -285,9 +286,13 @@ const InstructorManagement = () => {
 
   const getFilteredInstructors = () => {
     return instructors.filter((instructor) =>
-      instructor.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      instructor.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      instructor.specialization?.toLowerCase().includes(searchQuery.toLowerCase())
+      matchesSearch(
+        searchQuery,
+        instructor.name,
+        instructor.email,
+        instructor.specialization,
+        instructor.mobile,
+      ),
     );
   };
 

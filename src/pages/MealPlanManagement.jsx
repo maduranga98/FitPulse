@@ -13,6 +13,7 @@ import {
   Check,
   UserPlus,
 } from "lucide-react";
+import { matchesSearch } from "../utils/searchUtils";
 
 const MealPlanManagement = () => {
   const { user: currentUser } = useAuth();
@@ -338,8 +339,7 @@ const MealPlanManagement = () => {
 
   const getFilteredMealPlans = () => {
     return mealPlans.filter((plan) =>
-      plan.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      plan.description?.toLowerCase().includes(searchQuery.toLowerCase())
+      matchesSearch(searchQuery, plan.name, plan.description),
     );
   };
 

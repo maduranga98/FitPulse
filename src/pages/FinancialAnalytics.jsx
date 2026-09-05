@@ -154,9 +154,9 @@ const FinancialAnalytics = () => {
     const activeMembers = membersData.filter(
       (m) => m.status === "active" && (!m.role || m.role === "member")
     );
-    // Also excludes members who are attendance-inactive (no check-in within
-    // the gym's configured threshold) — they owe nothing until they attend
-    // again, so they must never count toward paid/unpaid or the collection rate.
+    // Also excludes inactive members (set inactive by an admin, or no check-in
+    // within the gym's configured threshold) — they owe nothing until they are
+    // active again, so they never count toward paid/unpaid or the collection rate.
     const payingMembers = activeMembers.filter((m) => !m.isVip && !isInactiveMember(m));
     const totalPaidMembers = payingMembers.filter((m) =>
       paidMemberIds.has(m.id)

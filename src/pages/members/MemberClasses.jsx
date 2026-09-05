@@ -21,6 +21,7 @@ import {
   Star,
   X,
 } from "lucide-react";
+import { matchesSearch } from "../../utils/searchUtils";
 
 const MemberClasses = () => {
   const { user: currentUser } = useAuth();
@@ -295,10 +296,8 @@ const MemberClasses = () => {
 
     // Filter by search query
     if (searchQuery) {
-      filtered = filtered.filter(
-        (c) =>
-          c.className?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          c.instructorName?.toLowerCase().includes(searchQuery.toLowerCase())
+      filtered = filtered.filter((c) =>
+        matchesSearch(searchQuery, c.className, c.instructorName),
       );
     }
 

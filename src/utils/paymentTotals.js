@@ -37,13 +37,19 @@ export function formatAmount(value) {
 // they must never be counted as unpaid, nor added to an outstanding balance.
 export const isFeeExempt = (member) => member?.isVip === true;
 
-// Attendance-based activity, distinct from the manual admin `status` field
-// (active/inactive/blocked). `activityStatus` is maintained automatically:
-// a scheduled job flips a member to "inactive" once too much time has
-// passed since their last attendance, and a check-in flips them back to
-// "active". Missing/undefined activityStatus means "never evaluated yet"
-// and is treated as active so existing members aren't retroactively hidden.
-export const isInactiveMember = (member) => member?.activityStatus === "inactive";
+// There is exactly ONE notion of "inactive" in the app. A member is inactive
+// either because an admin set them that way (`status`), or because the
+// scheduled job flipped them for not attending within the gym's threshold
+// (`activityStatus`) — both mean the same thing to every screen, so no screen
+// shows "inactive" and "attendance inactive" as two separate buckets.
+//
+// `activityStatus` is maintained automatically: the job sets "inactive" once
+// too much time has passed since the last attendance, and a check-in sets it
+// back to "active". Missing/undefined activityStatus means "never evaluated
+// yet" and is treated as active so existing members aren't retroactively
+// hidden.
+export const isInactiveMember = (member) =>
+  member?.activityStatus === "inactive" || member?.status === "inactive";
 
 // Inactive members are excluded from "unpaid" the same way VIPs are: while
 // inactive they owe nothing, so they must never show up in an outstanding

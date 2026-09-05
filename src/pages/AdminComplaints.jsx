@@ -3,6 +3,7 @@ import { useAuth } from "../hooks/useAuth";
 import Sidebar from "../components/Sidebar";
 import { where } from "firebase/firestore";
 import { isAdmin, validateGymId } from "../utils/authUtils";
+import { matchesSearch } from "../utils/searchUtils";
 
 const AdminComplaints = () => {
   const { user } = useAuth();
@@ -210,13 +211,14 @@ const AdminComplaints = () => {
       filterStatus === "all" || complaint.status === filterStatus;
     const matchesCategory =
       filterCategory === "all" || complaint.category === filterCategory;
-    const matchesSearch =
-      searchTerm === "" ||
-      complaint.subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      complaint.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      complaint.memberName?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesQuery = matchesSearch(
+      searchTerm,
+      complaint.subject,
+      complaint.description,
+      complaint.memberName,
+    );
 
-    return matchesStatus && matchesCategory && matchesSearch;
+    return matchesStatus && matchesCategory && matchesQuery;
   });
 
   if (!userIsAdmin) {

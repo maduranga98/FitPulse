@@ -95,7 +95,11 @@ export function coverageThroughMonth(payments, member) {
 export function skipReason(member, thisMonth) {
   if (member.role && member.role !== "member") return "not a member account";
   if (member.isVip === true) return "VIP (fee-exempt)";
-  if (member.activityStatus === "inactive") return "inactive (owes nothing)";
+  // One notion of inactive: set by an admin (`status`) or flipped by the
+  // attendance job (`activityStatus`). Either way the member owes nothing.
+  if (member.activityStatus === "inactive" || member.status === "inactive") {
+    return "inactive (owes nothing)";
+  }
   if (!member.memberCode) return "no member code to match on the device";
   if (member.accessBlocked === true) return "already blocked";
   if (thisMonth && member.autoBlockExemptMonth === thisMonth) {

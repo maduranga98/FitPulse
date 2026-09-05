@@ -50,6 +50,13 @@ check("inactive members are skipped", () =>
   )
 );
 
+check("members set inactive by an admin are skipped too", () =>
+  assert.strictEqual(
+    skipReason({ status: "inactive", memberCode: "X" }),
+    "inactive (owes nothing)"
+  )
+);
+
 check("a member with no member code is skipped", () =>
   assert.strictEqual(skipReason({}), "no member code to match on the device")
 );

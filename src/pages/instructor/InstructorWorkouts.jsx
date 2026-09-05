@@ -17,6 +17,7 @@ import {
   ChevronUp,
   ChevronDown,
 } from "lucide-react";
+import { matchesSearch } from "../../utils/searchUtils";
 
 const InstructorWorkouts = () => {
   const { user } = useAuth();
@@ -375,11 +376,11 @@ const InstructorWorkouts = () => {
   };
 
   const filteredTemplates = templates.filter((template) =>
-    template.name.toLowerCase().includes(searchTerm.toLowerCase())
+    matchesSearch(searchTerm, template.name, template.description)
   );
 
   const filteredExercises = exercises.filter((exercise) =>
-    exercise.name.toLowerCase().includes(exerciseSearchTerm.toLowerCase())
+    matchesSearch(exerciseSearchTerm, exercise.name, exercise.category)
   );
 
   if (loading) {

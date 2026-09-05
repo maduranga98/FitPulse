@@ -18,6 +18,7 @@ import {
 import { isInactiveMember } from "../../utils/paymentTotals";
 import AccessControlCard from "../../components/AccessControlCard";
 import DoorAccessButton from "../../components/DoorAccessButton";
+import { matchesSearch } from "../../utils/searchUtils";
 
 const InstructorMembers = () => {
   const { user } = useAuth();
@@ -28,7 +29,7 @@ const InstructorMembers = () => {
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-  const [filterActivity, setFilterActivity] = useState("all");
+  const [filterStatus, setFilterStatus] = useState("all");
   const [selectedMember, setSelectedMember] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
 
@@ -191,16 +192,24 @@ const InstructorMembers = () => {
   };
 
   const filteredMembers = members.filter((member) => {
-    const matchesSearch =
-      (member?.name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (member?.email || "").toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesActivity =
-      filterActivity === "all" ||
-      (filterActivity === "attending" && !isInactiveMember(member)) ||
-      (filterActivity === "inactive" && isInactiveMember(member));
-    return matchesSearch && matchesActivity;
+    const matchesQuery = matchesSearch(
+      searchTerm,
+      member?.name,
+      member?.email,
+      member?.mobile,
+      member?.memberCode,
+    );
+    // One notion of inactive: set by an admin, or flipped by the attendance
+    // job — both read the same way here.
+    const inactive = isInactiveMember(member);
+    const matchesStatus =
+      filterStatus === "all" ||
+      (filterStatus === "inactive" && inactive) ||
+      (filterStatus === "active" && !inactive);
+    return matchesQuery && matchesStatus;
   });
   const inactiveCount = members.filter((m) => isInactiveMember(m)).length;
+  const activeCount = members.length - inactiveCount;
 
   if (loading) {
     return (
@@ -245,13 +254,13 @@ const InstructorMembers = () => {
               />
             </div>
             <select
-              value={filterActivity}
-              onChange={(e) => setFilterActivity(e.target.value)}
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
               className="px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-              title="Based on last attendance vs. the gym's inactivity threshold"
+              title="Inactive = set inactive by an admin, or no attendance within the gym's inactivity threshold"
             >
-              <option value="all">All Attendance</option>
-              <option value="attending">Attending</option>
+              <option value="all">All Members</option>
+              <option value="active">Active ({activeCount})</option>
               <option value="inactive">Inactive ({inactiveCount})</option>
             </select>
           </div>
@@ -285,7 +294,7 @@ const InstructorMembers = () => {
                         </span>
                         {isInactiveMember(member) && (
                           <span
-                            title="No attendance within the gym's inactivity threshold"
+                            title="Set inactive by an admin, or no attendance within the gym's inactivity threshold"
                             className="ml-1 text-xs px-2 py-0.5 rounded-full font-medium bg-gray-600/20 text-gray-400"
                           >
                             Inactive
