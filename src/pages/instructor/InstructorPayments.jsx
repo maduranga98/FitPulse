@@ -11,6 +11,10 @@ import {
   isInactiveMember,
   paymentsForMonth,
 } from "../../utils/paymentTotals";
+import {
+  getAttendanceSummary,
+  getInactiveReason,
+} from "../../utils/memberActivity";
 import AdminLayout from "../../components/AdminLayout";
 import MemberAvatar from "../../components/MemberAvatar";
 import DoorAccessButton from "../../components/DoorAccessButton";
@@ -59,16 +63,21 @@ const InstructorPayments = () => {
       const { db } = await import("../../config/firebase");
       const { collection, getDocs, query, where, orderBy } = await import("firebase/firestore");
 
+      // Every member of the gym — active and inactive alike. The status filter
+      // that used to sit here made members an admin had set inactive
+      // unreachable, so a trainer could not record a payment for one. Which
+      // members count toward the totals is still decided below by
+      // isPayingMember/isInactiveMember, not by this query. Sorted
+      // client-side, so no composite index is required.
       const membersSnap = await getDocs(query(
         collection(db, "members"),
-        where("gymId", "==", currentGymId),
-        where("status", "==", "active"),
-        orderBy("name", "asc")
+        where("gymId", "==", currentGymId)
       ));
       setMembers(
         membersSnap.docs
           .map((d) => ({ id: d.id, ...d.data() }))
           .filter((m) => !m.role || m.role === "member")
+          .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
       );
 
       const paymentsSnap = await getDocs(query(
@@ -219,27 +228,51 @@ const InstructorPayments = () => {
     const isPaid = checkPaymentStatus(m.id);
     const exempt = isFeeExempt(m);
     const inactive = isInactiveMember(m);
+    // Blocked members were never loaded before the query was widened, so they
+    // stay out of the money-focused filters and reachable only via "All
+    // Members" — widening must not change any total.
+    const blocked = m.status === "blocked";
     const matchStatus =
-      // Inactive members owe nothing and are hidden from every status
-      // except the dedicated "Inactive" tab.
-      (filterStatus === "all" && !inactive) ||
-      (filterStatus === "paid" && !inactive && isPaid) ||
+      // Inactive members owe nothing and are hidden from the money-focused
+      // filters. "All Members" is the escape hatch that always contains
+      // everyone, so a member you searched for is never simply missing.
+      filterStatus === "everyone" ||
+      (filterStatus === "all" && !inactive && !blocked) ||
+      (filterStatus === "paid" && !inactive && !blocked && isPaid) ||
       // VIPs owe nothing, so they are never part of the unpaid list
-      (filterStatus === "unpaid" && !inactive && !isPaid && !exempt) ||
-      (filterStatus === "vip" && !inactive && exempt) ||
+      (filterStatus === "unpaid" && !inactive && !blocked && !isPaid && !exempt) ||
+      (filterStatus === "vip" && !inactive && !blocked && exempt) ||
       (filterStatus === "inactive" && inactive);
     return matchSearch && matchStatus;
   });
+
+  // Members the search matches that the CURRENT filter hides — without this,
+  // searching for an inactive member from the default view looks like they do
+  // not exist at all.
+  const hiddenSearchMatches =
+    searchTerm.trim() && filterStatus !== "everyone"
+      ? members.filter(
+          (m) =>
+            matchesSearch(searchTerm, m.name, m.email, m.mobile, m.memberCode) &&
+            !filteredMembers.some((f) => f.id === m.id)
+        ).length
+      : 0;
 
   // Plain sum of the payments recorded FOR this month — never an estimate.
   const currentMonthPayments = paymentsForMonth(payments, getCurrentMonth());
   const totalCollected = sumAmounts(currentMonthPayments);
 
+  // Money figures are computed over BILLABLE members only. Blocked members
+  // were never loaded before the query was widened, so excluding them here
+  // keeps every total exactly as it was.
+  const billableMembers = members.filter((m) => m.status !== "blocked");
+
   // VIP and inactive members are fee-exempt: neither paid nor unpaid.
-  const activeMembers = members.filter((m) => !isInactiveMember(m));
-  const payingMembers = members.filter(isPayingMember);
+  const activeMembers = billableMembers.filter((m) => !isInactiveMember(m));
+  const payingMembers = billableMembers.filter(isPayingMember);
   const vipCount = activeMembers.length - payingMembers.length;
-  const inactiveCount = members.length - activeMembers.length;
+  // Same predicate the "Inactive" filter uses, so the count always matches.
+  const inactiveCount = members.filter(isInactiveMember).length;
   const paidCount = payingMembers.filter((m) => checkPaymentStatus(m.id)).length;
   const unpaidCount = payingMembers.length - paidCount;
 
@@ -330,8 +363,26 @@ const InstructorPayments = () => {
             <option value="unpaid">Active Unpaid (excludes VIP)</option>
             <option value="vip">VIP — Fee Exempt</option>
             <option value="inactive">Inactive ({inactiveCount})</option>
+            <option value="everyone">
+              All Members — incl. inactive ({members.length})
+            </option>
           </select>
         </div>
+
+        {hiddenSearchMatches > 0 && (
+          <button
+            type="button"
+            onClick={() => setFilterStatus("everyone")}
+            className="w-full flex items-center gap-2 text-left px-3 py-2 rounded-lg bg-blue-500/10 border border-blue-500/30 text-blue-300 text-xs font-medium hover:bg-blue-500/20 transition"
+          >
+            <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>
+              {hiddenSearchMatches} more member{hiddenSearchMatches === 1 ? "" : "s"} match "{searchTerm}" outside this filter — show all members
+            </span>
+          </button>
+        )}
 
         {/* Members Grid */}
         {loading ? (
@@ -364,7 +415,12 @@ const InstructorPayments = () => {
                           <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400 flex-shrink-0">VIP</span>
                         )}
                         {isInactiveMember(member) && (
-                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-500/20 text-gray-400 flex-shrink-0">INACTIVE</span>
+                          <span
+                            title={getInactiveReason(member)}
+                            className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400 flex-shrink-0"
+                          >
+                            INACTIVE
+                          </span>
                         )}
                         {member.accessBlocked === true && (
                           <span
@@ -376,6 +432,11 @@ const InstructorPayments = () => {
                         )}
                       </div>
                       <div className="text-gray-400 text-xs truncate">{member.email || member.mobile || "—"}</div>
+                      {isInactiveMember(member) && (
+                        <div className="text-amber-400/80 text-xs truncate mt-0.5">
+                          Last seen: {getAttendanceSummary(member).summaryLabel}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -501,6 +562,15 @@ const InstructorPayments = () => {
                 {selectedMember.isVip && (
                   <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 text-amber-400 text-xs">
                     This member is a <span className="font-semibold">VIP</span> — no membership fee is collected. You can still record an optional payment below.
+                  </div>
+                )}
+                {isInactiveMember(selectedMember) && (
+                  <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 text-amber-300 text-xs">
+                    <span className="font-semibold">Inactive member</span> —{" "}
+                    {getInactiveReason(selectedMember)?.toLowerCase()}. Last seen{" "}
+                    {getAttendanceSummary(selectedMember).summaryLabel}. The
+                    payment is recorded normally; their status changes on their
+                    next check-in.
                   </div>
                 )}
                 {!selectedMember.isVip && (
