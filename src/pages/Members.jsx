@@ -16,6 +16,7 @@ import {
 import { supabase } from "../services/supabaseClient";
 import { APP_URL } from "../config/app";
 import AccessControlCard from "../components/AccessControlCard";
+import CredentialsSmsPanel from "../components/CredentialsSmsPanel";
 import {
   createDeviceCommand,
   subscribeToDeviceCommand,
@@ -653,9 +654,14 @@ const Members = () => {
       }
 
       setGeneratedCredentials({
+        // id and phone are carried through so the credentials screen can send
+        // the SMS again itself if the automatic one did not arrive.
+        id: memberRef.id,
         username,
         password,
         name: memberForm.name,
+        mobile: memberForm.mobile,
+        whatsapp: memberForm.whatsapp,
         memberCode,
         devicePIN,
         profileImageUrl,
@@ -2324,6 +2330,19 @@ const Members = () => {
                 </div>
               </div>
 
+              {/* The credentials SMS goes out automatically a moment after the
+                  member is created. If it does not arrive, it can be sent from
+                  right here rather than hunting for the member again. */}
+              <div className="mb-4">
+                <CredentialsSmsPanel
+                  person={generatedCredentials}
+                  gymId={currentGymId}
+                  kind="member"
+                  sentBy={user?.name || user?.username || null}
+                  compact
+                />
+              </div>
+
               <div className="flex gap-3">
                 <button
                   onClick={() => {
@@ -2898,6 +2917,18 @@ const Members = () => {
                         </div>
                       </div>
                     </div>
+                  </div>
+                  {/* The credentials SMS is sent once, automatically, by the
+                      onMemberCreated function — and it can fail without anyone
+                      noticing. This says whether it actually went out, and
+                      sends it again on demand. */}
+                  <div className="mt-3">
+                    <CredentialsSmsPanel
+                      person={viewMember}
+                      gymId={currentGymId}
+                      kind="member"
+                      sentBy={user?.name || user?.username || null}
+                    />
                   </div>
                 </div>
               )}

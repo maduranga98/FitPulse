@@ -942,6 +942,34 @@ export const testWhatsAppMessage = functions.https.onCall(
 // ========================================
 
 /**
+ * Record the outcome of a credentials-SMS attempt.
+ *
+ * Every failure path below used to be console-only, so a member whose SMS
+ * never went out looked exactly like one whose SMS arrived — which is how
+ * members ended up without their login and nobody noticed. Writing failures
+ * here is what lets the Members screen show "no delivery on record" and offer
+ * a resend (see src/services/credentialsDelivery.js, which writes the same
+ * shape for every resend).
+ */
+async function logCredentialsDelivery(db, memberId, member, status, error) {
+  try {
+    await db.collection("notifications").add({
+      gymId: member.gymId || null,
+      memberId,
+      memberName: member.name || null,
+      type: "member_registration",
+      channel: "sms",
+      status,
+      attempt: "automatic",
+      ...(error ? { error: String(error).slice(0, 500) } : {}),
+      sentAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (err) {
+    console.error("❌ Could not log credentials delivery:", err);
+  }
+}
+
+/**
  * Fires when a new member is created → sends login credentials via WhatsApp
  */
 export const onMemberCreated = functions.firestore
@@ -964,6 +992,13 @@ export const onMemberCreated = functions.firestore
     if (!phoneNumber) {
       console.log(
         `⏭️ Member ${snap.id} has no phone number, skipping notifications`,
+      );
+      await logCredentialsDelivery(
+        db,
+        snap.id,
+        member,
+        "failed",
+        "No mobile or WhatsApp number on record.",
       );
       return null;
     }
@@ -1017,33 +1052,53 @@ export const onMemberCreated = functions.firestore
           const smsResult = await smsResponse.json();
           if (smsResponse.ok && smsResult.status !== "error") {
             console.log(`✅ SMS sent to ${cleaned} for member ${snap.id}`);
-            await db.collection("notifications").add({
-              gymId: member.gymId,
-              memberId: snap.id,
-              memberName: member.name,
-              type: "member_registration",
-              channel: "sms",
-              status: "sent",
-              sentAt: admin.firestore.FieldValue.serverTimestamp(),
-            });
+            await logCredentialsDelivery(db, snap.id, member, "sent");
           } else {
             console.error(
               `❌ SMS API error for member ${snap.id}:`,
               smsResult.message,
+            );
+            await logCredentialsDelivery(
+              db,
+              snap.id,
+              member,
+              "failed",
+              smsResult.message || `SMS API error: ${smsResponse.status}`,
             );
           }
         } else {
           console.warn(
             `⚠️ Invalid phone number for member ${snap.id}: ${phoneNumber}`,
           );
+          await logCredentialsDelivery(
+            db,
+            snap.id,
+            member,
+            "failed",
+            `"${phoneNumber}" is not a valid Sri Lankan mobile number.`,
+          );
         }
       } else {
         console.warn(
           `⚠️ No SMS API token configured for gym ${member.gymId}, skipping SMS`,
         );
+        await logCredentialsDelivery(
+          db,
+          snap.id,
+          member,
+          "failed",
+          "No SMS API token configured for this gym (Settings → SMS Configuration).",
+        );
       }
     } catch (smsError) {
       console.error("❌ onMemberCreated SMS error:", smsError);
+      await logCredentialsDelivery(
+        db,
+        snap.id,
+        member,
+        "failed",
+        smsError.message,
+      );
     }
 
     // ── WhatsApp ──────────────────────────────────────────────────────────────
