@@ -14,6 +14,7 @@ import {
   paymentsForMonth,
 } from "../utils/paymentTotals";
 import MemberAvatar from "../components/MemberAvatar";
+import { matchesSearch } from "../utils/searchUtils";
 
 const AdminPayments = () => {
   const { user } = useAuth();
@@ -377,18 +378,21 @@ const AdminPayments = () => {
   };
 
   const filteredMembers = members.filter((member) => {
-    const matchesSearch =
-      searchTerm === "" ||
-      member.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      member.email?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesQuery = matchesSearch(
+      searchTerm,
+      member.name,
+      member.email,
+      member.mobile,
+      member.memberCode,
+    );
 
     const isPaid = checkPaymentStatus(member.id);
     const exempt = isFeeExempt(member);
     const inactive = isInactiveMember(member);
     const matchesStatus =
-      // Inactive members (no attendance within the configured threshold) owe
-      // nothing and are hidden from every status except the dedicated
-      // "Inactive" tab — payments only ever shows ACTIVE unpaid, never a mix.
+      // Inactive members — set inactive by an admin, or flipped by the
+      // attendance job — owe nothing and are hidden from every status except
+      // the dedicated "Inactive" tab: payments only ever shows ACTIVE unpaid.
       (filterStatus === "all" && !inactive) ||
       (filterStatus === "paid" && !inactive && isPaid) ||
       // VIPs owe nothing, so they are never part of the unpaid list
@@ -396,7 +400,7 @@ const AdminPayments = () => {
       (filterStatus === "vip" && !inactive && exempt) ||
       (filterStatus === "inactive" && inactive);
 
-    return matchesSearch && matchesStatus;
+    return matchesQuery && matchesStatus;
   });
 
   // "Total Collected" is the plain sum of the payments recorded FOR this
@@ -406,7 +410,7 @@ const AdminPayments = () => {
   const totalCollected = sumAmounts(currentMonthPayments);
 
   // VIP and inactive members are excluded from paying totals: VIPs are
-  // fee-exempt, inactive members (no attendance within the threshold) owe
+  // fee-exempt, inactive members owe
   // nothing until they attend again.
   const activeMembers = members.filter((m) => !isInactiveMember(m));
   const payingMembers = members.filter(isPayingMember);
@@ -484,7 +488,7 @@ const AdminPayments = () => {
     paid: `Rs. ${formatAmount(totalCollected)} collected for ${formatMonth(getCurrentMonth())}`,
     all: "Every active member, paid or not",
     vip: "Fee-exempt members — nothing is owed",
-    inactive: "No recent attendance — excluded from unpaid",
+    inactive: "Inactive members — excluded from unpaid",
   };
 
   const emptyStates = {

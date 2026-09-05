@@ -16,6 +16,7 @@ import ExerciseDetailModal from "../components/ExerciseDetailModal";
 import { isSuperAdmin } from "../utils/authUtils";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
+import { matchesSearch } from "../utils/searchUtils";
 
 const CommonExercises = () => {
   const navigate = useNavigate();
@@ -331,10 +332,13 @@ const CommonExercises = () => {
   const filteredExercises = exercises.filter((exercise) => {
     const matchesCategory =
       selectedCategory === "all" || exercise.category === selectedCategory;
-    const matchesSearch = exercise.name
-      .toLowerCase()
-      .includes(searchTerm.toLowerCase());
-    return matchesCategory && matchesSearch;
+    const matchesQuery = matchesSearch(
+      searchTerm,
+      exercise.name,
+      exercise.category,
+      exercise.targetedSections,
+    );
+    return matchesCategory && matchesQuery;
   });
 
   return (

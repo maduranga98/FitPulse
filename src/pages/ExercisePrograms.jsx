@@ -15,6 +15,7 @@ import { db } from "../config/firebase";
 import Sidebar from "../components/Sidebar";
 import { useAuth } from "../hooks/useAuth";
 import ExerciseDetailModal from "../components/ExerciseDetailModal";
+import { matchesSearch } from "../utils/searchUtils";
 
 const ExercisePrograms = () => {
   const { user } = useAuth();
@@ -223,7 +224,7 @@ const ExercisePrograms = () => {
 
   // Filter programs
   const filteredPrograms = programs.filter((program) =>
-    program.name.toLowerCase().includes(searchTerm.toLowerCase())
+    matchesSearch(searchTerm, program.name, program.description),
   );
 
   // All available exercises

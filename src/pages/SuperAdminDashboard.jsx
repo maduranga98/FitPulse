@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { sendGymRegistrationSMS } from "../services/smsService";
+import { matchesSearch } from "../utils/searchUtils";
 
 const SuperAdminDashboard = () => {
   const { user, logout } = useAuth();
@@ -262,11 +263,8 @@ const SuperAdminDashboard = () => {
     navigate("/login");
   };
 
-  const filteredGyms = gyms.filter(
-    (gym) =>
-      (gym.name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (gym.location || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (gym.email || "").toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredGyms = gyms.filter((gym) =>
+    matchesSearch(searchTerm, gym.name, gym.location, gym.email),
   );
 
   const totalGyms = gyms.length;

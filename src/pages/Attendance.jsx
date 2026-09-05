@@ -11,6 +11,7 @@ import Sidebar from "../components/Sidebar";
 import { db } from "../config/firebase";
 import { collection, query, where, getDocs } from "firebase/firestore";
 import { isInactiveMember } from "../utils/paymentTotals";
+import { matchesSearch } from "../utils/searchUtils";
 
 const Attendance = () => {
   const { user } = useAuth();
@@ -103,8 +104,8 @@ const Attendance = () => {
 
       // Unpaid = active non-VIP member, no payment this month, and not
       // covered by a multi-month package (nextPaymentDate still in the future).
-      // Attendance-inactive members are excluded — they owe nothing until
-      // they check in again.
+      // Inactive members are excluded — they owe nothing until they are
+      // active again.
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const unpaid = new Set(
@@ -229,8 +230,7 @@ const Attendance = () => {
   const filteredMembers = memberSearch.trim()
     ? selectableMembers.filter(
         (m) =>
-          (m.name || "").toLowerCase().includes(memberSearch.toLowerCase()) ||
-          (m.memberCode || "").toLowerCase().includes(memberSearch.toLowerCase()),
+          matchesSearch(memberSearch, m.name, m.memberCode, m.mobile),
       )
     : selectableMembers;
   const selectedMember = gymMembers.find((m) => m.id === selectedMemberId);

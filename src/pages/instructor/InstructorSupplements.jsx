@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { useGymSettings } from "../../contexts/GymSettingsContext";
 import AdminLayout from "../../components/AdminLayout";
+import { matchesSearch } from "../../utils/searchUtils";
 
 const InstructorSupplements = () => {
   const { user } = useAuth();
@@ -267,8 +268,7 @@ const InstructorSupplements = () => {
   };
 
   const filteredSupplements = supplements.filter((s) =>
-    s.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    s.category?.toLowerCase().includes(searchTerm.toLowerCase())
+    matchesSearch(searchTerm, s.name, s.category)
   );
 
   const filteredRequests = requests.filter((r) =>

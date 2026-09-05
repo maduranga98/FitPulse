@@ -15,6 +15,7 @@ import {
   Trash2,
   Edit2,
 } from "lucide-react";
+import { matchesSearch } from "../../utils/searchUtils";
 
 const InstructorExercises = () => {
   const { user } = useAuth();
@@ -558,9 +559,13 @@ const InstructorExercises = () => {
 
   const getFilteredExercises = () => {
     return exercises.filter((exercise) => {
-      const matchesSearch =
-        exercise.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        exercise.equipment?.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesQuery = matchesSearch(
+        searchTerm,
+        exercise.name,
+        exercise.equipment,
+        exercise.category,
+        exercise.targetedSections,
+      );
       
       // Handle both ID-based and name-based categories
       const matchesCategory = selectedCategory === "all" || 
@@ -568,7 +573,7 @@ const InstructorExercises = () => {
         categories.find(cat => cat.id === exercise.category)?.name === selectedCategory ||
         categories.find(cat => cat.name === exercise.category)?.id === selectedCategory;
       
-      return matchesSearch && matchesCategory;
+      return matchesQuery && matchesCategory;
     });
   };
 
@@ -903,9 +908,9 @@ const InstructorExercises = () => {
               <div className="flex-1 overflow-y-auto p-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {commonExercises.filter((ex) => {
-                    const matchesSearch = ex.name?.toLowerCase().includes(browseSearchTerm.toLowerCase()) || ex.equipment?.toLowerCase().includes(browseSearchTerm.toLowerCase());
+                    const matchesQuery = matchesSearch(browseSearchTerm, ex.name, ex.equipment, ex.category);
                     const matchesCategory = browseSelectedCategory === "all" || ex.category === browseSelectedCategory || categories.find(cat => cat.id === ex.category)?.name === browseSelectedCategory;
-                    return matchesSearch && matchesCategory;
+                    return matchesQuery && matchesCategory;
                   }).map((exercise) => {
                     const isSelected = selectedCommonIds.includes(exercise.id);
                     const categoryName = categories.find(cat => cat.id === exercise.category)?.name || exercise.category || "Uncategorized";

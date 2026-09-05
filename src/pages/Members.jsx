@@ -18,6 +18,7 @@ import {
   RELAY_STALE_MS,
   COMMAND_TIMEOUT_MS,
 } from "../services/deviceAccessService";
+import { matchesSearch } from "../utils/searchUtils";
 
 // "3 minutes ago" / "2 hours ago" for the relay heartbeat.
 const formatRelaySeen = (date, now) => {
@@ -92,8 +93,6 @@ const Members = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterLevel, setFilterLevel] = useState("all");
-  // Attendance-based activity, separate from the manual `status` field above
-  const [filterActivity, setFilterActivity] = useState("all");
   const [showQRModal, setShowQRModal] = useState(false);
   const [editingPackage, setEditingPackage] = useState(false);
   const [savingPackageEdit, setSavingPackageEdit] = useState(false);
@@ -976,32 +975,35 @@ const Members = () => {
   };
 
   const filteredMembers = members.filter((member) => {
-    const matchesSearch =
-      member.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      member.mobile?.includes(searchTerm) ||
-      member.email?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesQuery = matchesSearch(
+      searchTerm,
+      member.name,
+      member.mobile,
+      member.email,
+      member.memberCode,
+    );
 
+    // One notion of inactive: manually set by an admin, or flipped by the
+    // attendance job. "Active" therefore means neither of those.
+    const inactive = isInactiveMember(member);
     const matchesStatus =
-      filterStatus === "all" || member.status === filterStatus;
+      filterStatus === "all" ||
+      (filterStatus === "inactive" && inactive) ||
+      (filterStatus === "active" && !inactive && member.status === "active") ||
+      (filterStatus === "blocked" && member.status === "blocked");
     const matchesLevel = filterLevel === "all" || member.level === filterLevel;
-    const matchesActivity =
-      filterActivity === "all" ||
-      (filterActivity === "attending" && !isInactiveMember(member)) ||
-      (filterActivity === "inactive" && isInactiveMember(member));
 
-    return matchesSearch && matchesStatus && matchesLevel && matchesActivity;
+    return matchesQuery && matchesStatus && matchesLevel;
   });
 
   const stats = {
     total: members.length,
-    active: members.filter((m) => m.status === "active").length,
-    inactive: members.filter((m) => m.status === "inactive").length,
+    active: members.filter((m) => m.status === "active" && !isInactiveMember(m))
+      .length,
+    inactive: members.filter((m) => isInactiveMember(m)).length,
     beginner: members.filter((m) => m.level === "beginner").length,
     intermediate: members.filter((m) => m.level === "intermediate").length,
     advanced: members.filter((m) => m.level === "advanced").length,
-    // Attendance-inactive: no check-in within the gym's configured threshold,
-    // distinct from the manually-set `status` field above.
-    attendanceInactive: members.filter((m) => isInactiveMember(m)).length,
   };
 
   const closeCredentialsModal = () => {
@@ -1176,7 +1178,12 @@ const Members = () => {
               </div>
             </div>
             <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
-              <div className="text-gray-400 text-sm mb-1">Inactive</div>
+              <div
+                className="text-gray-400 text-sm mb-1"
+                title="Set inactive by an admin, or no attendance within the gym's inactivity threshold"
+              >
+                Inactive
+              </div>
               <div className="text-2xl font-bold text-red-600">
                 {stats.inactive}
               </div>
@@ -1197,12 +1204,6 @@ const Members = () => {
               <div className="text-gray-400 text-sm mb-1">Advanced</div>
               <div className="text-2xl font-bold text-purple-600">
                 {stats.advanced}
-              </div>
-            </div>
-            <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
-              <div className="text-gray-400 text-sm mb-1">Attendance Inactive</div>
-              <div className="text-2xl font-bold text-gray-400">
-                {stats.attendanceInactive}
               </div>
             </div>
           </div>
@@ -1291,8 +1292,8 @@ const Members = () => {
               className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="all">All Status</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
+              <option value="active">Active ({stats.active})</option>
+              <option value="inactive">Inactive ({stats.inactive})</option>
               <option value="blocked">Blocked</option>
             </select>
             <select
@@ -1304,16 +1305,6 @@ const Members = () => {
               <option value="beginner">Beginner</option>
               <option value="intermediate">Intermediate</option>
               <option value="advanced">Advanced</option>
-            </select>
-            <select
-              value={filterActivity}
-              onChange={(e) => setFilterActivity(e.target.value)}
-              className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              title="Based on last attendance vs. the gym's inactivity threshold"
-            >
-              <option value="all">All Attendance</option>
-              <option value="attending">Attending</option>
-              <option value="inactive">Inactive ({stats.attendanceInactive})</option>
             </select>
           </div>
 
@@ -1356,14 +1347,6 @@ const Members = () => {
                               VIP
                             </span>
                           )}
-                          {isInactiveMember(member) && (
-                            <span
-                              title="No attendance within the gym's inactivity threshold"
-                              className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-500/20 text-gray-400"
-                            >
-                              INACTIVE
-                            </span>
-                          )}
                           {member.accessBlocked && (
                             <span
                               title={member.accessBlockedReason || "Door access blocked"}
@@ -1380,13 +1363,24 @@ const Members = () => {
                       </div>
                     </div>
                     <span
-                      className={`px-2 py-1 rounded text-xs font-medium ${
-                        member.status === "active"
-                          ? "bg-green-600/20 text-green-600"
-                          : "bg-red-600/20 text-red-600"
+                      title={
+                        isInactiveMember(member) && member.status === "active"
+                          ? "No attendance within the gym's inactivity threshold"
+                          : undefined
+                      }
+                      className={`px-2 py-1 rounded text-xs font-medium capitalize ${
+                        member.status === "blocked"
+                          ? "bg-red-600/20 text-red-600"
+                          : isInactiveMember(member)
+                            ? "bg-gray-500/20 text-gray-400"
+                            : "bg-green-600/20 text-green-600"
                       }`}
                     >
-                      {member.status}
+                      {member.status === "blocked"
+                        ? "blocked"
+                        : isInactiveMember(member)
+                          ? "inactive"
+                          : "active"}
                     </span>
                   </div>
 
@@ -1503,11 +1497,8 @@ const Members = () => {
               )}
               <div className="space-y-2">
                 {members
-                  .filter(
-                    (m) =>
-                      m.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                      m.memberCode?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                      m.mobile?.includes(searchTerm),
+                  .filter((m) =>
+                    matchesSearch(searchTerm, m.name, m.memberCode, m.mobile),
                   )
                   .map((member) => {
                     const isBlocked = member.status === "blocked";

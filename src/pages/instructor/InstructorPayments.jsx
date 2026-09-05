@@ -14,6 +14,7 @@ import {
 import AdminLayout from "../../components/AdminLayout";
 import MemberAvatar from "../../components/MemberAvatar";
 import DoorAccessButton from "../../components/DoorAccessButton";
+import { matchesSearch } from "../../utils/searchUtils";
 
 const InstructorPayments = () => {
   const { user } = useAuth();
@@ -214,8 +215,7 @@ const InstructorPayments = () => {
   const filteredMembers = members.filter((m) => {
     const matchSearch =
       searchTerm === "" ||
-      m.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      m.email?.toLowerCase().includes(searchTerm.toLowerCase());
+      matchesSearch(searchTerm, m.name, m.email, m.mobile, m.memberCode);
     const isPaid = checkPaymentStatus(m.id);
     const exempt = isFeeExempt(m);
     const inactive = isInactiveMember(m);

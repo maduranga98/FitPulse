@@ -31,6 +31,7 @@ import {
   ChevronRight,
   ExternalLink,
 } from "lucide-react";
+import { matchesSearch } from "../utils/searchUtils";
 
 const WEBHOOK_URL =
   "https://us-central1-gymnex-65440.cloudfunctions.net/hikCentralWebhook";
@@ -1364,7 +1365,7 @@ const AccessLogTab = ({ gymId, onLightbox, showError }) => {
       if (dateFrom && ds < dateFrom) return false;
       if (dateTo && ds > dateTo) return false;
     }
-    if (memberSearch && !(r.memberName || "").toLowerCase().includes(memberSearch.toLowerCase())) return false;
+    if (memberSearch && !matchesSearch(memberSearch, r.memberName, r.memberCode)) return false;
     if (doorFilter && r.doorName !== doorFilter) return false;
     if (!matchesMethod(r.recognitionMethod)) return false;
     return true;

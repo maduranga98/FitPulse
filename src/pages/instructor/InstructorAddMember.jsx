@@ -9,6 +9,7 @@ import { APP_URL } from "../../config/app";
 import { calculateBMI, validateBMIInputs } from "../../utils/validationUtils";
 import { supabase } from "../../services/supabaseClient";
 import MemberAvatar from "../../components/MemberAvatar";
+import { matchesSearch } from "../../utils/searchUtils";
 
 const InstructorAddMember = () => {
   const { user } = useAuth();
@@ -327,8 +328,7 @@ const InstructorAddMember = () => {
   };
 
   const filteredMembers = members.filter((m) =>
-    m.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    m.mobile?.includes(searchTerm)
+    matchesSearch(searchTerm, m.name, m.mobile, m.email, m.memberCode)
   );
 
   const selfRegUrl = `${APP_URL}/register/${currentGymId}?gym=${encodeURIComponent(gymName)}`;

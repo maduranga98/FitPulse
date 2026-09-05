@@ -17,6 +17,7 @@ import {
   ChevronUp,
   ChevronDown,
 } from "lucide-react";
+import { matchesSearch } from "../../utils/searchUtils";
 
 const InstructorMealPlans = () => {
   const { user } = useAuth();
@@ -381,8 +382,7 @@ const InstructorMealPlans = () => {
   const getFilteredMealPlans = () => {
     return mealPlans.filter(
       (plan) =>
-        plan.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        plan.description?.toLowerCase().includes(searchQuery.toLowerCase())
+        matchesSearch(searchQuery, plan.name, plan.description)
     );
   };
 

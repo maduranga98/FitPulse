@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import Sidebar from "../components/Sidebar";
 import { useAuth } from "../hooks/useAuth";
+import { matchesSearch } from "../utils/searchUtils";
 
 const Exercises = ({ onLogout, onNavigate }) => {
   const { user } = useAuth();
@@ -695,12 +696,13 @@ const Exercises = ({ onLogout, onNavigate }) => {
   const filteredExercises = currentExercises.filter((exercise) => {
     const matchesCategory =
       selectedCategory === "all" || exercise.category === selectedCategory;
-    const matchesSearch =
-      exercise.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      exercise.targetedSections?.some((s) =>
-        s.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-    return matchesCategory && matchesSearch;
+    const matchesQuery = matchesSearch(
+      searchTerm,
+      exercise.name,
+      exercise.category,
+      exercise.targetedSections,
+    );
+    return matchesCategory && matchesQuery;
   });
 
   // Filter common exercises for browse modal
@@ -708,12 +710,13 @@ const Exercises = ({ onLogout, onNavigate }) => {
     const matchesCategory =
       browseSelectedCategory === "all" ||
       exercise.category === browseSelectedCategory;
-    const matchesSearch =
-      exercise.name.toLowerCase().includes(browseSearchTerm.toLowerCase()) ||
-      exercise.targetedSections?.some((s) =>
-        s.toLowerCase().includes(browseSearchTerm.toLowerCase())
-      );
-    return matchesCategory && matchesSearch;
+    const matchesQuery = matchesSearch(
+      browseSearchTerm,
+      exercise.name,
+      exercise.category,
+      exercise.targetedSections,
+    );
+    return matchesCategory && matchesQuery;
   });
 
   const handleLogoutClick = () => {

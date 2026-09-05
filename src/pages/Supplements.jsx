@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import Sidebar from "../components/Sidebar";
 import { useAuth } from "../hooks/useAuth";
+import { matchesSearch } from "../utils/searchUtils";
 
 const Supplements = () => {
   const { user: currentUser, logout } = useAuth();
@@ -321,7 +322,7 @@ const Supplements = () => {
   };
 
   const filteredSupplements = supplements.filter((supplement) =>
-    supplement.name.toLowerCase().includes(searchTerm.toLowerCase())
+    matchesSearch(searchTerm, supplement.name, supplement.category),
   );
 
   if (loading) {

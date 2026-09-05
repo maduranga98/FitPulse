@@ -12,6 +12,7 @@ import {
   CheckCircle,
   Search,
 } from "lucide-react";
+import { matchesSearch } from "../utils/searchUtils";
 
 const EquipmentInventory = () => {
   const { user: currentUser } = useAuth();
@@ -182,7 +183,7 @@ const EquipmentInventory = () => {
 
   const getFilteredEquipment = () => {
     return equipment.filter((item) => {
-      const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesQuery = matchesSearch(searchQuery, item.name, item.category);
       const matchesStatus =
         filterStatus === "all" ||
         (filterStatus === "needs_maintenance" &&
@@ -191,7 +192,7 @@ const EquipmentInventory = () => {
         (filterStatus === "needs_repair" && item.condition === "needs repair") ||
         (filterStatus === "out_of_service" && item.condition === "out of service");
 
-      return matchesSearch && matchesStatus;
+      return matchesQuery && matchesStatus;
     });
   };
 
