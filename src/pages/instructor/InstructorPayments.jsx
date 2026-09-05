@@ -13,6 +13,7 @@ import {
 } from "../../utils/paymentTotals";
 import AdminLayout from "../../components/AdminLayout";
 import MemberAvatar from "../../components/MemberAvatar";
+import DoorAccessButton from "../../components/DoorAccessButton";
 
 const InstructorPayments = () => {
   const { user } = useAuth();
@@ -365,6 +366,14 @@ const InstructorPayments = () => {
                         {isInactiveMember(member) && (
                           <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-500/20 text-gray-400 flex-shrink-0">INACTIVE</span>
                         )}
+                        {member.accessBlocked === true && (
+                          <span
+                            title={member.accessBlockedReason ? `Door blocked — ${member.accessBlockedReason}` : "Door access is blocked"}
+                            className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#FF6B6B]/20 text-[#FF6B6B] flex-shrink-0"
+                          >
+                            DOOR BLOCKED
+                          </span>
+                        )}
                       </div>
                       <div className="text-gray-400 text-xs truncate">{member.email || member.mobile || "—"}</div>
                     </div>
@@ -426,6 +435,21 @@ const InstructorPayments = () => {
                       >
                         {isExpanded ? "Hide History" : "View Payment History"}
                       </button>
+                    )}
+                    {/* This is the screen where non-payment is decided, so
+                        the door control belongs here too — a VIP owes
+                        nothing, so they are never blocked from it. */}
+                    {!exempt && (
+                      <DoorAccessButton
+                        member={member}
+                        gymId={currentGymId}
+                        user={user}
+                        onMemberUpdated={(fields) =>
+                          setMembers((prev) =>
+                            prev.map((m) => (m.id === member.id ? { ...m, ...fields } : m))
+                          )
+                        }
+                      />
                     )}
                   </div>
 

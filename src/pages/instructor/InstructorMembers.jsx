@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { isInactiveMember } from "../../utils/paymentTotals";
 import AccessControlCard from "../../components/AccessControlCard";
+import DoorAccessButton from "../../components/DoorAccessButton";
 
 const InstructorMembers = () => {
   const { user } = useAuth();
@@ -108,6 +109,14 @@ const InstructorMembers = () => {
       alert(`Error loading data: ${error.message}`);
       setLoading(false);
     }
+  };
+
+  // Door access changes land in the list and in the open modal at once.
+  const applyMemberFields = (memberId, fields) => {
+    setMembers((prev) =>
+      prev.map((m) => (m.id === memberId ? { ...m, ...fields } : m))
+    );
+    setSelectedMember((m) => (m && m.id === memberId ? { ...m, ...fields } : m));
   };
 
   // Trainers can adjust a member's fitness level as they progress
@@ -345,6 +354,17 @@ const InstructorMembers = () => {
                     <Eye className="w-4 h-4" />
                     View Details
                   </button>
+
+                  {/* Door access, right on the card — a trainer turning a
+                      member away at the desk shouldn't have to open the
+                      profile first. */}
+                  <DoorAccessButton
+                    member={member}
+                    gymId={currentGymId}
+                    user={user}
+                    onMemberUpdated={(fields) => applyMemberFields(member.id, fields)}
+                    className="mt-2"
+                  />
                 </div>
               );
             })}
@@ -380,14 +400,9 @@ const InstructorMembers = () => {
                 member={selectedMember}
                 gymId={currentGymId}
                 user={user}
-                onMemberUpdated={(fields) => {
-                  setSelectedMember((m) => (m ? { ...m, ...fields } : m));
-                  setMembers((prev) =>
-                    prev.map((m) =>
-                      m.id === selectedMember.id ? { ...m, ...fields } : m
-                    )
-                  );
-                }}
+                onMemberUpdated={(fields) =>
+                  applyMemberFields(selectedMember.id, fields)
+                }
               />
 
               {/* Member Info */}

@@ -1,116 +1,20 @@
-import { useState, useEffect, useRef } from "react";
-import { useNotification } from "../contexts/NotificationContext";
-import {
-  createDeviceCommand,
-  subscribeToDeviceCommand,
-  cancelDeviceCommand,
-  markManualAccessOverride,
-  COMMAND_TIMEOUT_MS,
-} from "../services/deviceAccessService";
+import { useState } from "react";
+import { useDoorAccess } from "../hooks/useDoorAccess";
+import BlockAccessDialog from "./BlockAccessDialog";
 
-// Door access control card shown on the member detail modal, for owners,
-// managers and trainers alike — whoever is at the desk when a member has to
-// be locked out or let back in. Blocking is executed by the on-prem relay
-// agent, so the UI queues a command and waits for the relay to confirm
+// Full door access panel for the member detail modal — available to owners,
+// managers and trainers alike, since whoever is at the desk is who has to
+// lock a member out or let them back in. Blocking is executed by the on-prem
+// relay agent, so the UI queues a command and waits for the relay to confirm
 // before flipping state.
 const AccessControlCard = ({ member, gymId, user, onMemberUpdated }) => {
-  const { showSuccess, showError } = useNotification();
-  const [confirmType, setConfirmType] = useState(null); // "block" | "unblock" | null
-  const [reason, setReason] = useState("Non-payment");
-  const [pending, setPending] = useState(null); // { commandId, type }
-  const unsubRef = useRef(null);
-  const timerRef = useRef(null);
-
-  useEffect(() => {
-    return () => {
-      unsubRef.current?.();
-      clearTimeout(timerRef.current);
-    };
-  }, []);
-
-  const blocked = member.accessBlocked === true;
-
-  const startCommand = async (type) => {
-    setConfirmType(null);
-    try {
-      const commandId = await createDeviceCommand({
-        gymId,
-        member,
-        type,
-        reason: type === "block" ? reason.trim() || null : null,
-        user,
-      });
-      setPending({ commandId, type });
-
-      let unsub = null;
-      let settled = false;
-      const stopWatching = () => {
-        settled = true;
-        unsub?.();
-        unsubRef.current = null;
-        clearTimeout(timerRef.current);
-      };
-
-      // Nothing resolves a command the relay never picks up, so stop waiting
-      // rather than spinning forever on "Waiting for gym relay…".
-      timerRef.current = setTimeout(() => {
-        if (settled) return;
-        stopWatching();
-        setPending(null);
-        showError(
-          `Device ${type} not confirmed: the gym's relay agent did not respond. ` +
-            "Check that it is running on the gym PC — the command stays queued " +
-            "and runs as soon as it is back."
-        );
-      }, COMMAND_TIMEOUT_MS);
-
-      unsub = subscribeToDeviceCommand(gymId, commandId, (cmd) => {
-        if (!cmd) return;
-        if (cmd.status === "completed") {
-          stopWatching();
-          setPending(null);
-          // A hand-made decision outranks the nightly unpaid-member job:
-          // without this, someone let back in while still unpaid would be
-          // blocked again at 02:00.
-          markManualAccessOverride(member.id, type).catch((err) =>
-            console.warn("Could not record the manual access override:", err)
-          );
-          showSuccess(
-            type === "block"
-              ? `${member.name}'s door access has been blocked`
-              : `${member.name}'s door access has been restored`
-          );
-          onMemberUpdated?.({
-            accessBlocked: type === "block",
-            accessBlockedReason: type === "block" ? reason.trim() || null : null,
-          });
-        } else if (cmd.status === "failed") {
-          stopWatching();
-          setPending(null);
-          showError(
-            `Device ${type} failed: ${cmd.errorMessage || "unknown error"}`
-          );
-        }
-      });
-
-      // If the callback already fired, unsub was still null inside it.
-      if (settled) unsub();
-      else unsubRef.current = unsub;
-    } catch (err) {
-      showError(`Could not queue ${type} command: ${err.message}`);
-    }
-  };
-
-  const cancelPending = async () => {
-    if (!pending) return;
-    try {
-      await cancelDeviceCommand(gymId, pending.commandId);
-      unsubRef.current?.();
-      setPending(null);
-    } catch (err) {
-      showError(`Could not cancel: ${err.message}`);
-    }
-  };
+  const [confirming, setConfirming] = useState(false);
+  const { blocked, pending, submit, cancel } = useDoorAccess({
+    member,
+    gymId,
+    user,
+    onMemberUpdated,
+  });
 
   return (
     <div
@@ -120,7 +24,7 @@ const AccessControlCard = ({ member, gymId, user, onMemberUpdated }) => {
           : "bg-gray-900 border-gray-700"
       }`}
     >
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="text-sm font-medium text-white flex items-center gap-2">
             Door Access
@@ -150,7 +54,7 @@ const AccessControlCard = ({ member, gymId, user, onMemberUpdated }) => {
               Waiting for gym relay…
             </span>
             <button
-              onClick={cancelPending}
+              onClick={cancel}
               className="text-xs text-gray-400 hover:text-white underline"
             >
               Cancel
@@ -158,14 +62,14 @@ const AccessControlCard = ({ member, gymId, user, onMemberUpdated }) => {
           </div>
         ) : blocked ? (
           <button
-            onClick={() => startCommand("unblock")}
+            onClick={() => submit("unblock")}
             className="flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium bg-[#0066FF] hover:bg-blue-700 text-white transition"
           >
             Unblock Access
           </button>
         ) : (
           <button
-            onClick={() => setConfirmType("block")}
+            onClick={() => setConfirming(true)}
             className="flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium bg-[#FF6B6B] hover:bg-[#e85555] text-white transition"
           >
             Block Access
@@ -173,44 +77,15 @@ const AccessControlCard = ({ member, gymId, user, onMemberUpdated }) => {
         )}
       </div>
 
-      {/* Confirmation modal */}
-      {confirmType === "block" && (
-        <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4">
-          <div className="bg-gray-900 rounded-xl border border-gray-700 w-full max-w-sm p-6">
-            <h3 className="text-white font-semibold text-lg mb-2">
-              Block door access?
-            </h3>
-            <p className="text-sm text-gray-400 mb-4">
-              {member.name} will no longer be able to open the door at the
-              terminal. Their face enrollment is kept, so unblocking is
-              instant — no re-enrollment needed.
-            </p>
-            <label className="block text-sm text-gray-400 mb-1.5">
-              Reason (optional)
-            </label>
-            <input
-              type="text"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder="e.g. Non-payment"
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 text-sm mb-5"
-            />
-            <div className="flex gap-3">
-              <button
-                onClick={() => setConfirmType(null)}
-                className="flex-1 px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-lg font-medium transition text-sm"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => startCommand("block")}
-                className="flex-1 px-4 py-2 bg-[#FF6B6B] hover:bg-[#e85555] text-white rounded-lg font-medium transition text-sm"
-              >
-                Block Access
-              </button>
-            </div>
-          </div>
-        </div>
+      {confirming && (
+        <BlockAccessDialog
+          memberName={member.name}
+          onCancel={() => setConfirming(false)}
+          onConfirm={(reason) => {
+            setConfirming(false);
+            submit("block", reason);
+          }}
+        />
       )}
     </div>
   );
