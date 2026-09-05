@@ -16,6 +16,7 @@ import {
   Phone,
 } from "lucide-react";
 import { isInactiveMember } from "../../utils/paymentTotals";
+import { getAttendanceSummary } from "../../utils/memberActivity";
 import AccessControlCard from "../../components/AccessControlCard";
 import DoorAccessButton from "../../components/DoorAccessButton";
 import { matchesSearch } from "../../utils/searchUtils";
@@ -51,17 +52,24 @@ const InstructorMembers = () => {
         "firebase/firestore"
       );
 
-      // Fetch active members
+      // Fetch EVERY member of the gym — active and inactive alike.
+      //
+      // This query used to carry `where("status", "==", "active")`, so a member
+      // an admin had set inactive was never loaded: no card, and therefore no
+      // "View Details" button, which is why a trainer simply could not open
+      // some members at all. The "Inactive" filter below did not help — it only
+      // ever matched members the attendance job had flagged, who are still
+      // status: "active".
+      //
+      // Sorted client-side by name: an equality filter plus orderBy on another
+      // field would need a composite index, and this is one gym's members.
       const membersSnapshot = await getDocs(
-        query(
-          collection(db, "members"),
-          where("gymId", "==", currentGymId),
-          where("status", "==", "active")
-        )
+        query(collection(db, "members"), where("gymId", "==", currentGymId))
       );
       const membersData = membersSnapshot.docs
         .map((doc) => ({ id: doc.id, ...doc.data() }))
-        .filter((m) => !m.role || m.role === "member");
+        .filter((m) => !m.role || m.role === "member")
+        .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
 
       // Fetch all exercise assignments for this gym
       const exerciseAssignmentsSnapshot = await getDocs(
@@ -202,14 +210,24 @@ const InstructorMembers = () => {
     // One notion of inactive: set by an admin, or flipped by the attendance
     // job — both read the same way here.
     const inactive = isInactiveMember(member);
+    // A blocked member cannot log in. They are not "inactive", so without
+    // this they would land in the Active bucket now that the query loads
+    // them — "All Members" is where they belong.
+    const blocked = member.status === "blocked";
     const matchesStatus =
       filterStatus === "all" ||
       (filterStatus === "inactive" && inactive) ||
-      (filterStatus === "active" && !inactive);
+      (filterStatus === "blocked" && blocked) ||
+      (filterStatus === "active" && !inactive && !blocked);
     return matchesQuery && matchesStatus;
   });
-  const inactiveCount = members.filter((m) => isInactiveMember(m)).length;
-  const activeCount = members.length - inactiveCount;
+  // Counted with the same predicates the filters use, so each option's badge
+  // always matches the number of cards behind it.
+  const inactiveCount = members.filter(isInactiveMember).length;
+  const blockedCount = members.filter((m) => m.status === "blocked").length;
+  const activeCount = members.filter(
+    (m) => !isInactiveMember(m) && m.status !== "blocked"
+  ).length;
 
   if (loading) {
     return (
@@ -259,9 +277,12 @@ const InstructorMembers = () => {
               className="px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
               title="Inactive = set inactive by an admin, or no attendance within the gym's inactivity threshold"
             >
-              <option value="all">All Members</option>
+              <option value="all">All Members ({members.length})</option>
               <option value="active">Active ({activeCount})</option>
               <option value="inactive">Inactive ({inactiveCount})</option>
+              {blockedCount > 0 && (
+                <option value="blocked">Blocked ({blockedCount})</option>
+              )}
             </select>
           </div>
         </div>
@@ -271,7 +292,7 @@ const InstructorMembers = () => {
           <div className="text-center py-12 bg-gray-800/50 rounded-xl border border-gray-700">
             <Users className="w-16 h-16 text-gray-600 mx-auto mb-4" />
             <p className="text-gray-400 text-lg">
-              {searchTerm ? "No members found" : "No active members"}
+              {searchTerm ? "No members found" : "No members in this view"}
             </p>
           </div>
         ) : (
@@ -295,9 +316,17 @@ const InstructorMembers = () => {
                         {isInactiveMember(member) && (
                           <span
                             title="Set inactive by an admin, or no attendance within the gym's inactivity threshold"
-                            className="ml-1 text-xs px-2 py-0.5 rounded-full font-medium bg-gray-600/20 text-gray-400"
+                            className="ml-1 text-xs px-2 py-0.5 rounded-full font-medium bg-amber-500/20 text-amber-400"
                           >
                             Inactive
+                          </span>
+                        )}
+                        {member.status === "blocked" && (
+                          <span
+                            title="Blocked by an admin — this member cannot sign in to the app"
+                            className="ml-1 text-xs px-2 py-0.5 rounded-full font-medium bg-red-500/20 text-red-400"
+                          >
+                            Blocked
                           </span>
                         )}
                         {member.accessBlocked === true && (
@@ -467,6 +496,9 @@ const InstructorMembers = () => {
                       { label: "Membership Fee", value: selectedMember.membershipFee ? `$${selectedMember.membershipFee}` : null },
                       { label: "Package Duration", value: selectedMember.packageDuration ? `${selectedMember.packageDuration} month(s)` : null },
                       { label: "Next Payment", value: selectedMember.nextPaymentDate },
+                      // Inactive members are visible to trainers now, and the
+                      // first question about one is always when they last came in.
+                      { label: "Last Attendance", value: getAttendanceSummary(selectedMember).summaryLabel },
                     ].filter(f => f.value).map(({ label, value }) => (
                       <div key={label}>
                         <p className="text-gray-500 text-xs">{label}</p>
