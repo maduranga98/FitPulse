@@ -14,6 +14,7 @@ import {
   isPaymentOverdue,
   skipReason,
   coverageThroughMonth,
+  DEFAULT_DUE_DAY,
 } from "./services/paymentBlocking.js";
 // import { createClient } from "@supabase/supabase-js";
 import ws from "ws";
@@ -2442,6 +2443,94 @@ async function hasQueuedCommand(db, gymId, memberId) {
   );
 }
 
+/**
+ * One gym's sweep: queue a door block for every member who is overdue as of
+ * `today`. Shared by the nightly job and the "Run now" button in Gym
+ * Settings, so a manual run can never apply different rules than the
+ * scheduled one — the only difference is when it happens.
+ *
+ * `dryRun` answers "who would be blocked?" without writing anything. The
+ * button previews that list first: locking a paying member out of the gym
+ * is the expensive mistake, so an owner sees the names before committing.
+ */
+async function sweepGymForUnpaid(db, gymDoc, { today, dryRun = false } = {}) {
+  const gym = gymDoc.data();
+  const gymId = gymDoc.id;
+  const paymentCfg = gym.settings?.payment || {};
+  const dueDay = parseInt(paymentCfg.dueDay) || DEFAULT_DUE_DAY;
+  const graceDays = Math.max(0, parseInt(paymentCfg.autoBlockGraceDays) || 0);
+  const thisMonth = monthKey(today);
+
+  const membersSnap = await db
+    .collection("members")
+    .where("gymId", "==", gymId)
+    .where("status", "==", "active")
+    .get();
+
+  const summary = {
+    gymId,
+    month: thisMonth,
+    dueDay,
+    graceDays,
+    blockFromDay: dueDay + graceDays,
+    checked: membersSnap.size,
+    blocked: 0,
+    alreadyQueued: 0,
+    members: [],
+    dryRun,
+  };
+
+  for (const memberDoc of membersSnap.docs) {
+    const member = memberDoc.data();
+    const memberId = memberDoc.id;
+
+    if (skipReason(member, thisMonth)) continue;
+
+    // Every payment for the member: which MONTHS they cover is what
+    // decides this, and a single equality filter needs no composite
+    // index. A member has a few dozen payments at most.
+    const payments = await memberPayments(db, memberId);
+
+    if (!isPaymentOverdue({ member, payments, today, dueDay, graceDays })) {
+      continue;
+    }
+
+    if (await hasQueuedCommand(db, gymId, memberId)) {
+      summary.alreadyQueued++;
+      continue;
+    }
+
+    summary.members.push({
+      id: memberId,
+      name: member.name || "",
+      memberCode: member.memberCode || "",
+      coveredThrough: coverageThroughMonth(payments, member),
+    });
+
+    if (dryRun) continue;
+
+    await queueDeviceCommand(db, {
+      gymId,
+      member,
+      memberId,
+      type: "block",
+      reason: `Automatic — no payment recorded for ${thisMonth}`,
+    });
+    // autoBlocked is what makes the block reversible by a payment. The
+    // relay sets accessBlocked once the device confirms.
+    await memberDoc.ref.update({
+      autoBlocked: true,
+      autoBlockedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    summary.blocked++;
+    console.log(
+      `🚪 Auto-block queued for ${member.name} (${member.memberCode}) — unpaid for ${thisMonth}`,
+    );
+  }
+
+  return summary;
+}
+
 export const autoBlockUnpaidMembers = functions.pubsub
   .schedule("0 2 * * *") // daily at 02:00, after markInactiveMembers (01:00)
   .timeZone("Asia/Colombo")
@@ -2449,73 +2538,113 @@ export const autoBlockUnpaidMembers = functions.pubsub
     const db = admin.firestore();
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const thisMonth = monthKey(today);
 
     const gymsSnap = await db.collection("gyms").get();
 
     for (const gymDoc of gymsSnap.docs) {
       const gym = gymDoc.data();
-      const gymId = gymDoc.id;
       if (gym.status && gym.status !== "active") continue;
+      if (gym.settings?.payment?.autoBlockUnpaid !== true) continue;
 
-      const paymentCfg = gym.settings?.payment || {};
-      if (paymentCfg.autoBlockUnpaid !== true) continue;
-
-      const dueDay = parseInt(paymentCfg.dueDay) || 10;
-      const graceDays = Math.max(0, parseInt(paymentCfg.autoBlockGraceDays) || 0);
-
-      const membersSnap = await db
-        .collection("members")
-        .where("gymId", "==", gymId)
-        .where("status", "==", "active")
-        .get();
-
-      let blocked = 0;
-      for (const memberDoc of membersSnap.docs) {
-        const member = memberDoc.data();
-        const memberId = memberDoc.id;
-
-        if (skipReason(member, thisMonth)) continue;
-
-        // Every payment for the member: which MONTHS they cover is what
-        // decides this, and a single equality filter needs no composite
-        // index. A member has a few dozen payments at most.
-        const payments = await memberPayments(db, memberId);
-
-        if (
-          !isPaymentOverdue({ member, payments, today, dueDay, graceDays })
-        ) {
-          continue;
-        }
-
-        if (await hasQueuedCommand(db, gymId, memberId)) continue;
-
-        await queueDeviceCommand(db, {
-          gymId,
-          member,
-          memberId,
-          type: "block",
-          reason: `Automatic — no payment recorded for ${thisMonth}`,
-        });
-        // autoBlocked is what makes the block reversible by a payment. The
-        // relay sets accessBlocked once the device confirms.
-        await memberDoc.ref.update({
-          autoBlocked: true,
-          autoBlockedAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
-        blocked++;
-        console.log(
-          `🚪 Auto-block queued for ${member.name} (${member.memberCode}) — unpaid for ${thisMonth}`,
-        );
-      }
-
+      const { blocked } = await sweepGymForUnpaid(db, gymDoc, { today });
       if (blocked > 0) {
-        console.log(`🚪 Gym ${gymId}: queued ${blocked} auto-block command(s)`);
+        console.log(
+          `🚪 Gym ${gymDoc.id}: queued ${blocked} auto-block command(s)`,
+        );
       }
     }
 
     return null;
   });
+
+/**
+ * Run the unpaid sweep for one gym on demand, instead of waiting for
+ * tonight's 02:00 job.
+ *
+ * Turning the setting on mid-month leaves overdue members walking in until
+ * the next nightly run; this closes that gap. The rules are unchanged —
+ * the collection day, the grace period and every "never block" case still
+ * apply, so a run before the collection day correctly blocks nobody.
+ *
+ * Call it twice: `dryRun: true` returns the members who would be blocked,
+ * then the same call without it applies them.
+ *
+ * Auth note: this app authenticates against the `users` collection rather
+ * than Firebase Auth (see firestore.rules), so the caller is identified by
+ * `userId` and checked against that collection — the same trust model the
+ * rest of the app uses.
+ */
+export const runUnpaidAccessBlockNow = functions.https.onCall(
+  async (data) => {
+    const { gymId, userId, dryRun = false } = data || {};
+
+    if (!gymId || !userId) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "gymId and userId are required",
+      );
+    }
+
+    const db = admin.firestore();
+
+    const userDoc = await db.collection("users").doc(userId).get();
+    const user = userDoc.exists ? userDoc.data() : null;
+    const allowedRoles = [
+      "super_admin",
+      "gym_admin",
+      "admin",
+      "gym_manager",
+      "manager",
+      "owner",
+    ];
+    if (!user || !allowedRoles.includes(user.role)) {
+      throw new functions.https.HttpsError(
+        "permission-denied",
+        "Only a gym admin or manager can run this",
+      );
+    }
+    if (user.role !== "super_admin" && user.gymId !== gymId) {
+      throw new functions.https.HttpsError(
+        "permission-denied",
+        "You can only run this for your own gym",
+      );
+    }
+
+    const gymDoc = await db.collection("gyms").doc(gymId).get();
+    if (!gymDoc.exists) {
+      throw new functions.https.HttpsError("not-found", "Gym not found");
+    }
+    const gym = gymDoc.data();
+    if (gym.status && gym.status !== "active") {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "This gym is not active",
+      );
+    }
+    if (gym.settings?.payment?.autoBlockUnpaid !== true) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "Turn on \"Block door access for unpaid members\" and save first",
+      );
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const summary = await sweepGymForUnpaid(db, gymDoc, {
+      today,
+      dryRun: dryRun === true,
+    });
+
+    console.log(
+      `🚪 Manual unpaid sweep for gym ${gymId} by ${user.name || userId}` +
+        `${summary.dryRun ? " (preview)" : ""}: ${summary.members.length} overdue, ` +
+        `${summary.blocked} queued, ${summary.alreadyQueued} already waiting on the relay`,
+    );
+
+    return { success: true, ...summary };
+  },
+);
 
 /**
  * A recorded payment lifts an automatic block as soon as the member is no
