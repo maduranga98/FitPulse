@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import AdminLayout from "../components/AdminLayout";
 import { useGymSettings } from "../contexts/GymSettingsContext";
+import { useAuth } from "../hooks/useAuth";
 
 const ToggleRow = ({ label, description, checked, onChange }) => (
   <div className="flex items-center justify-between py-3 border-b border-gray-700 last:border-0">
@@ -22,6 +23,7 @@ const ToggleRow = ({ label, description, checked, onChange }) => (
 const GymSettings = () => {
   const navigate = useNavigate();
   const { settings, loading, updateSettings } = useGymSettings();
+  const { user } = useAuth();
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -59,6 +61,51 @@ const GymSettings = () => {
   }, [loading, settings]);
 
   const [newPackage, setNewPackage] = useState({ name: "", price: "", duration: 1 });
+
+  // "Run now" for the unpaid door-block sweep. The nightly job only runs at
+  // 02:00, so turning the setting on mid-month leaves overdue members
+  // walking in until tomorrow; this closes that gap. Always previewed
+  // first — locking out a member who has in fact paid is the costly
+  // mistake, so the owner sees the names before committing.
+  const [blockPreview, setBlockPreview] = useState(null);
+  const [blockBusy, setBlockBusy] = useState(false);
+  const [blockError, setBlockError] = useState("");
+  const [blockResult, setBlockResult] = useState(null);
+
+  const runBlockSweep = async (dryRun) => {
+    const { getFunctions, httpsCallable } = await import("firebase/functions");
+    const { app } = await import("../config/firebase");
+    const fn = httpsCallable(getFunctions(app), "runUnpaidAccessBlockNow");
+    const res = await fn({ gymId: user?.gymId, userId: user?.id, dryRun });
+    return res.data;
+  };
+
+  const previewBlockNow = async () => {
+    setBlockBusy(true);
+    setBlockError("");
+    setBlockResult(null);
+    try {
+      setBlockPreview(await runBlockSweep(true));
+    } catch (err) {
+      setBlockError(err?.message || "Could not check unpaid members.");
+    } finally {
+      setBlockBusy(false);
+    }
+  };
+
+  const confirmBlockNow = async () => {
+    setBlockBusy(true);
+    setBlockError("");
+    try {
+      const result = await runBlockSweep(false);
+      setBlockPreview(null);
+      setBlockResult(result);
+    } catch (err) {
+      setBlockError(err?.message || "Could not block unpaid members.");
+    } finally {
+      setBlockBusy(false);
+    }
+  };
 
   const persistPackages = async (packages) => {
     try {
@@ -464,6 +511,128 @@ const GymSettings = () => {
                   Needs the gym relay agent running — the terminal is only
                   reachable from inside the gym.
                 </p>
+              </div>
+            )}
+
+            {localSettings.payment.autoBlockUnpaid && (
+              <div className="mt-5 rounded-lg border border-gray-700 bg-gray-900/60 p-4">
+                <p className="text-sm font-medium text-gray-300">Run it now</p>
+                <p className="text-xs text-gray-500 mt-1 max-w-xl">
+                  The sweep runs on its own each night at 02:00. If you turned
+                  this on after the collection day, run it now instead of
+                  waiting — members already past day{" "}
+                  {(parseInt(localSettings.payment.dueDay) || 10) +
+                    (parseInt(localSettings.payment.autoBlockGraceDays) || 0)}{" "}
+                  with nothing recorded for this month are blocked straight
+                  away. You will see who they are before anything is sent.
+                </p>
+
+                {settings?.payment?.autoBlockUnpaid !== true ? (
+                  <p className="text-xs text-amber-400/80 mt-3">
+                    Save your settings first — the sweep reads the saved
+                    configuration.
+                  </p>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={previewBlockNow}
+                    disabled={blockBusy}
+                    className="mt-3 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {blockBusy && !blockPreview ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                        Checking...
+                      </>
+                    ) : (
+                      "Block unpaid members now"
+                    )}
+                  </button>
+                )}
+
+                {blockError && (
+                  <p className="text-xs text-red-400 mt-3">{blockError}</p>
+                )}
+
+                {blockResult && (
+                  <p className="text-xs text-green-400 mt-3">
+                    {blockResult.blocked > 0
+                      ? `Blocked ${blockResult.blocked} member${blockResult.blocked === 1 ? "" : "s"}. The relay agent applies it at the terminal within a minute.`
+                      : "Nothing to do — every active member is settled for this month."}
+                    {blockResult.alreadyQueued > 0 &&
+                      ` ${blockResult.alreadyQueued} already had a command waiting on the relay.`}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Preview before anything leaves for the terminal. */}
+            {blockPreview && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+                <div className="w-full max-w-md bg-gray-800 border border-gray-700 rounded-xl p-5">
+                  <h3 className="text-base font-bold text-white">
+                    Block unpaid members
+                  </h3>
+                  {blockPreview.members.length === 0 ? (
+                    <p className="text-sm text-gray-400 mt-2">
+                      No one is overdue for {blockPreview.month}. Nothing will
+                      be blocked.
+                    </p>
+                  ) : (
+                    <>
+                      <p className="text-sm text-gray-400 mt-2">
+                        {blockPreview.members.length} member
+                        {blockPreview.members.length === 1 ? "" : "s"} have no
+                        payment recorded for {blockPreview.month} and will lose
+                        door access. App login is not affected, and access
+                        returns automatically the moment the month is recorded.
+                      </p>
+                      <ul className="mt-3 max-h-56 overflow-y-auto divide-y divide-gray-700 border border-gray-700 rounded-lg">
+                        {blockPreview.members.map((m) => (
+                          <li
+                            key={m.id}
+                            className="flex items-center justify-between px-3 py-2 text-sm"
+                          >
+                            <span className="text-white">{m.name}</span>
+                            <span className="text-xs text-gray-500">
+                              {m.memberCode}
+                              {m.coveredThrough
+                                ? ` · paid to ${m.coveredThrough}`
+                                : " · no payments"}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                  <div className="mt-5 flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setBlockPreview(null)}
+                      disabled={blockBusy}
+                      className="flex-1 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    {blockPreview.members.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={confirmBlockNow}
+                        disabled={blockBusy}
+                        className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition disabled:opacity-50 flex items-center justify-center gap-2"
+                      >
+                        {blockBusy ? (
+                          <>
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                            Blocking...
+                          </>
+                        ) : (
+                          `Block ${blockPreview.members.length}`
+                        )}
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
           </div>
