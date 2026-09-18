@@ -555,13 +555,24 @@ const GymSettings = () => {
                 )}
 
                 {blockResult && (
-                  <p className="text-xs text-green-400 mt-3">
-                    {blockResult.blocked > 0
-                      ? `Blocked ${blockResult.blocked} member${blockResult.blocked === 1 ? "" : "s"}. The relay agent applies it at the terminal within a minute.`
-                      : "Nothing to do — every active member is settled for this month."}
-                    {blockResult.alreadyQueued > 0 &&
-                      ` ${blockResult.alreadyQueued} already had a command waiting on the relay.`}
-                  </p>
+                  <div className="mt-3 space-y-1">
+                    <p className="text-xs text-green-400">
+                      {blockResult.blocked > 0
+                        ? `Blocked ${blockResult.blocked} member${blockResult.blocked === 1 ? "" : "s"}.${blockResult.relay?.online ? " The relay agent applies it at the terminal within a minute." : ""}`
+                        : "Nothing to do — every active member is settled for this month."}
+                      {blockResult.superseded > 0 &&
+                        ` ${blockResult.superseded} abandoned command${blockResult.superseded === 1 ? "" : "s"} from an earlier run replaced.`}
+                      {blockResult.alreadyQueued > 0 &&
+                        ` ${blockResult.alreadyQueued} already had a command in flight.`}
+                    </p>
+                    {blockResult.blocked > 0 && !blockResult.relay?.online && (
+                      <p className="text-xs text-amber-400">
+                        The relay agent is offline, so nothing has changed at
+                        the terminal yet. The commands are queued and apply the
+                        moment it is running again.
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
             )}
@@ -573,10 +584,30 @@ const GymSettings = () => {
                   <h3 className="text-base font-bold text-white">
                     Block unpaid members
                   </h3>
+
+                  {/* The terminal only changes if something is consuming the
+                      queue. Say so before staff commit, not after. */}
+                  {blockPreview.relay && !blockPreview.relay.online && (
+                    <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+                      <p className="text-amber-400 text-xs font-medium">
+                        Gym relay agent is offline — nothing will change at the
+                        terminal yet
+                      </p>
+                      <p className="text-amber-200/70 text-xs mt-1">
+                        {blockPreview.relay.lastSeenAt
+                          ? `Last seen ${new Date(blockPreview.relay.lastSeenAt).toLocaleString()}${blockPreview.relay.host ? ` on ${blockPreview.relay.host}` : ""}.`
+                          : "It has never run for this gym."}{" "}
+                        Commands queue safely and apply as soon as it is
+                        started on the gym PC.
+                      </p>
+                    </div>
+                  )}
+
                   {blockPreview.members.length === 0 ? (
                     <p className="text-sm text-gray-400 mt-2">
-                      No one is overdue for {blockPreview.month}. Nothing will
-                      be blocked.
+                      {blockPreview.alreadyQueued > 0
+                        ? `${blockPreview.alreadyQueued} member${blockPreview.alreadyQueued === 1 ? " has a command" : "s have commands"} in flight with the relay right now. Everyone else is settled for ${blockPreview.month}.`
+                        : `No one is overdue for ${blockPreview.month}. Nothing will be blocked.`}
                     </p>
                   ) : (
                     <>
@@ -593,7 +624,17 @@ const GymSettings = () => {
                             key={m.id}
                             className="flex items-center justify-between px-3 py-2 text-sm"
                           >
-                            <span className="text-white">{m.name}</span>
+                            <span className="text-white">
+                              {m.name}
+                              {m.waitingSince && (
+                                <span
+                                  title={`Queued ${new Date(m.waitingSince).toLocaleString()} and never applied — it will be replaced`}
+                                  className="ml-2 px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 text-[10px] font-medium align-middle"
+                                >
+                                  retry
+                                </span>
+                              )}
+                            </span>
                             <span className="text-xs text-gray-500">
                               {m.memberCode}
                               {m.coveredThrough
