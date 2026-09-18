@@ -21,6 +21,7 @@ import {
   createDeviceCommand,
   subscribeToDeviceCommand,
   subscribeToRelayStatus,
+  subscribeToPendingCommands,
   RELAY_STALE_MS,
   COMMAND_TIMEOUT_MS,
 } from "../services/deviceAccessService";
@@ -172,6 +173,8 @@ const Members = () => {
   // memberId → { status: "pending"|"completed"|"failed", error? } for the
   // door-access command currently being executed by the gym's relay agent
   const [deviceCommands, setDeviceCommands] = useState({});
+  // Commands waiting on the relay for this gym, from any source.
+  const [queuedCommands, setQueuedCommands] = useState({});
   const deviceUnsubsRef = useRef({});
   const deviceTimersRef = useRef({});
   // Heartbeat from the gym's relay agent — without it, door commands sit in
@@ -209,10 +212,14 @@ const Members = () => {
     const unsub = subscribeToRelayStatus(currentGymId, (status) =>
       setRelay({ ...status, loaded: true })
     );
+    // Blocks queued by the nightly unpaid sweep or by another member of
+    // staff belong in this list too, not just the ones this tab queued.
+    const unsubQueue = subscribeToPendingCommands(currentGymId, setQueuedCommands);
     const tick = setInterval(() => setNow(Date.now()), 15000);
     setNow(Date.now());
     return () => {
       unsub();
+      unsubQueue();
       clearInterval(tick);
     };
   }, [currentGymId, activeTab]);
@@ -1566,8 +1573,15 @@ const Members = () => {
                   .map((member) => {
                     const isBlocked = member.status === "blocked";
                     const deviceCmd = deviceCommands[member.id];
+                    const queuedCmd = queuedCommands[member.id];
                     // Door state is tracked separately from app login: the
                     // relay confirms it asynchronously and can fail on its own.
+                    //
+                    // A command still sitting in the queue outranks
+                    // accessBlocked, which reflects the terminal rather than
+                    // what staff decided. Showing "Door: open" for a member
+                    // with a block waiting is how an unnoticed relay outage
+                    // used to look exactly like a working gym.
                     const doorPill = deviceCmd?.status === "pending"
                       ? { text: "Door: syncing…", cls: "bg-blue-600/20 text-blue-400" }
                       : deviceCmd?.status === "failed"
@@ -1577,9 +1591,18 @@ const Members = () => {
                             : "Door: sync failed",
                           cls: "bg-amber-600/20 text-amber-400",
                         }
-                        : member.accessBlocked
-                          ? { text: "Door: blocked", cls: "bg-red-600/20 text-red-500" }
-                          : { text: "Door: open", cls: "bg-green-600/20 text-green-500" };
+                        : queuedCmd
+                          ? {
+                            text: relayOnline
+                              ? `Door: ${queuedCmd.type} queued`
+                              : `Door: ${queuedCmd.type} waiting — relay offline`,
+                            cls: relayOnline
+                              ? "bg-blue-600/20 text-blue-400"
+                              : "bg-amber-600/20 text-amber-400",
+                          }
+                          : member.accessBlocked
+                            ? { text: "Door: blocked", cls: "bg-red-600/20 text-red-500" }
+                            : { text: "Door: open", cls: "bg-green-600/20 text-green-500" };
                     return (
                       <div
                         key={member.id}

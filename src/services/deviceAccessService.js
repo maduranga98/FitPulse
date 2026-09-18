@@ -10,6 +10,8 @@ import {
   collection,
   addDoc,
   doc,
+  query,
+  where,
   updateDoc,
   onSnapshot,
   deleteDoc,
@@ -81,6 +83,46 @@ export const subscribeToDeviceCommand = (gymId, commandId, callback) => {
     doc(db, "gyms", gymId, "deviceCommands", commandId),
     (snap) => callback(snap.exists() ? snap.data() : null),
     (err) => callback({ status: "failed", errorMessage: err.message })
+  );
+};
+
+/**
+ * Every command still waiting on the relay for this gym, keyed by memberId.
+ *
+ * The Block Access list otherwise only knows about commands THIS browser
+ * queued, so a block from the nightly unpaid sweep — or from another member
+ * of staff — was invisible until the relay confirmed it. Members whose door
+ * is not blocked yet but whose command is queued read as "Door: open",
+ * which is true of the terminal and misleading about what staff decided.
+ *
+ * callback receives a plain object: { [memberId]: { type, status, queuedAt } }.
+ */
+export const subscribeToPendingCommands = (gymId, callback) => {
+  return onSnapshot(
+    query(
+      collection(db, "gyms", gymId, "deviceCommands"),
+      where("status", "in", ["pending", "processing"]),
+    ),
+    (snap) => {
+      const byMember = {};
+      for (const docSnap of snap.docs) {
+        const data = docSnap.data();
+        if (!data.memberId) continue;
+        const queuedAt = data.createdAt?.toDate?.() || null;
+        const existing = byMember[data.memberId];
+        // Last intent wins, matching how the relay drains the backlog.
+        if (existing?.queuedAt && queuedAt && existing.queuedAt >= queuedAt) {
+          continue;
+        }
+        byMember[data.memberId] = {
+          type: data.type,
+          status: data.status,
+          queuedAt,
+        };
+      }
+      callback(byMember);
+    },
+    () => callback({}),
   );
 };
 

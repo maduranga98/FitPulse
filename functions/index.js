@@ -16,6 +16,10 @@ import {
   coverageThroughMonth,
   DEFAULT_DUE_DAY,
 } from "./services/paymentBlocking.js";
+import {
+  classifyWaitingCommands,
+  isRelayOnline,
+} from "./services/commandQueue.js";
 // import { createClient } from "@supabase/supabase-js";
 import ws from "ws";
 import express from "express";
@@ -2427,20 +2431,87 @@ async function memberPayments(db, memberId) {
   return snap.docs.map((d) => d.data());
 }
 
-/** True if a block/unblock for this member is already waiting on the relay. */
-async function hasQueuedCommand(db, gymId, memberId) {
-  // Single equality filter only — served by the automatic single-field
-  // index, so this never depends on a composite index being deployed.
-  // A member has a handful of commands at most, so filtering here is cheap.
+/**
+ * What the queue currently holds for this member.
+ *
+ *   active — a command the relay can still reasonably be working on. The
+ *            sweep leaves it alone; re-queueing would double up.
+ *   stale  — commands nobody ever consumed (the relay was down when they
+ *            were written). These must NOT stop a re-run: a member who is
+ *            still overdue has to be blocked again, and the abandoned
+ *            command is superseded rather than left to mask them forever.
+ *
+ * Single equality filter only — served by the automatic single-field index,
+ * so this never depends on a composite index being deployed. A member has a
+ * handful of commands at most, so filtering here is cheap.
+ */
+async function queuedCommandState(db, gymId, memberId, now = Date.now()) {
   const snap = await db
     .collection("gyms")
     .doc(gymId)
     .collection("deviceCommands")
     .where("memberId", "==", memberId)
     .get();
-  return snap.docs.some((d) =>
-    ["pending", "processing"].includes(d.data().status)
+
+  const commands = snap.docs.map((doc) => {
+    const data = doc.data();
+    return {
+      ref: doc.ref,
+      status: data.status,
+      // When the relay claimed it, or failing that when it was written.
+      queuedAt:
+        data.processingStartedAt?.toDate?.() || data.createdAt?.toDate?.() || null,
+    };
+  });
+
+  const { active, stale, oldestWaitingAt } = classifyWaitingCommands(
+    commands,
+    now,
   );
+
+  return { active, stale: stale.map((c) => c.ref), oldestWaitingAt };
+}
+
+/**
+ * Retire commands nobody consumed. The relay only ever reads
+ * `status == "pending"`, so a superseded command is invisible to it — this
+ * just stops the abandoned doc from counting as in-flight on the next run.
+ */
+async function supersedeCommands(db, refs, note) {
+  if (refs.length === 0) return;
+  const batch = db.batch();
+  for (const ref of refs) {
+    batch.update(ref, {
+      status: "superseded",
+      errorMessage: note,
+      completedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  }
+  await batch.commit();
+}
+
+/**
+ * The gym relay's heartbeat, so a sweep can say whether anything is actually
+ * going to apply what it queues. Mirrors RELAY_STALE_MS in the app (two
+ * missed 30s heartbeats).
+ */
+async function readRelayStatus(db, gymId) {
+  const snap = await db
+    .collection("gyms")
+    .doc(gymId)
+    .collection("relayStatus")
+    .doc("agent")
+    .get();
+
+  if (!snap.exists) return { online: false, lastSeenAt: null, host: null };
+
+  const data = snap.data();
+  const lastSeenAt = data.lastSeenAt?.toDate?.() || null;
+  return {
+    online: isRelayOnline(lastSeenAt, Date.now()),
+    lastSeenAt: lastSeenAt ? lastSeenAt.toISOString() : null,
+    host: data.host || null,
+  };
 }
 
 /**
@@ -2476,9 +2547,15 @@ async function sweepGymForUnpaid(db, gymDoc, { today, dryRun = false } = {}) {
     checked: membersSnap.size,
     blocked: 0,
     alreadyQueued: 0,
+    superseded: 0,
+    // Whether anything is actually listening. A sweep that queues commands
+    // into a dead queue looks identical to a successful one otherwise.
+    relay: await readRelayStatus(db, gymId),
     members: [],
     dryRun,
   };
+
+  const now = Date.now();
 
   for (const memberDoc of membersSnap.docs) {
     const member = memberDoc.data();
@@ -2495,7 +2572,12 @@ async function sweepGymForUnpaid(db, gymDoc, { today, dryRun = false } = {}) {
       continue;
     }
 
-    if (await hasQueuedCommand(db, gymId, memberId)) {
+    // A command the relay may still be working on is left alone. One it
+    // never consumed is NOT a reason to skip the member — that is exactly
+    // how an outage used to make every later run report "nothing to do"
+    // while the member walked in unblocked.
+    const queued = await queuedCommandState(db, gymId, memberId, now);
+    if (queued.active) {
       summary.alreadyQueued++;
       continue;
     }
@@ -2505,9 +2587,21 @@ async function sweepGymForUnpaid(db, gymDoc, { today, dryRun = false } = {}) {
       name: member.name || "",
       memberCode: member.memberCode || "",
       coveredThrough: coverageThroughMonth(payments, member),
+      // Surfaced in the preview so staff can see this member was already
+      // queued once and never applied.
+      waitingSince: queued.oldestWaitingAt
+        ? queued.oldestWaitingAt.toISOString()
+        : null,
     });
 
     if (dryRun) continue;
+
+    await supersedeCommands(
+      db,
+      queued.stale,
+      `Superseded by a newer block queued for ${thisMonth}`,
+    );
+    summary.superseded += queued.stale.length;
 
     await queueDeviceCommand(db, {
       gymId,
@@ -2546,10 +2640,26 @@ export const autoBlockUnpaidMembers = functions.pubsub
       if (gym.status && gym.status !== "active") continue;
       if (gym.settings?.payment?.autoBlockUnpaid !== true) continue;
 
-      const { blocked } = await sweepGymForUnpaid(db, gymDoc, { today });
+      const { blocked, superseded, relay } = await sweepGymForUnpaid(db, gymDoc, {
+        today,
+      });
       if (blocked > 0) {
         console.log(
-          `🚪 Gym ${gymDoc.id}: queued ${blocked} auto-block command(s)`,
+          `🚪 Gym ${gymDoc.id}: queued ${blocked} auto-block command(s)` +
+            (superseded > 0
+              ? `, superseding ${superseded} abandoned one(s)`
+              : ""),
+        );
+      }
+      // A queue with nothing consuming it is a silent outage: members stay
+      // unblocked and every run looks successful. Say so loudly enough to
+      // find in the Cloud Functions logs.
+      if (blocked > 0 && !relay.online) {
+        console.error(
+          `🚨 Gym ${gymDoc.id}: ${blocked} command(s) queued but the relay ` +
+            `agent is OFFLINE (last seen ${relay.lastSeenAt || "never"}` +
+            `${relay.host ? ` on ${relay.host}` : ""}). No door will change ` +
+            "until it is running again.",
         );
       }
     }
@@ -2639,7 +2749,9 @@ export const runUnpaidAccessBlockNow = functions.https.onCall(
     console.log(
       `🚪 Manual unpaid sweep for gym ${gymId} by ${user.name || userId}` +
         `${summary.dryRun ? " (preview)" : ""}: ${summary.members.length} overdue, ` +
-        `${summary.blocked} queued, ${summary.alreadyQueued} already waiting on the relay`,
+        `${summary.blocked} queued, ${summary.superseded} abandoned command(s) ` +
+        `superseded, ${summary.alreadyQueued} still in flight — relay ` +
+        `${summary.relay.online ? "online" : `OFFLINE (last seen ${summary.relay.lastSeenAt || "never"})`}`,
     );
 
     return { success: true, ...summary };
