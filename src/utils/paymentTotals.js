@@ -57,6 +57,24 @@ export const isInactiveMember = (member) =>
 // "active unpaid" only, never "active + inactive unpaid" combined.
 export const isPayingMember = (member) => !isFeeExempt(member) && !isInactiveMember(member);
 
+// A blocked member is one the gym has shut out, by either of the two
+// independent switches the app owns:
+//   - `status: "blocked"`  → staff revoked their app login (Members screen)
+//   - `accessBlocked`      → the relay confirmed the door terminal rejects them
+//   - `autoBlocked`        → the nightly unpaid sweep queued a door block that
+//                            the relay has not confirmed yet
+// `autoBlocked` is cleared again on any unblock (payment, or a manual
+// override), so it never lingers on a member who is back in.
+//
+// Blocked is NOT the same as inactive or unpaid: an unpaid member still walks
+// in and still counts. Only a blocked member's check-ins are set aside, since
+// a scan from someone who should not be getting through the door is a device
+// or sync problem to look at, not gym traffic to report on.
+export const isBlockedMember = (member) =>
+  member?.status === "blocked" ||
+  member?.accessBlocked === true ||
+  member?.autoBlocked === true;
+
 /** The fee actually expected from a member this cycle (0 for VIPs). */
 export const memberFee = (member) =>
   isFeeExempt(member) ? 0 : toAmount(member?.membershipFee);

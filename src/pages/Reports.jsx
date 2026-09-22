@@ -16,6 +16,10 @@ import {
   getInactiveReason,
 } from "../utils/memberActivity";
 import {
+  blockedMemberKeys,
+  isBlockedRecord,
+} from "../utils/attendanceFilters";
+import {
   isCoupleMember,
   isCouplePayer,
   isCoveredByPartner,
@@ -179,10 +183,15 @@ const Reports = () => {
   const getEmpNo = (record) =>
     record.rawEvent?.employeeNo || record.employeeNo || record.memberId;
 
+  // Blocked members are reported on their own, never mixed into the gym's
+  // attendance figures: a scan from someone the door should be refusing is a
+  // sync problem to chase, not a month's attendance.
+  const blockedKeys = blockedMemberKeys(members);
+
   // Group the month's raw attendance events per member, deduplicating repeat
   // device scans into unique attended days. Returns
   // { empNo: { name, days: Set<"YYYY-MM-DD">, scans, lastDate } }.
-  const groupMonthAttendance = () => {
+  const groupMonthAttendance = ({ blocked = false } = {}) => {
     const [year, month] = selectedMonth.split("-");
     const startDate = new Date(year, parseInt(month) - 1, 1);
     const endDate = new Date(year, parseInt(month), 0);
@@ -192,6 +201,7 @@ const Reports = () => {
     attendance.forEach((record) => {
       const d = getAttendanceDate(record);
       if (!d || d < startDate || d > endDate) return;
+      if (isBlockedRecord(record, blockedKeys) !== blocked) return;
 
       const key = getEmpNo(record) || "unknown";
       const dayKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -223,6 +233,17 @@ const Reports = () => {
 
   const generateAttendanceReport = () => {
     return Object.entries(groupMonthAttendance()).map(([empNo, info]) => ({
+      "Employee No": empNo,
+      "Member Name": info.name,
+      "Days Attended": info.days.size,
+      "Total Scans": info.scans,
+      "Last Attendance": info.lastDate ? info.lastDate.toLocaleDateString("en-LK") : "N/A",
+    }));
+  };
+
+  // Same shape as the attendance report, for the records held back from it.
+  const generateBlockedAttendanceReport = () => {
+    return Object.entries(groupMonthAttendance({ blocked: true })).map(([empNo, info]) => ({
       "Employee No": empNo,
       "Member Name": info.name,
       "Days Attended": info.days.size,
@@ -447,6 +468,10 @@ const Reports = () => {
       "overall-members": { title: "Overall Member List", filename: "overall-member-list" },
       "monthly-active": { title: "Monthly Active Members", filename: `active-members-${selectedMonth}` },
       "attendance": { title: "Attendance Report", filename: `attendance-report-${selectedMonth}` },
+      "blocked-attendance": {
+        title: "Blocked Member Attendance Report",
+        filename: `blocked-attendance-report-${selectedMonth}`,
+      },
       "monthly-payment": { title: "Monthly Payment Report", filename: `monthly-payments-${selectedMonth}` },
       "pending-payment": { title: "Pending Payment Report", filename: `pending-payments-${selectedMonth}` },
       "attendance-inactive": {
@@ -472,6 +497,9 @@ const Reports = () => {
         break;
       case "attendance":
         data = generateAttendanceReport();
+        break;
+      case "blocked-attendance":
+        data = generateBlockedAttendanceReport();
         break;
       case "monthly-payment":
         data = generateMonthlyPaymentReport();
@@ -545,7 +573,18 @@ const Reports = () => {
   const reportOptions = [
     { value: "overall-members", label: "Overall Member List", description: "All members with names and IDs" },
     { value: "monthly-active", label: "Monthly Active Members", description: "Members active in selected month with attendance count" },
-    { value: "attendance", label: "Attendance Report", description: "Attendance records by member and date" },
+    {
+      value: "attendance",
+      label: "Attendance Report",
+      description:
+        "Attendance records by member and date. Blocked members are excluded — their check-ins have their own report.",
+    },
+    {
+      value: "blocked-attendance",
+      label: "Blocked Member Attendance Report",
+      description:
+        "Check-ins recorded for blocked members in the selected month. These are left out of every other attendance figure — a blocked member getting through usually means the door terminal has not synced their block.",
+    },
     { value: "monthly-payment", label: "Monthly Payment Report", description: "Payments received in selected month" },
     {
       value: "pending-payment",
@@ -604,7 +643,13 @@ const Reports = () => {
                   </select>
                 </div>
 
-                {["monthly-active", "attendance", "monthly-payment", "pending-payment"].includes(selectedReport) && (
+                {[
+                  "monthly-active",
+                  "attendance",
+                  "blocked-attendance",
+                  "monthly-payment",
+                  "pending-payment",
+                ].includes(selectedReport) && (
                   <div>
                     <label className="block text-sm font-medium text-gray-300 mb-2">Select Month</label>
                     <input

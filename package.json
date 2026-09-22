@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "test": "node src/utils/searchUtils.test.js",
+    "test": "node src/utils/searchUtils.test.js && node src/utils/attendanceFilters.test.js",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -17,6 +17,12 @@ import {
   Cell,
 } from "recharts";
 import { getAttendanceRange } from "../services/attendanceService";
+import { db } from "../config/firebase";
+import { collection, getDocs, query, where } from "firebase/firestore";
+import {
+  blockedMemberKeys,
+  splitBlockedAttendance,
+} from "../utils/attendanceFilters";
 
 const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899"];
 
@@ -27,6 +33,7 @@ const AttendanceAnalytics = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [attendance, setAttendance] = useState([]);
+  const [blockedCheckins, setBlockedCheckins] = useState(0);
   const [timeRange, setTimeRange] = useState("30");
 
   const [stats, setStats] = useState({
@@ -67,9 +74,21 @@ const AttendanceAnalytics = () => {
       start.setDate(start.getDate() - days);
       start.setHours(0, 0, 0, 0);
 
-      const data = await getAttendanceRange(gymId, start, end);
-      setAttendance(data);
-      computeStats(data, start, end, days);
+      const [data, membersSnap] = await Promise.all([
+        getAttendanceRange(gymId, start, end),
+        getDocs(query(collection(db, "members"), where("gymId", "==", gymId))),
+      ]);
+
+      // Blocked members should not be walking in at all, so their scans are
+      // an exception to look into — never part of the gym's attendance
+      // numbers, its daily trend, or its top-members ranking.
+      const { visible, blocked } = splitBlockedAttendance(
+        data,
+        blockedMemberKeys(membersSnap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+      );
+      setAttendance(visible);
+      setBlockedCheckins(blocked.length);
+      computeStats(visible, start, end, days);
     } catch (err) {
       console.error("Error fetching attendance analytics:", err);
     } finally {
@@ -220,6 +239,16 @@ const AttendanceAnalytics = () => {
                   </div>
                 ))}
               </div>
+
+              {blockedCheckins > 0 && (
+                <div className="flex items-center gap-2 -mt-4 mb-8 text-xs text-gray-400">
+                  <span className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
+                  <span>
+                    {blockedCheckins} check-in{blockedCheckins === 1 ? "" : "s"} from blocked
+                    members excluded from these figures — review them on the Attendance screen.
+                  </span>
+                </div>
+              )}
 
               {/* Daily Trend */}
               <div className="bg-gray-800 border border-gray-700 rounded-xl p-6 mb-6">

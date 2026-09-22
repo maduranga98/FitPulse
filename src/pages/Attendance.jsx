@@ -10,7 +10,12 @@ import { useGymSettings } from "../contexts/GymSettingsContext";
 import Sidebar from "../components/Sidebar";
 import { db } from "../config/firebase";
 import { collection, query, where, getDocs } from "firebase/firestore";
-import { isInactiveMember } from "../utils/paymentTotals";
+import { isInactiveMember, isBlockedMember } from "../utils/paymentTotals";
+import {
+  blockedMemberKeys,
+  isBlockedRecord,
+  splitBlockedAttendance,
+} from "../utils/attendanceFilters";
 import { matchesSearch } from "../utils/searchUtils";
 
 const Attendance = () => {
@@ -24,6 +29,7 @@ const Attendance = () => {
   const [attendance, setAttendance] = useState([]);
   const [instructorIds, setInstructorIds] = useState(new Set());
   const [unpaidIds, setUnpaidIds] = useState(new Set());
+  const [blockedKeys, setBlockedKeys] = useState(new Set());
   const [gymMembers, setGymMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState(
@@ -90,6 +96,9 @@ const Attendance = () => {
       setInstructorIds(
         new Set(membersData.filter((m) => m.role === "trainer").map((m) => m.id)),
       );
+      // Blocked members' scans are kept out of the member/instructor lists
+      // and their counts — they live in their own tab instead.
+      setBlockedKeys(blockedMemberKeys(membersData));
 
       // Paid this month = a payment record for the current YYYY-MM month
       const currentMonth = new Date().toISOString().slice(0, 7);
@@ -214,15 +223,28 @@ const Attendance = () => {
     return unsubscribe;
   }, [gymId, isToday]);
 
+  // Blocked members first: whatever they are otherwise (member or trainer),
+  // their check-ins never reach the main lists or the counts above them.
+  const { visible: countedAttendance, blocked: blockedAttendance } =
+    splitBlockedAttendance(attendance, blockedKeys);
+
   // Split and deduplicate
   const memberRecords = deduplicateByMember(
-    attendance.filter((a) => !instructorIds.has(a.memberId))
+    countedAttendance.filter((a) => !instructorIds.has(a.memberId))
   );
   const instructorRecords = deduplicateByMember(
-    attendance.filter((a) => instructorIds.has(a.memberId))
+    countedAttendance.filter((a) => instructorIds.has(a.memberId))
   );
+  const blockedRecords = deduplicateByMember(blockedAttendance);
 
-  const displayRecords = activeTab === "members" ? memberRecords : instructorRecords;
+  const displayRecords =
+    activeTab === "members"
+      ? memberRecords
+      : activeTab === "blocked"
+        ? blockedRecords
+        : instructorRecords;
+  const tabNoun =
+    activeTab === "members" ? "member" : activeTab === "blocked" ? "blocked member" : "instructor";
 
   const selectableMembers = gymMembers
     .filter((m) => m.role !== "trainer")
@@ -259,13 +281,20 @@ const Attendance = () => {
     const initial = name.charAt(0).toUpperCase();
     const checkInTime = getCheckInTime(record);
     const evtType = record.rawEvent?.eventType || record.eventType || "check_in";
-    const isUnpaid = record.memberId && unpaidIds.has(record.memberId);
+    const isBlocked = isBlockedRecord(record, blockedKeys);
+    // A blocked member's row is never also flagged "Unpaid" — the block is
+    // the bigger fact, and their scan isn't part of the unpaid follow-up.
+    const isUnpaid = !isBlocked && record.memberId && unpaidIds.has(record.memberId);
 
     return (
       <div
         key={record.id}
         className={`flex items-center justify-between p-4 transition-colors ${
-          isUnpaid ? "bg-red-500/10 hover:bg-red-500/15" : "hover:bg-gray-800/50"
+          isBlocked
+            ? "bg-red-900/20 hover:bg-red-900/30"
+            : isUnpaid
+              ? "bg-red-500/10 hover:bg-red-500/15"
+              : "hover:bg-gray-800/50"
         }`}
       >
         <div className="flex items-center gap-4">
@@ -273,22 +302,36 @@ const Attendance = () => {
 
           <div
             className={`w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0 ${
-              isUnpaid
-                ? "bg-gradient-to-br from-red-500 to-red-700"
-                : "bg-gradient-to-br from-blue-500 to-purple-600"
+              isBlocked
+                ? "bg-gradient-to-br from-gray-600 to-gray-800"
+                : isUnpaid
+                  ? "bg-gradient-to-br from-red-500 to-red-700"
+                  : "bg-gradient-to-br from-blue-500 to-purple-600"
             }`}
           >
             <span className="text-white font-bold text-lg">{initial}</span>
           </div>
 
           <div>
-            <p className={`font-medium ${isUnpaid ? "text-red-400" : "text-white"}`}>
+            <p
+              className={`font-medium ${
+                isBlocked ? "text-red-300" : isUnpaid ? "text-red-400" : "text-white"
+              }`}
+            >
               {record.memberName || (
                 <span className="text-gray-500 italic">Unidentified</span>
               )}
             </p>
             <div className="flex items-center gap-2 mt-1">
               <span className="text-gray-500 text-xs">{empNo}</span>
+              {isBlocked && (
+                <>
+                  <span className="text-gray-700">•</span>
+                  <span className="text-xs px-2 py-0.5 rounded-full text-red-300 bg-red-500/20 font-medium">
+                    Blocked
+                  </span>
+                </>
+              )}
               {isUnpaid && (
                 <>
                   <span className="text-gray-700">•</span>
@@ -359,7 +402,7 @@ const Attendance = () => {
           </div>
 
           {/* Stats Row */}
-          <div className="grid grid-cols-3 gap-4 mb-8">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
               <p className="text-3xl font-bold text-white">
                 {memberRecords.length + instructorRecords.length}
@@ -373,6 +416,12 @@ const Attendance = () => {
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
               <p className="text-3xl font-bold text-purple-400">{instructorRecords.length}</p>
               <p className="text-gray-400 text-sm mt-1">Instructors</p>
+            </div>
+            {/* Excluded from every figure to its left — shown only so a scan
+                that should not have opened the door is still visible. */}
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
+              <p className="text-3xl font-bold text-red-400">{blockedRecords.length}</p>
+              <p className="text-gray-400 text-sm mt-1">Blocked (not counted)</p>
             </div>
           </div>
 
@@ -422,6 +471,19 @@ const Attendance = () => {
               </span>
             </button>
             <button
+              onClick={() => setActiveTab("blocked")}
+              className={`px-5 py-2 rounded-lg text-sm font-medium transition-colors ${
+                activeTab === "blocked"
+                  ? "bg-red-600 text-white"
+                  : "text-gray-400 hover:text-white"
+              }`}
+            >
+              Blocked
+              <span className="ml-2 text-xs bg-gray-800 text-gray-300 px-1.5 py-0.5 rounded-full">
+                {blockedRecords.length}
+              </span>
+            </button>
+            <button
               onClick={() => setActiveTab("member-wise")}
               className={`px-5 py-2 rounded-lg text-sm font-medium transition-colors ${
                 activeTab === "member-wise"
@@ -447,10 +509,23 @@ const Attendance = () => {
                 {selectedMember && (
                   <div className="flex items-center justify-between mt-3 bg-gray-800 rounded-lg px-4 py-3">
                     <div>
-                      <span className={`font-medium ${unpaidIds.has(selectedMember.id) ? "text-red-400" : "text-white"}`}>
+                      <span
+                        className={`font-medium ${
+                          isBlockedMember(selectedMember)
+                            ? "text-red-300"
+                            : unpaidIds.has(selectedMember.id)
+                              ? "text-red-400"
+                              : "text-white"
+                        }`}
+                      >
                         {selectedMember.name}
                       </span>
-                      {unpaidIds.has(selectedMember.id) && (
+                      {isBlockedMember(selectedMember) && (
+                        <span className="ml-2 text-xs px-2 py-0.5 rounded-full text-red-300 bg-red-500/20 font-medium">
+                          Blocked — not counted
+                        </span>
+                      )}
+                      {!isBlockedMember(selectedMember) && unpaidIds.has(selectedMember.id) && (
                         <span className="ml-2 text-xs px-2 py-0.5 rounded-full text-red-400 bg-red-400/10 font-medium">
                           Unpaid
                         </span>
@@ -480,9 +555,22 @@ const Attendance = () => {
                         onClick={() => setSelectedMemberId(m.id)}
                         className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-800/50 transition-colors"
                       >
-                        <span className={`font-medium ${unpaidIds.has(m.id) ? "text-red-400" : "text-white"}`}>
+                        <span
+                          className={`font-medium ${
+                            isBlockedMember(m)
+                              ? "text-red-300"
+                              : unpaidIds.has(m.id)
+                                ? "text-red-400"
+                                : "text-white"
+                          }`}
+                        >
                           {m.name}
-                          {unpaidIds.has(m.id) && (
+                          {isBlockedMember(m) && (
+                            <span className="ml-2 text-xs px-2 py-0.5 rounded-full text-red-300 bg-red-500/20 font-medium">
+                              Blocked
+                            </span>
+                          )}
+                          {!isBlockedMember(m) && unpaidIds.has(m.id) && (
                             <span className="ml-2 text-xs px-2 py-0.5 rounded-full text-red-400 bg-red-400/10 font-medium">
                               Unpaid
                             </span>
@@ -536,6 +624,21 @@ const Attendance = () => {
           )}
 
           {/* Attendance List */}
+          {activeTab === "blocked" && (
+            <div className="mb-4 flex items-start gap-3 bg-red-500/5 border border-red-500/20 rounded-xl p-4">
+              <svg className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+              </svg>
+              <div>
+                <p className="text-red-300 text-sm font-medium">Blocked member check-ins</p>
+                <p className="text-gray-400 text-xs mt-1">
+                  These scans are excluded from the member and instructor lists and from every
+                  attendance figure. A blocked member getting through the door usually means the
+                  terminal has not synced their block yet.
+                </p>
+              </div>
+            </div>
+          )}
           {activeTab !== "member-wise" && (
           <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
             {loading ? (
@@ -551,10 +654,12 @@ const Attendance = () => {
                   </svg>
                 </div>
                 <p className="text-gray-400">
-                  No {activeTab === "members" ? "member" : "instructor"} attendance for this date
+                  No {tabNoun} attendance for this date
                 </p>
                 <p className="text-gray-600 text-sm mt-1">
-                  Records will appear here when {activeTab === "members" ? "members" : "instructors"} check in
+                  {activeTab === "blocked"
+                    ? "Blocked members are not getting through the door — nothing to review"
+                    : `Records will appear here when ${tabNoun}s check in`}
                 </p>
               </div>
             ) : (
