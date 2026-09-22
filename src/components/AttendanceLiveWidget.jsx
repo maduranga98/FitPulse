@@ -1,6 +1,10 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
+import {
+  blockedMemberKeys,
+  isBlockedRecord,
+} from "../utils/attendanceFilters";
 
 const todayStr = () => new Date().toISOString().split("T")[0];
 
@@ -38,6 +42,11 @@ const methodLabel = (method) => {
   return "Other";
 };
 
+// Blocked members never belong in the live feed — see utils/attendanceFilters.
+// The listener pulls a few extra rows so filtering them out still leaves a full
+// list of five real check-ins.
+const VISIBLE = 5;
+
 const AttendanceLiveWidget = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -54,19 +63,32 @@ const AttendanceLiveWidget = () => {
     (async () => {
       try {
         const { db } = await import("../config/firebase");
-        const { collection, query, where, orderBy, limit, onSnapshot } =
+        const { collection, query, where, orderBy, limit, onSnapshot, getDocs } =
           await import("firebase/firestore");
+
+        const membersSnap = await getDocs(
+          query(collection(db, "members"), where("gymId", "==", gymId))
+        );
+        const blockedKeys = blockedMemberKeys(
+          membersSnap.docs.map((d) => ({ id: d.id, ...d.data() }))
+        );
+
         const q = query(
           collection(db, "attendance"),
           where("gymId", "==", gymId),
           where("date", "==", todayStr()),
           orderBy("checkInTime", "desc"),
-          limit(5)
+          limit(VISIBLE * 4)
         );
         unsubscribe = onSnapshot(
           q,
           (snap) => {
-            setCheckIns(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+            setCheckIns(
+              snap.docs
+                .map((d) => ({ id: d.id, ...d.data() }))
+                .filter((record) => !isBlockedRecord(record, blockedKeys))
+                .slice(0, VISIBLE)
+            );
             setLoading(false);
           },
           (err) => {
