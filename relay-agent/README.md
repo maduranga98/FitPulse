@@ -84,7 +84,48 @@ same WiFi/LAN as the terminal (a Raspberry Pi, the front-desk PC, etc.).
 
 ## Running persistently
 
-### Option A — pm2 (simplest)
+### Option A — Windows service (recommended on Windows)
+
+A terminal window running `npm start` dies when the window is closed, the
+staff member logs out, or Windows reboots after an update — and door
+blocking silently stops until someone notices. A service starts **before
+anyone logs in**, restarts itself if it crashes, and survives reboots.
+
+```powershell
+winget install NSSM.NSSM          # once
+
+# then, from an ADMINISTRATOR PowerShell, in this folder:
+Set-ExecutionPolicy -Scope Process Bypass -Force
+.\install-service.ps1
+```
+
+The script refuses to install until `.env`, `service-account.json` and
+`node_modules` are all present, so a broken setup fails at install time
+rather than silently at 2am. To remove it: `.\install-service.ps1
+-Uninstall`.
+
+Day to day:
+
+```powershell
+nssm restart FitPulseRelay   # after every git pull
+nssm stop FitPulseRelay
+Get-Service FitPulseRelay
+```
+
+Logs stay in `relay-agent.log` (plus `service-out.log` / `service-err.log`
+for anything the service itself reports).
+
+**Stop the PC sleeping**, or the relay sleeps with it:
+
+```powershell
+powercfg /change standby-timeout-ac 0
+powercfg /change hibernate-timeout-ac 0
+```
+
+Set the machine to log back in automatically after a power cut, and leave
+it on the gym's WiFi with a DHCP reservation for the terminal's IP.
+
+### Option B — pm2 (cross-platform, needs a logged-in user)
 
 ```bash
 npm install -g pm2
@@ -94,7 +135,11 @@ pm2 startup   # follow the printed instructions so it survives reboots
 pm2 logs fitpulse-relay
 ```
 
-### Option B — systemd (Linux / Raspberry Pi)
+On Windows `pm2 startup` is unsupported — use `npm install -g
+pm2-windows-startup && pm2-startup install`, or prefer Option A, which
+does not depend on a user staying logged in.
+
+### Option C — systemd (Linux / Raspberry Pi)
 
 Create `/etc/systemd/system/fitpulse-relay.service`:
 
