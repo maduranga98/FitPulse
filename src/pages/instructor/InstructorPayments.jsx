@@ -9,8 +9,17 @@ import {
   isFeeExempt,
   isPayingMember,
   isInactiveMember,
-  paymentsForMonth,
+  paymentsCollectedInMonth,
+  paymentCollectedDate,
+  isAdvanceOrArrearsPayment,
 } from "../../utils/paymentTotals";
+import {
+  isCoupleMember,
+  isCouplePayer,
+  isCoveredByPartner,
+  findPartner,
+  hasPaidForMonth,
+} from "../../utils/couplePackages";
 import {
   getAttendanceSummary,
   getInactiveReason,
@@ -36,14 +45,24 @@ const InstructorPayments = () => {
   const [expandedMember, setExpandedMember] = useState(null);
   const [paymentForm, setPaymentForm] = useState({
     amount: "",
+    // The membership month this payment settles…
     month: new Date().toISOString().slice(0, 7),
     day: String(new Date().getDate()).padStart(2, "0"),
+    // …and the day the money actually changed hands, which is what decides
+    // the month it counts as revenue in. Settling February during March puts
+    // the cash in March's takings. See paymentCollectedMonth().
+    collectedOn: "",
     paymentMethod: "Cash",
     notes: "",
     fullyPaid: true,
   });
 
   const getCurrentDay = () => String(new Date().getDate()).padStart(2, "0");
+  // Local YYYY-MM-DD — toISOString() shifts the date for gyms east of UTC.
+  const getToday = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  };
   const daysInMonth = (yyyymm) => {
     if (!yyyymm) return 31;
     const [y, m] = yyyymm.split("-").map(Number);
@@ -104,8 +123,14 @@ const InstructorPayments = () => {
     return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
   };
 
-  const checkPaymentStatus = (memberId, month = getCurrentMonth()) =>
+  // Payments recorded against this member specifically — the duplicate guard.
+  const hasOwnPayment = (memberId, month = getCurrentMonth()) =>
     payments.some((p) => p.memberId === memberId && p.month === month);
+
+  // Settled for the month. For the covered half of a couple package that is
+  // true as soon as their partner pays.
+  const checkPaymentStatus = (member, month = getCurrentMonth()) =>
+    hasPaidForMonth(member, payments, month);
 
   const getMemberPayments = (memberId) =>
     payments.filter((p) => p.memberId === memberId);
@@ -116,6 +141,7 @@ const InstructorPayments = () => {
       amount: member.membershipFee || "",
       month: getCurrentMonth(),
       day: getCurrentDay(),
+      collectedOn: getToday(),
       paymentMethod: "Cash",
       notes: "",
       fullyPaid: true,
@@ -127,7 +153,7 @@ const InstructorPayments = () => {
     e.preventDefault();
     if (!canCollectPayments) return;
 
-    const alreadyPaid = checkPaymentStatus(selectedMember.id, paymentForm.month);
+    const alreadyPaid = hasOwnPayment(selectedMember.id, paymentForm.month);
     if (alreadyPaid) {
       alert("Payment already recorded for this month!");
       return;
@@ -137,6 +163,12 @@ const InstructorPayments = () => {
     try {
       const { db } = await import("../../config/firebase");
       const { collection, addDoc, Timestamp, doc, getDoc, updateDoc } = await import("firebase/firestore");
+
+      // A couple package is settled by one member for both.
+      const coveredPartner =
+        isCouplePayer(selectedMember) && selectedMember.partnerId
+          ? members.find((m) => m.id === selectedMember.partnerId)
+          : null;
 
       const expectedFee = parseFloat(selectedMember.membershipFee) || 0;
       const paidAmount = parseFloat(paymentForm.amount);
@@ -156,6 +188,14 @@ const InstructorPayments = () => {
         month: paymentForm.month,
         day: dayPadded,
         paymentDate: `${paymentForm.month}-${dayPadded}`,
+        collectedOn: paymentForm.collectedOn || getToday(),
+        ...(coveredPartner
+          ? {
+              coversMemberIds: [selectedMember.id, coveredPartner.id],
+              coversMemberNames: [selectedMember.name, coveredPartner.name || ""],
+              isCouplePayment: true,
+            }
+          : {}),
         paymentMethod: paymentForm.paymentMethod,
         notes: paymentForm.notes,
         paidAt: Timestamp.now(),
@@ -225,7 +265,9 @@ const InstructorPayments = () => {
     const matchSearch =
       searchTerm === "" ||
       matchesSearch(searchTerm, m.name, m.email, m.mobile, m.memberCode);
-    const isPaid = checkPaymentStatus(m.id);
+    const isPaid = checkPaymentStatus(m);
+    // The covered half of a couple owes nothing of their own.
+    const covered = isCoveredByPartner(m);
     const exempt = isFeeExempt(m);
     const inactive = isInactiveMember(m);
     // Blocked members were never loaded before the query was widened, so they
@@ -240,7 +282,7 @@ const InstructorPayments = () => {
       (filterStatus === "all" && !inactive && !blocked) ||
       (filterStatus === "paid" && !inactive && !blocked && isPaid) ||
       // VIPs owe nothing, so they are never part of the unpaid list
-      (filterStatus === "unpaid" && !inactive && !blocked && !isPaid && !exempt) ||
+      (filterStatus === "unpaid" && !inactive && !blocked && !isPaid && !exempt && !covered) ||
       (filterStatus === "vip" && !inactive && !blocked && exempt) ||
       (filterStatus === "inactive" && inactive);
     return matchSearch && matchStatus;
@@ -258,8 +300,11 @@ const InstructorPayments = () => {
         ).length
       : 0;
 
-  // Plain sum of the payments recorded FOR this month — never an estimate.
-  const currentMonthPayments = paymentsForMonth(payments, getCurrentMonth());
+  // Plain sum of the money actually COLLECTED this month — never an estimate,
+  // and never scattered back into the months those payments settle. A member
+  // clearing two months at once hands over both amounts today, so both belong
+  // in today's month.
+  const currentMonthPayments = paymentsCollectedInMonth(payments, getCurrentMonth());
   const totalCollected = sumAmounts(currentMonthPayments);
 
   // Money figures are computed over BILLABLE members only. Blocked members
@@ -269,11 +314,14 @@ const InstructorPayments = () => {
 
   // VIP and inactive members are fee-exempt: neither paid nor unpaid.
   const activeMembers = billableMembers.filter((m) => !isInactiveMember(m));
-  const payingMembers = billableMembers.filter(isPayingMember);
+  // A couple is billed once: the covered partner is not counted separately.
+  const payingMembers = billableMembers.filter(
+    (m) => isPayingMember(m) && !isCoveredByPartner(m),
+  );
   const vipCount = activeMembers.length - payingMembers.length;
   // Same predicate the "Inactive" filter uses, so the count always matches.
   const inactiveCount = members.filter(isInactiveMember).length;
-  const paidCount = payingMembers.filter((m) => checkPaymentStatus(m.id)).length;
+  const paidCount = payingMembers.filter((m) => checkPaymentStatus(m)).length;
   const unpaidCount = payingMembers.length - paidCount;
 
   if (!canCollectPayments) {
@@ -392,8 +440,10 @@ const InstructorPayments = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredMembers.map((member) => {
-              const isPaid = checkPaymentStatus(member.id);
+              const isPaid = checkPaymentStatus(member);
               const exempt = isFeeExempt(member);
+              const partner = findPartner(member, members);
+              const coveredByPartner = isCoveredByPartner(member);
               const memberPayments = getMemberPayments(member.id);
               const isExpanded = expandedMember === member.id;
 
@@ -422,6 +472,18 @@ const InstructorPayments = () => {
                             INACTIVE
                           </span>
                         )}
+                        {isCoupleMember(member) && (
+                          <span
+                            title={
+                              coveredByPartner
+                                ? `Couple package — ${partner?.name || member.partnerName || "partner"} pays for both`
+                                : `Couple package — pays for ${partner?.name || member.partnerName || "partner"}`
+                            }
+                            className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-pink-500/20 text-pink-400 flex-shrink-0"
+                          >
+                            {coveredByPartner ? "COUPLE" : "COUPLE · PAYS"}
+                          </span>
+                        )}
                         {member.accessBlocked === true && (
                           <span
                             title={member.accessBlockedReason ? `Door blocked — ${member.accessBlockedReason}` : "Door access is blocked"}
@@ -432,6 +494,13 @@ const InstructorPayments = () => {
                         )}
                       </div>
                       <div className="text-gray-400 text-xs truncate">{member.email || member.mobile || "—"}</div>
+                      {isCoupleMember(member) && (
+                        <div className="text-pink-400/90 text-xs truncate mt-0.5">
+                          {coveredByPartner
+                            ? `Fee paid by ${partner?.name || member.partnerName || "partner"}`
+                            : `Also covers ${partner?.name || member.partnerName || "partner"}`}
+                        </div>
+                      )}
                       {isInactiveMember(member) && (
                         <div className="text-amber-400/80 text-xs truncate mt-0.5">
                           Last seen: {getAttendanceSummary(member).summaryLabel}
@@ -457,10 +526,22 @@ const InstructorPayments = () => {
                       <span className="text-gray-400">Status:</span>
                       <span
                         className={`font-medium ${
-                          isPaid ? "text-green-400" : exempt ? "text-amber-400" : "text-red-400"
+                          isPaid
+                            ? "text-green-400"
+                            : exempt || coveredByPartner
+                              ? "text-amber-400"
+                              : "text-red-400"
                         }`}
                       >
-                        {isPaid ? "Paid" : exempt ? "VIP — Exempt" : "Unpaid"}
+                        {isPaid
+                          ? coveredByPartner
+                            ? "Paid by partner"
+                            : "Paid"
+                          : exempt
+                            ? "VIP — Exempt"
+                            : coveredByPartner
+                              ? "Awaiting partner"
+                              : "Unpaid"}
                       </span>
                     </div>
                     {nextDate && (
@@ -479,15 +560,25 @@ const InstructorPayments = () => {
 
                   <div className="space-y-2">
                     <button
-                      onClick={() => !isPaid && handleOpenPaymentModal(member)}
-                      disabled={isPaid}
+                      onClick={() =>
+                        !isPaid && !coveredByPartner && handleOpenPaymentModal(member)
+                      }
+                      disabled={isPaid || coveredByPartner}
                       className={`w-full py-2 rounded-lg font-medium text-sm transition ${
-                        isPaid
+                        isPaid || coveredByPartner
                           ? "bg-gray-700 text-gray-500 cursor-not-allowed"
                           : "bg-blue-600 hover:bg-blue-700 text-white active:scale-95"
                       }`}
                     >
-                      {isPaid ? "Already Paid" : member.isVip ? "VIP — Record (optional)" : "Mark as Paid"}
+                      {isPaid
+                        ? coveredByPartner
+                          ? "Covered by partner"
+                          : "Already Paid"
+                        : member.isVip
+                          ? "VIP — Record (optional)"
+                          : coveredByPartner
+                            ? `Collect from ${partner?.name || "partner"}`
+                            : "Mark as Paid"}
                     </button>
                     {memberPayments.length > 0 && (
                       <button
@@ -527,8 +618,18 @@ const InstructorPayments = () => {
                           </div>
                           <div className="flex items-center justify-between">
                             <span className="text-gray-500 text-xs">{p.paymentMethod}</span>
-                            <span className="text-gray-500 text-xs">{formatDate(p.paidAt)}</span>
+                            <span className="text-gray-500 text-xs">
+                              {paymentCollectedDate(p) || formatDate(p.paidAt)}
+                            </span>
                           </div>
+                          {/* An advance or arrears payment says which cycle it
+                              settled, so the history is not read as a double
+                              charge in one month. */}
+                          {isAdvanceOrArrearsPayment(p) && (
+                            <div className="text-blue-300 text-[11px] mt-1">
+                              collected for {formatMonth(p.month)}
+                            </div>
+                          )}
                           {p.notes && <div className="text-gray-500 text-xs mt-1">{p.notes}</div>}
                         </div>
                       ))}
@@ -621,9 +722,20 @@ const InstructorPayments = () => {
                     </p>
                   ) : null}
                 </div>
+                {/* A couple payment settles two memberships at once. */}
+                {isCouplePayer(selectedMember) && selectedMember.partnerId && (
+                  <div className="bg-pink-500/10 border border-pink-500/30 rounded-lg p-3 text-pink-200 text-xs">
+                    <span className="font-semibold">Couple package</span> — this payment covers{" "}
+                    {selectedMember.name} and{" "}
+                    {findPartner(selectedMember, members)?.name ||
+                      selectedMember.partnerName ||
+                      "their partner"}
+                    . Both are marked paid for the month.
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs text-gray-400 mb-1.5">Month *</label>
+                    <label className="block text-xs text-gray-400 mb-1.5">Paid for month *</label>
                     <input
                       required type="month"
                       value={paymentForm.month}
@@ -632,7 +744,7 @@ const InstructorPayments = () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-400 mb-1.5">Day *</label>
+                    <label className="block text-xs text-gray-400 mb-1.5">Due day *</label>
                     <input
                       required type="number" min="1" max={daysInMonth(paymentForm.month)}
                       value={paymentForm.day}
@@ -640,6 +752,26 @@ const InstructorPayments = () => {
                       className="w-full px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1.5">Money received on *</label>
+                  <input
+                    required type="date"
+                    value={paymentForm.collectedOn}
+                    onChange={(e) => setPaymentForm((p) => ({ ...p, collectedOn: e.target.value }))}
+                    className="w-full px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <p className="text-[11px] text-gray-500 mt-1.5">
+                    Decides which month's revenue this counts in.
+                    {paymentForm.month &&
+                    paymentForm.collectedOn &&
+                    paymentForm.collectedOn.slice(0, 7) !== paymentForm.month ? (
+                      <span className="block text-blue-300 mt-1">
+                        Settles {formatMonth(paymentForm.month)}, counted in{" "}
+                        {formatMonth(paymentForm.collectedOn.slice(0, 7))}.
+                      </span>
+                    ) : null}
+                  </p>
                 </div>
                 <div>
                   <label className="block text-xs text-gray-400 mb-1.5">Payment Method</label>

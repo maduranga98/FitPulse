@@ -9,7 +9,12 @@ import {
   isPayingMember,
   isInactiveMember,
   memberFee,
+  paymentsCollectedInMonth,
 } from "../utils/paymentTotals";
+import {
+  isCoveredByPartner,
+  hasPaidForMonth,
+} from "../utils/couplePackages";
 
 const PaymentAnalytics = () => {
   const { user } = useAuth();
@@ -88,17 +93,21 @@ const PaymentAnalytics = () => {
 
   // VIP members are fee-exempt — they are neither paid nor unpaid, and they
   // never contribute to the outstanding balance or the collection rate.
-  const payingMembers = members.filter(isPayingMember);
+  // A couple package is billed once, to the payer — the covered partner is
+  // not a separate line in any paid/unpaid figure.
+  const payingMembers = members.filter(
+    (m) => isPayingMember(m) && !isCoveredByPartner(m),
+  );
   const activeMembers = members.filter((m) => !isInactiveMember(m));
   const vipCount = activeMembers.length - payingMembers.length;
   const inactiveCount = members.length - activeMembers.length;
 
   const paidThisMonth = payingMembers.filter((m) =>
-    payments.some((p) => p.memberId === m.id && p.month === currentMonth)
+    hasPaidForMonth(m, payments, currentMonth),
   );
 
   const unpaidThisMonth = payingMembers.filter(
-    (m) => !payments.some((p) => p.memberId === m.id && p.month === currentMonth)
+    (m) => !hasPaidForMonth(m, payments, currentMonth),
   );
 
   // Exact sum of what the unpaid members actually owe — not an average.
@@ -121,9 +130,13 @@ const PaymentAnalytics = () => {
   };
 
   const last6Months = getLast6Months();
+  // Revenue is grouped by the month the money was COLLECTED in, not the
+  // membership month it settles: two months paid together in March are both
+  // March takings. Grouping by the settled month moved cash into months whose
+  // books were already closed.
   const monthlyRevenue = last6Months.map((month) => ({
     month,
-    total: sumAmounts(payments.filter((p) => p.month === month)),
+    total: sumAmounts(paymentsCollectedInMonth(payments, month)),
   }));
 
   const maxRevenue = Math.max(...monthlyRevenue.map((m) => m.total), 1);
@@ -155,7 +168,7 @@ const PaymentAnalytics = () => {
 
     const dots = last12Months.map((month) => {
       if (month < joinMonth) return "gray";
-      const paid = memberPayments.some((p) => p.month === month);
+      const paid = hasPaidForMonth(member, payments, month);
       if (paid) return "green";
       // A VIP owes nothing, so an empty month is not a missed payment
       return isPayingMember(member) ? "red" : "gray";
@@ -181,7 +194,7 @@ const PaymentAnalytics = () => {
     for (let i = last12Months.length - 1; i >= 0; i--) {
       const month = last12Months[i];
       if (month < joinMonth) break;
-      if (memberPayments.some((p) => p.month === month)) {
+      if (hasPaidForMonth(member, payments, month)) {
         streak++;
       } else {
         break;
@@ -344,8 +357,14 @@ const PaymentAnalytics = () => {
                     </tr>
                   ) : (
                     paidThisMonth.map((member) => {
+                      // For the covered half of a couple the settling record
+                      // belongs to their partner, so look it up by whichever
+                      // member id actually paid.
                       const payment = payments.find(
-                        (p) => p.memberId === member.id && p.month === currentMonth
+                        (p) =>
+                          p.month === currentMonth &&
+                          (p.memberId === member.id ||
+                            (isCoveredByPartner(member) && p.memberId === member.payerId)),
                       );
                       if (!payment) return null;
 

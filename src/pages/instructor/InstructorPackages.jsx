@@ -8,7 +8,12 @@ const InstructorPackages = () => {
   const { showSuccess, showError } = useNotification();
   const [saving, setSaving] = useState(false);
   const [packages, setPackages] = useState(Array.isArray(settings.packages) ? settings.packages : []);
-  const [newPackage, setNewPackage] = useState({ name: "", price: "", duration: 1 });
+  const [newPackage, setNewPackage] = useState({
+    name: "",
+    price: "",
+    duration: 1,
+    isCouple: false,
+  });
 
   // Keep local list in sync once settings finish loading from Firestore —
   // the initial useState snapshot runs before the async load completes.
@@ -40,9 +45,17 @@ const InstructorPackages = () => {
       showError("Enter a valid package name and price");
       return;
     }
-    const pkg = { id: `pkg_${Date.now()}`, name, price, duration: parseInt(newPackage.duration) || 1 };
+    const pkg = {
+      id: `pkg_${Date.now()}`,
+      name,
+      price,
+      duration: parseInt(newPackage.duration) || 1,
+      // Couple package: one price covering two members. Staff are asked to
+      // link the second member and pick who pays when registering on it.
+      isCouple: !!newPackage.isCouple,
+    };
     const saved = await persistPackages([...packages, pkg], `Package "${name}" saved`);
-    if (saved) setNewPackage({ name: "", price: "", duration: 1 });
+    if (saved) setNewPackage({ name: "", price: "", duration: 1, isCouple: false });
   };
 
   const removePackage = (id) => {
@@ -58,6 +71,8 @@ const InstructorPackages = () => {
           <h1 className="text-xl sm:text-2xl font-bold text-white">Membership Packages</h1>
           <p className="text-gray-400 text-sm mt-1">
             Define packages with a name and price. When registering a member, staff can pick a package and the fee is filled in automatically.
+            Mark a package as a <span className="text-pink-400 font-medium">couple package</span> when one price covers two members — staff are then
+            asked to link the second member and choose who pays.
           </p>
         </div>
 
@@ -67,8 +82,13 @@ const InstructorPackages = () => {
             <div className="space-y-2 mb-5">
               {packages.map((pkg) => (
                 <div key={pkg.id} className="flex items-center justify-between bg-gray-900 rounded-lg px-4 py-3">
-                  <div>
+                  <div className="min-w-0">
                     <span className="text-white font-medium text-sm">{pkg.name}</span>
+                    {pkg.isCouple && (
+                      <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-bold bg-pink-500/20 text-pink-400">
+                        COUPLE · 2 MEMBERS
+                      </span>
+                    )}
                     <span className="text-gray-400 text-xs ml-2">
                       Rs. {Number(pkg.price).toLocaleString()} · {pkg.duration} Month{pkg.duration > 1 ? "s" : ""}
                     </span>
@@ -125,6 +145,18 @@ const InstructorPackages = () => {
             >
               Add
             </button>
+            <label className="sm:col-span-12 flex items-center gap-2.5 cursor-pointer text-sm text-gray-300">
+              <input
+                type="checkbox"
+                checked={newPackage.isCouple}
+                onChange={(e) => setNewPackage((p) => ({ ...p, isCouple: e.target.checked }))}
+                className="w-4 h-4 accent-pink-500"
+              />
+              Couple package
+              <span className="text-gray-500 text-xs">
+                (one price covers two members — the fee is collected from one of them)
+              </span>
+            </label>
           </div>
         </div>
 

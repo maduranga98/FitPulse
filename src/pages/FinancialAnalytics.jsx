@@ -18,7 +18,16 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
-import { toAmount, sumAmounts, memberFee, isInactiveMember } from "../utils/paymentTotals";
+import {
+  toAmount,
+  sumAmounts,
+  memberFee,
+  isInactiveMember,
+  paymentCollectedMonth,
+  paymentCollectedDate,
+  paymentsCollectedInMonth,
+} from "../utils/paymentTotals";
+import { isCoveredByPartner, hasPaidForMonth } from "../utils/couplePackages";
 
 const FinancialAnalytics = () => {
   const { user } = useAuth();
@@ -111,29 +120,19 @@ const FinancialAnalytics = () => {
 
     // Calculate this month and last month revenue
     const now = new Date();
-    const firstDayThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const firstDayLastMonth = new Date(
-      now.getFullYear(),
-      now.getMonth() - 1,
-      1
-    );
+
+    // Revenue is recognised in the month the money was COLLECTED, which is
+    // what paymentCollectedMonth answers — a member settling February and
+    // March together in March puts both amounts into March's takings.
+    const thisMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const lastMonthKey = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, "0")}`;
 
     const thisMonthRevenue = sumAmounts(
-      paymentsData.filter((p) => {
-        const paidDate = p.paidAt?.toDate
-          ? p.paidAt.toDate()
-          : new Date(p.paidAt);
-        return paidDate >= firstDayThisMonth;
-      })
+      paymentsCollectedInMonth(paymentsData, thisMonthKey),
     );
-
     const lastMonthRevenue = sumAmounts(
-      paymentsData.filter((p) => {
-        const paidDate = p.paidAt?.toDate
-          ? p.paidAt.toDate()
-          : new Date(p.paidAt);
-        return paidDate >= firstDayLastMonth && paidDate < firstDayThisMonth;
-      })
+      paymentsCollectedInMonth(paymentsData, lastMonthKey),
     );
 
     // Calculate average revenue per member
@@ -145,21 +144,20 @@ const FinancialAnalytics = () => {
     // and collection-rate calculations. Trainer records in the members
     // collection are excluded entirely.
     const currentMonth = now.toISOString().slice(0, 7);
-    const paidMemberIds = new Set(
-      paymentsData
-        .filter((p) => p.month === currentMonth)
-        .map((p) => p.memberId)
-    );
 
     const activeMembers = membersData.filter(
       (m) => m.status === "active" && (!m.role || m.role === "member")
     );
     // Also excludes inactive members (set inactive by an admin, or no check-in
     // within the gym's configured threshold) — they owe nothing until they are
-    // active again, so they never count toward paid/unpaid or the collection rate.
-    const payingMembers = activeMembers.filter((m) => !m.isVip && !isInactiveMember(m));
+    // active again, so they never count toward paid/unpaid or the collection
+    // rate — and the covered half of a couple package, whose fee is collected
+    // once from their partner.
+    const payingMembers = activeMembers.filter(
+      (m) => !m.isVip && !isInactiveMember(m) && !isCoveredByPartner(m),
+    );
     const totalPaidMembers = payingMembers.filter((m) =>
-      paidMemberIds.has(m.id)
+      hasPaidForMonth(m, paymentsData, currentMonth),
     ).length;
     const totalUnpaidMembers = payingMembers.length - totalPaidMembers;
 
@@ -173,7 +171,7 @@ const FinancialAnalytics = () => {
     // It used to be (unpaid count × average fee), which invented totals that
     // matched no real package price — e.g. 187 × 2,494.48 = 466,468.
     const outstandingAmount = sumAmounts(
-      payingMembers.filter((m) => !paidMemberIds.has(m.id)),
+      payingMembers.filter((m) => !hasPaidForMonth(m, paymentsData, currentMonth)),
       memberFee
     );
 
@@ -218,13 +216,13 @@ const FinancialAnalytics = () => {
       };
     }
 
-    // Calculate revenue per month
+    // Revenue lands in the month the money was collected, not the membership
+    // month it settles — see paymentCollectedMonth().
     paymentsData.forEach((payment) => {
-      const paidDate = payment.paidAt?.toDate
-        ? payment.paidAt.toDate()
-        : new Date(payment.paidAt);
-
-      const monthKey = paidDate.toLocaleDateString("en-US", {
+      const collected = paymentCollectedMonth(payment);
+      if (!collected) return;
+      const [cy, cm] = collected.split("-").map(Number);
+      const monthKey = new Date(cy, cm - 1, 1).toLocaleDateString("en-US", {
         month: "short",
         year: "numeric",
       });
@@ -265,9 +263,14 @@ const FinancialAnalytics = () => {
     }
 
     paymentsData.forEach((payment) => {
-      const paidDate = payment.paidAt?.toDate
-        ? payment.paidAt.toDate()
-        : new Date(payment.paidAt);
+      // Daily takings follow the collection date for the same reason.
+      const collectedOn = paymentCollectedDate(payment);
+      const paidDate = collectedOn
+        ? new Date(`${collectedOn}T00:00:00`)
+        : payment.paidAt?.toDate
+          ? payment.paidAt.toDate()
+          : new Date(payment.paidAt);
+      if (!paidDate || isNaN(paidDate.getTime())) return;
 
       const dateKey = paidDate.toLocaleDateString("en-US", {
         month: "short",
@@ -284,26 +287,27 @@ const FinancialAnalytics = () => {
     // Member payment status — VIP members are shown as their own slice
     // instead of being counted as unpaid
     const currentMonth = now.toISOString().slice(0, 7);
-    const paidMemberIds = new Set(
-      paymentsData
-        .filter((p) => p.month === currentMonth)
-        .map((p) => p.memberId)
-    );
 
     const activeMembers = membersData.filter(
       (m) => m.status === "active" && (!m.role || m.role === "member")
     );
     const vipMembers = activeMembers.filter((m) => m.isVip);
-    const payingMembers = activeMembers.filter((m) => !m.isVip && !isInactiveMember(m));
+    const payingMembers = activeMembers.filter(
+      (m) => !m.isVip && !isInactiveMember(m) && !isCoveredByPartner(m),
+    );
     const memberPaymentStatus = [
       {
         name: "Paid",
-        value: payingMembers.filter((m) => paidMemberIds.has(m.id)).length,
+        value: payingMembers.filter((m) =>
+          hasPaidForMonth(m, paymentsData, currentMonth),
+        ).length,
         color: "#10b981",
       },
       {
         name: "Unpaid",
-        value: payingMembers.filter((m) => !paidMemberIds.has(m.id)).length,
+        value: payingMembers.filter(
+          (m) => !hasPaidForMonth(m, paymentsData, currentMonth),
+        ).length,
         color: "#ef4444",
       },
       {

@@ -60,7 +60,12 @@ const GymSettings = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, settings]);
 
-  const [newPackage, setNewPackage] = useState({ name: "", price: "", duration: 1 });
+  const [newPackage, setNewPackage] = useState({
+    name: "",
+    price: "",
+    duration: 1,
+    isCouple: false,
+  });
 
   // "Run now" for the unpaid door-block sweep. The nightly job only runs at
   // 02:00, so turning the setting on mid-month leaves overdue members
@@ -125,10 +130,15 @@ const GymSettings = () => {
       name,
       price,
       duration: parseInt(newPackage.duration) || 1,
+      // A couple package covers two members for one price. Marking it here is
+      // what makes the partner picker appear when staff register a member on
+      // this package, so the second person is linked instead of being chased
+      // for a fee their partner already paid.
+      isCouple: !!newPackage.isCouple,
     };
     const nextPackages = [...localSettings.packages, pkg];
     setLocalSettings((prev) => ({ ...prev, packages: nextPackages }));
-    setNewPackage({ name: "", price: "", duration: 1 });
+    setNewPackage({ name: "", price: "", duration: 1, isCouple: false });
     try {
       await persistPackages(nextPackages);
     } catch {
@@ -321,14 +331,21 @@ const GymSettings = () => {
           </h2>
           <p className="text-gray-400 text-xs mb-4">
             Define packages with a name and price. When registering a member, staff can pick a package and the fee is filled in automatically.
+            Mark a package as a <span className="text-pink-400 font-medium">couple package</span> when one price covers two members — staff are then
+            asked to link the second member and choose who pays.
           </p>
 
           {localSettings.packages.length > 0 && (
             <div className="space-y-2 mb-4">
               {localSettings.packages.map((pkg) => (
                 <div key={pkg.id} className="flex items-center justify-between bg-gray-900 rounded-lg px-4 py-3">
-                  <div>
+                  <div className="min-w-0">
                     <span className="text-white font-medium text-sm">{pkg.name}</span>
+                    {pkg.isCouple && (
+                      <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-bold bg-pink-500/20 text-pink-400">
+                        COUPLE · 2 MEMBERS
+                      </span>
+                    )}
                     <span className="text-gray-400 text-xs ml-2">
                       Rs. {Number(pkg.price).toLocaleString()} · {pkg.duration} Month{pkg.duration > 1 ? "s" : ""}
                     </span>
@@ -380,6 +397,18 @@ const GymSettings = () => {
             >
               Add
             </button>
+            <label className="sm:col-span-12 flex items-center gap-2.5 cursor-pointer text-sm text-gray-300">
+              <input
+                type="checkbox"
+                checked={newPackage.isCouple}
+                onChange={(e) => setNewPackage((p) => ({ ...p, isCouple: e.target.checked }))}
+                className="w-4 h-4 accent-pink-500"
+              />
+              Couple package
+              <span className="text-gray-500 text-xs">
+                (one price covers two members — the fee is collected from one of them)
+              </span>
+            </label>
           </div>
         </div>
 
