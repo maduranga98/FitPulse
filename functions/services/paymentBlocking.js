@@ -85,6 +85,34 @@ export function coverageThroughMonth(payments, member) {
 }
 
 /**
+ * The member ids whose payments settle THIS member's dues.
+ *
+ * Normally just themselves. On a couple package one member pays for both:
+ * `payerId` names which of the two hands over the money, and the other one's
+ * dues are settled by that same payment. Without this the covered partner
+ * looks unpaid to the sweep below and gets locked out of the door for a fee
+ * the gym already collected — the exact failure the couple link exists to
+ * prevent.
+ *
+ * A link with no payerId recorded is treated as no link at all: the member
+ * answers for themselves, which keeps them chaseable rather than silently
+ * settled by someone who never paid.
+ */
+export function settlingMemberIds(member, memberId) {
+  const self = memberId || member?.id;
+  if (member?.partnerId && member?.payerId && member.payerId !== self) {
+    return [self, member.payerId].filter(Boolean);
+  }
+  return [self].filter(Boolean);
+}
+
+/** Does this member's fee get collected from their partner? */
+export function isCoveredByPartner(member, memberId) {
+  const self = memberId || member?.id;
+  return !!member?.partnerId && !!member?.payerId && member.payerId !== self;
+}
+
+/**
  * Members who are never auto-blocked, whatever their payment state.
  * Returns a reason string, or null when the member is eligible.
  *

@@ -26,6 +26,15 @@ import {
   COMMAND_TIMEOUT_MS,
 } from "../services/deviceAccessService";
 import { matchesSearch } from "../utils/searchUtils";
+import MemberAvatar from "../components/MemberAvatar";
+import {
+  isCouplePackage,
+  isCoupleMember,
+  isCouplePayer,
+  findPartner,
+  buildCoupleLinkUpdates,
+  coupleUnlinkUpdate,
+} from "../utils/couplePackages";
 
 // "3 minutes ago" / "2 hours ago" for the relay heartbeat.
 const formatRelaySeen = (date, now) => {
@@ -166,7 +175,19 @@ const Members = () => {
     emergencyContact: "",
     emergencyName: "",
     notes: "",
+    // Couple package only: the existing member this registration is paired
+    // with, and whether the NEW member is the one who pays for both.
+    partnerId: "",
+    newMemberPays: true,
   });
+
+  // Couple-package linking on an existing member (from the profile modal)
+  const [coupleForm, setCoupleForm] = useState({ partnerId: "", payerIsMember: true });
+  const [editingCouple, setEditingCouple] = useState(false);
+  const [savingCouple, setSavingCouple] = useState(false);
+  // Free-text filter over the partner pickers — a gym roster is far too long
+  // to scroll through in a plain dropdown.
+  const [partnerSearch, setPartnerSearch] = useState("");
 
   const [activeTab, setActiveTab] = useState("members");
   const [blockingId, setBlockingId] = useState(null);
@@ -328,6 +349,8 @@ const Members = () => {
       emergencyContact: registration.emergencyContact || "",
       emergencyName: registration.emergencyName || "",
       notes: `Self-registered`,
+      partnerId: "",
+      newMemberPays: true,
     });
     // Pre-fill profile image preview from self-registration
     if (registration.profileImageUrl) {
@@ -410,7 +433,12 @@ const Members = () => {
   const handleSelectPackage = (packageId) => {
     const pkg = (settings.packages || []).find((p) => p.id === packageId);
     if (!pkg) {
-      setMemberForm((prev) => ({ ...prev, packageId: "", packageName: "" }));
+      setMemberForm((prev) => ({
+        ...prev,
+        packageId: "",
+        packageName: "",
+        partnerId: "",
+      }));
       return;
     }
     setMemberForm((prev) => ({
@@ -419,7 +447,149 @@ const Members = () => {
       packageName: pkg.name,
       membershipFee: prev.isVip ? "" : String(pkg.price),
       packageDuration: pkg.duration || prev.packageDuration,
+      // Switching away from a couple package drops the partner: leaving a
+      // stale id behind would link two members to a package that no longer
+      // covers both of them.
+      partnerId: isCouplePackage(pkg) ? prev.partnerId : "",
     }));
+    setPartnerSearch("");
+  };
+
+  // Members who can be picked as the second half of a couple package:
+  // real members (not trainers), not blocked, and not already linked to
+  // somebody else — a member can only be in one couple at a time.
+  const partnerCandidates = (excludeId) =>
+    members.filter(
+      (m) =>
+        (!m.role || m.role === "member") &&
+        m.status !== "blocked" &&
+        m.id !== excludeId &&
+        (!m.partnerId || m.partnerId === excludeId),
+    );
+
+  const filterPartnerCandidates = (candidates) =>
+    partnerSearch.trim()
+      ? candidates.filter((m) =>
+          matchesSearch(partnerSearch, m.name, m.mobile, m.email, m.memberCode),
+        )
+      : candidates;
+
+  // Write both sides of a couple link in one go, so the two documents can
+  // never disagree about who the partner is or who pays.
+  const persistCoupleLink = async ({ member, partner, payerId, pkg }) => {
+    const { db } = await import("../config/firebase");
+    const { doc, writeBatch } = await import("firebase/firestore");
+    const updates = buildCoupleLinkUpdates({ member, partner, payerId, pkg });
+    const batch = writeBatch(db);
+    Object.entries(updates).forEach(([id, patch]) => {
+      batch.update(doc(db, "members", id), patch);
+    });
+    await batch.commit();
+    return updates;
+  };
+
+  // Link the member whose profile is open to a partner (or change who pays).
+  const handleSaveCoupleLink = async () => {
+    if (!userIsAdmin) {
+      showError("You don't have permission to update members");
+      return;
+    }
+    if (!viewMember) return;
+    const partner = members.find((m) => m.id === coupleForm.partnerId);
+    if (!partner) {
+      showError("Select the other member of the couple");
+      return;
+    }
+    if (partner.id === viewMember.id) {
+      showError("A member cannot be linked to themselves");
+      return;
+    }
+
+    const pkg = (settings.packages || []).find(
+      (p) => p.id === (viewMember.packageId || partner.packageId),
+    );
+    const payerId = coupleForm.payerIsMember ? viewMember.id : partner.id;
+
+    setSavingCouple(true);
+    try {
+      const updates = await persistCoupleLink({
+        member: viewMember,
+        partner,
+        payerId,
+        pkg: pkg && isCouplePackage(pkg) ? pkg : null,
+      });
+      setViewMember({ ...viewMember, ...updates[viewMember.id] });
+      setEditingCouple(false);
+      setPartnerSearch("");
+      showSuccess(
+        `${viewMember.name} and ${partner.name} are linked — ${
+          payerId === viewMember.id ? viewMember.name : partner.name
+        } pays for both`,
+      );
+      fetchMembers();
+    } catch (error) {
+      console.error("Error linking couple:", error);
+      showError("Failed to link the couple. Please try again.");
+    } finally {
+      setSavingCouple(false);
+    }
+  };
+
+  // Unlink both sides. The covered partner's fee was zeroed when the link was
+  // made, so it is restored to the package price — otherwise they would look
+  // free of charge forever after the couple splits.
+  const handleUnlinkCouple = async () => {
+    if (!userIsAdmin || !viewMember?.partnerId) return;
+    if (
+      !confirm(
+        `Unlink ${viewMember.name} from ${viewMember.partnerName || "their partner"}? Both will be billed individually again.`,
+      )
+    )
+      return;
+
+    const partner = members.find((m) => m.id === viewMember.partnerId);
+    setSavingCouple(true);
+    try {
+      const { db } = await import("../config/firebase");
+      const { doc, writeBatch } = await import("firebase/firestore");
+      const batch = writeBatch(db);
+      const restoredFee = (member) => {
+        if (member?.isVip) return {};
+        if (parseFloat(member?.membershipFee) > 0) return {};
+        const pkg = (settings.packages || []).find((p) => p.id === member?.packageId);
+        return pkg ? { membershipFee: parseFloat(pkg.price) || 0 } : {};
+      };
+
+      batch.update(doc(db, "members", viewMember.id), {
+        ...coupleUnlinkUpdate(),
+        ...restoredFee(viewMember),
+      });
+      if (partner) {
+        batch.update(doc(db, "members", partner.id), {
+          ...coupleUnlinkUpdate(),
+          ...restoredFee(partner),
+        });
+      }
+      await batch.commit();
+
+      setViewMember({ ...viewMember, ...coupleUnlinkUpdate() });
+      showSuccess("Couple unlinked — both members are billed individually");
+      fetchMembers();
+    } catch (error) {
+      console.error("Error unlinking couple:", error);
+      showError("Failed to unlink. Please try again.");
+    } finally {
+      setSavingCouple(false);
+    }
+  };
+
+  const openCoupleEdit = () => {
+    setCoupleForm({
+      partnerId: viewMember?.partnerId || "",
+      payerIsMember: !viewMember?.partnerId || isCouplePayer(viewMember),
+    });
+    setPartnerSearch("");
+    setEditingCouple(true);
   };
 
   const handleToggleVip = (isVip) => {
@@ -585,9 +755,21 @@ const Members = () => {
       const password = generatePassword();
       const hikvisionUserId = `${currentGymId.slice(-4).toUpperCase()}${Date.now().toString().slice(-6)}`;
 
+      // Couple package: the partner picker's two fields drive a link written
+      // after the member document exists (it needs the new member's id), so
+      // they are stripped out of the document itself.
+      const { partnerId: couplePartnerId, newMemberPays, ...memberFields } = memberForm;
+      const selectedPkg = (settings.packages || []).find(
+        (p) => p.id === memberForm.packageId,
+      );
+      const couplePartner =
+        selectedPkg && isCouplePackage(selectedPkg) && couplePartnerId
+          ? members.find((m) => m.id === couplePartnerId)
+          : null;
+
       // Create member data
       const memberData = {
-        ...memberForm,
+        ...memberFields,
         gymId: currentGymId,
         username,
         password,
@@ -632,6 +814,31 @@ const Members = () => {
         devicePIN,
         ...(profileImageUrl ? { profileImageUrl } : {}),
       });
+
+      // Link the couple once both documents exist. A failure here must not
+      // undo the registration — the member is saved either way, and the link
+      // can be made from their profile — so it is reported, not thrown.
+      if (couplePartner) {
+        try {
+          const newMember = { ...memberData, id: memberRef.id };
+          await persistCoupleLink({
+            member: newMember,
+            partner: couplePartner,
+            payerId: newMemberPays ? memberRef.id : couplePartner.id,
+            pkg: selectedPkg,
+          });
+          showSuccess(
+            `Linked with ${couplePartner.name} — ${
+              newMemberPays ? memberForm.name : couplePartner.name
+            } pays the couple fee for both`,
+          );
+        } catch (linkErr) {
+          console.error("Couple link failed:", linkErr);
+          showWarning(
+            `${memberForm.name} was added, but the couple link with ${couplePartner.name} failed. Link them from the member's profile.`,
+          );
+        }
+      }
       if (supabase) {
         const { error: supabaseError } = await supabase.from("members").insert({
           employee_no: memberCode,
@@ -699,7 +906,10 @@ const Members = () => {
         emergencyContact: "",
         emergencyName: "",
         notes: "",
+        partnerId: "",
+        newMemberPays: true,
       });
+      setPartnerSearch("");
       setProfileImageFile(null);
       setProfileImagePreview(null);
       setProfileImageUrlOverride(null);
@@ -1399,21 +1609,34 @@ const Members = () => {
                 >
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0">
-                        {member.profileImageUrl ? (
-                          <img src={member.profileImageUrl} alt={member.name} className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full bg-blue-600 flex items-center justify-center text-white font-bold text-lg">
-                            {member.name?.charAt(0).toUpperCase()}
-                          </div>
-                        )}
-                      </div>
+                      <MemberAvatar
+                        name={member.name}
+                        imageUrl={member.profileImageUrl}
+                        sizeClass="w-12 h-12"
+                        caption={
+                          member.memberCode
+                            ? `${member.name} · #${member.memberCode}`
+                            : member.name
+                        }
+                      />
                       <div>
                         <h3 className="text-lg font-bold text-white flex items-center gap-2">
                           {member.name}
                           {member.isVip && (
                             <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400">
                               VIP
+                            </span>
+                          )}
+                          {isCoupleMember(member) && (
+                            <span
+                              title={
+                                isCouplePayer(member)
+                                  ? `Couple package — pays for ${member.partnerName || "partner"}`
+                                  : `Couple package — ${member.partnerName || "partner"} pays for both`
+                              }
+                              className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-pink-500/20 text-pink-400"
+                            >
+                              {isCouplePayer(member) ? "COUPLE · PAYS" : "COUPLE"}
                             </span>
                           )}
                           {member.accessBlocked && (
@@ -1609,19 +1832,17 @@ const Members = () => {
                         className="flex items-center justify-between bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 gap-3"
                       >
                         <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-11 h-11 rounded-full overflow-hidden flex-shrink-0">
-                            {member.profileImageUrl ? (
-                              <img
-                                src={member.profileImageUrl}
-                                alt={member.name}
-                                className="w-full h-full object-cover"
-                              />
-                            ) : (
-                              <div className="w-full h-full bg-blue-600 flex items-center justify-center text-white font-bold">
-                                {member.name?.charAt(0).toUpperCase()}
-                              </div>
-                            )}
-                          </div>
+                          <MemberAvatar
+                            name={member.name}
+                            imageUrl={member.profileImageUrl}
+                            sizeClass="w-11 h-11"
+                            textClass="text-base"
+                            caption={
+                              member.memberCode
+                                ? `${member.name} · #${member.memberCode}`
+                                : member.name
+                            }
+                          />
                           <div className="min-w-0">
                             <p className="text-white font-medium truncate">{member.name}</p>
                             {member.memberCode && (
@@ -2048,11 +2269,110 @@ const Members = () => {
                       {(settings.packages || []).map((pkg) => (
                         <option key={pkg.id} value={pkg.id}>
                           {pkg.name} — Rs. {Number(pkg.price).toLocaleString()} ({pkg.duration} Month{pkg.duration > 1 ? "s" : ""})
+                          {isCouplePackage(pkg) ? " · Couple" : ""}
                         </option>
                       ))}
                     </select>
                   </div>
                 )}
+
+                {/* Couple package: pick the second member and say who pays.
+                    Without this the partner shows up unpaid on every screen
+                    and is eventually blocked for a fee that was collected. */}
+                {(() => {
+                  const pkg = (settings.packages || []).find(
+                    (p) => p.id === memberForm.packageId,
+                  );
+                  if (!pkg || !isCouplePackage(pkg)) return null;
+
+                  const candidates = filterPartnerCandidates(partnerCandidates(null));
+                  const partner = members.find((m) => m.id === memberForm.partnerId);
+
+                  return (
+                    <div className="md:col-span-2 bg-pink-500/5 border border-pink-500/30 rounded-xl p-4 space-y-3">
+                      <div className="flex items-start gap-2">
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-pink-500/20 text-pink-400 mt-0.5">
+                          COUPLE
+                        </span>
+                        <p className="text-xs text-gray-400">
+                          <span className="text-white font-medium">{pkg.name}</span> covers two members for
+                          Rs. {Number(pkg.price).toLocaleString()}. Link the other member so one payment settles both —
+                          the partner is then never listed as unpaid or blocked.
+                        </p>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                          Other member of the couple
+                        </label>
+                        <input
+                          type="search"
+                          value={partnerSearch}
+                          onChange={(e) => setPartnerSearch(e.target.value)}
+                          placeholder="Search by name, phone or member code..."
+                          className="w-full mb-2 px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-pink-500"
+                        />
+                        <select
+                          value={memberForm.partnerId}
+                          onChange={(e) =>
+                            setMemberForm((prev) => ({ ...prev, partnerId: e.target.value }))
+                          }
+                          size={Math.min(Math.max(candidates.length, 2), 6)}
+                          className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-pink-500"
+                        >
+                          <option value="">Not linked yet — bill this member alone</option>
+                          {candidates.map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.name}
+                              {m.memberCode ? ` · #${m.memberCode}` : ""}
+                              {m.mobile ? ` · ${m.mobile}` : ""}
+                            </option>
+                          ))}
+                        </select>
+                        {candidates.length === 0 && (
+                          <p className="text-xs text-gray-500 mt-2">
+                            {partnerSearch.trim()
+                              ? `No member matches "${partnerSearch}".`
+                              : "No member is available to pair — everyone else is already in a couple."}
+                          </p>
+                        )}
+                      </div>
+
+                      {partner && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-300 mb-2">
+                            Who pays the couple fee?
+                          </label>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {[
+                              { pays: true, label: memberForm.name?.trim() || "This new member" },
+                              { pays: false, label: partner.name },
+                            ].map((option) => (
+                              <button
+                                key={String(option.pays)}
+                                type="button"
+                                onClick={() =>
+                                  setMemberForm((prev) => ({ ...prev, newMemberPays: option.pays }))
+                                }
+                                className={`px-4 py-2.5 rounded-lg border text-sm font-medium text-left transition ${
+                                  memberForm.newMemberPays === option.pays
+                                    ? "bg-pink-500/15 border-pink-500/50 text-pink-200"
+                                    : "bg-gray-900 border-gray-700 text-gray-400 hover:border-gray-600"
+                                }`}
+                              >
+                                {option.label}
+                              </button>
+                            ))}
+                          </div>
+                          <p className="text-xs text-gray-500 mt-2">
+                            The Rs. {Number(pkg.price).toLocaleString()} fee sits on the payer. The other
+                            member's own fee becomes Rs. 0 so the couple is never billed twice.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">
@@ -2395,15 +2715,17 @@ const Members = () => {
           <div className="bg-gray-800 rounded-2xl border border-gray-700 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-gray-800 border-b border-gray-700 p-6 flex items-center justify-between z-10">
               <div className="flex items-center gap-4">
-                <div className="w-16 h-16 rounded-full overflow-hidden flex-shrink-0">
-                  {viewMember.profileImageUrl ? (
-                    <img src={viewMember.profileImageUrl} alt={viewMember.name} className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full bg-blue-600 flex items-center justify-center text-white font-bold text-2xl">
-                      {viewMember.name?.charAt(0).toUpperCase()}
-                    </div>
-                  )}
-                </div>
+                <MemberAvatar
+                  name={viewMember.name}
+                  imageUrl={viewMember.profileImageUrl}
+                  sizeClass="w-16 h-16"
+                  textClass="text-2xl"
+                  caption={
+                    viewMember.memberCode
+                      ? `${viewMember.name} · #${viewMember.memberCode}`
+                      : viewMember.name
+                  }
+                />
                 <div>
                   <h2 className="text-2xl font-bold text-white">
                     {viewMember.name}
@@ -2860,6 +3182,168 @@ const Members = () => {
                       </div>
                     </div>
                   )}
+                  {/* Couple package — who the partner is and who pays.
+                      This is the record that keeps the non-paying half of a
+                      couple off the unpaid lists and out of the block job. */}
+                  <div className="bg-gray-900 rounded-lg p-4 col-span-2">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="text-gray-400 text-sm flex items-center gap-2">
+                        Couple Package
+                        {isCoupleMember(viewMember) && (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-pink-500/20 text-pink-400">
+                            LINKED
+                          </span>
+                        )}
+                      </div>
+                      {userIsAdmin && !editingCouple && (
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={openCoupleEdit}
+                            className="text-blue-400 hover:text-blue-300 text-xs font-medium"
+                          >
+                            {isCoupleMember(viewMember) ? "Change" : "Link partner"}
+                          </button>
+                          {isCoupleMember(viewMember) && (
+                            <button
+                              onClick={handleUnlinkCouple}
+                              disabled={savingCouple}
+                              className="text-red-400 hover:text-red-300 text-xs font-medium disabled:opacity-50"
+                            >
+                              Unlink
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {!editingCouple ? (
+                      isCoupleMember(viewMember) ? (
+                        <div className="flex items-center gap-3">
+                          {(() => {
+                            const partner = findPartner(viewMember, members);
+                            return (
+                              <>
+                                <MemberAvatar
+                                  name={partner?.name || viewMember.partnerName}
+                                  imageUrl={partner?.profileImageUrl}
+                                  sizeClass="w-10 h-10"
+                                  textClass="text-sm"
+                                  fallbackClass="bg-pink-600"
+                                />
+                                <div className="min-w-0">
+                                  <p className="text-white font-medium truncate">
+                                    {partner?.name || viewMember.partnerName || "Partner"}
+                                  </p>
+                                  <p className="text-xs text-gray-400">
+                                    {isCouplePayer(viewMember)
+                                      ? `${viewMember.name} pays the couple fee for both`
+                                      : `${partner?.name || viewMember.partnerName || "Partner"} pays the couple fee — this member owes nothing separately`}
+                                  </p>
+                                </div>
+                              </>
+                            );
+                          })()}
+                        </div>
+                      ) : (
+                        <p className="text-gray-500 text-sm">
+                          Not part of a couple. Link a partner when one payment covers two members.
+                        </p>
+                      )
+                    ) : (
+                      <div className="space-y-3">
+                        <input
+                          type="search"
+                          value={partnerSearch}
+                          onChange={(e) => setPartnerSearch(e.target.value)}
+                          placeholder="Search by name, phone or member code..."
+                          className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-pink-500"
+                        />
+                        {(() => {
+                          const candidates = filterPartnerCandidates(
+                            partnerCandidates(viewMember.id),
+                          );
+                          return (
+                            <>
+                              <select
+                                value={coupleForm.partnerId}
+                                onChange={(e) =>
+                                  setCoupleForm((prev) => ({ ...prev, partnerId: e.target.value }))
+                                }
+                                size={Math.min(Math.max(candidates.length, 2), 6)}
+                                className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-pink-500"
+                              >
+                                <option value="">Select the other member…</option>
+                                {candidates.map((m) => (
+                                  <option key={m.id} value={m.id}>
+                                    {m.name}
+                                    {m.memberCode ? ` · #${m.memberCode}` : ""}
+                                    {m.mobile ? ` · ${m.mobile}` : ""}
+                                  </option>
+                                ))}
+                              </select>
+                              {candidates.length === 0 && (
+                                <p className="text-xs text-gray-500">
+                                  {partnerSearch.trim()
+                                    ? `No member matches "${partnerSearch}".`
+                                    : "No member is available to pair — everyone else is already in a couple."}
+                                </p>
+                              )}
+                            </>
+                          );
+                        })()}
+
+                        {coupleForm.partnerId && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {[
+                              { isMember: true, label: viewMember.name },
+                              {
+                                isMember: false,
+                                label:
+                                  members.find((m) => m.id === coupleForm.partnerId)?.name ||
+                                  "Partner",
+                              },
+                            ].map((option) => (
+                              <button
+                                key={String(option.isMember)}
+                                type="button"
+                                onClick={() =>
+                                  setCoupleForm((prev) => ({
+                                    ...prev,
+                                    payerIsMember: option.isMember,
+                                  }))
+                                }
+                                className={`px-3 py-2 rounded-lg border text-sm font-medium text-left transition ${
+                                  coupleForm.payerIsMember === option.isMember
+                                    ? "bg-pink-500/15 border-pink-500/50 text-pink-200"
+                                    : "bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600"
+                                }`}
+                              >
+                                {option.label} pays
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="flex gap-2">
+                          <button
+                            onClick={handleSaveCoupleLink}
+                            disabled={savingCouple || !coupleForm.partnerId}
+                            className="px-4 py-2 bg-pink-600 hover:bg-pink-700 text-white rounded-lg text-sm font-medium transition disabled:opacity-50"
+                          >
+                            {savingCouple ? "Linking..." : "Link couple"}
+                          </button>
+                          <button
+                            onClick={() => setEditingCouple(false)}
+                            disabled={savingCouple}
+                            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
                   {viewMember.nextPaymentDate && (
                     <div className="bg-gray-900 rounded-lg p-4 col-span-2">
                       <div className="text-gray-400 text-sm mb-1">

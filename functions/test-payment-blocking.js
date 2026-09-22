@@ -14,6 +14,8 @@ import {
   paymentMonth,
   coverageThroughMonth,
   addMonths,
+  settlingMemberIds,
+  isCoveredByPartner,
 } from "./services/paymentBlocking.js";
 
 let failures = 0;
@@ -242,6 +244,44 @@ check("addMonths rolls over the year", () =>
 
 check("monthKey pads single-digit months", () =>
   assert.strictEqual(monthKey(new Date(2026, 0, 5)), "2026-01")
+);
+
+// ── couple packages ──────────────────────────────────────────────────
+// One package, two members, one payer. The member who does NOT pay must be
+// settled by their partner's payments, or the sweep locks them out of a gym
+// they have already been paid for.
+check("a member with no partner answers for themselves alone", () =>
+  assert.deepStrictEqual(settlingMemberIds({}, "m1"), ["m1"])
+);
+
+check("the covered partner is settled by the payer's payments too", () =>
+  assert.deepStrictEqual(
+    settlingMemberIds({ partnerId: "m1", payerId: "m1" }, "m2"),
+    ["m2", "m1"]
+  )
+);
+
+check("the payer of a couple still answers for themselves alone", () =>
+  assert.deepStrictEqual(
+    settlingMemberIds({ partnerId: "m2", payerId: "m1" }, "m1"),
+    ["m1"]
+  )
+);
+
+check("a link with no payer recorded settles nobody by proxy", () =>
+  assert.deepStrictEqual(settlingMemberIds({ partnerId: "m1" }, "m2"), ["m2"])
+);
+
+check("isCoveredByPartner is true only for the non-paying half", () => {
+  assert.strictEqual(isCoveredByPartner({ partnerId: "m1", payerId: "m1" }, "m2"), true);
+  assert.strictEqual(isCoveredByPartner({ partnerId: "m2", payerId: "m1" }, "m1"), false);
+  assert.strictEqual(isCoveredByPartner({}, "m1"), false);
+});
+
+check("the covered partner is not overdue once the payer has paid", () =>
+  // The sweep passes the merged payment list in; this asserts the rule that
+  // consumes it — the partner's own record is empty, the payer's covers Sep.
+  assert.strictEqual(overdue({ packageDuration: 1 }, [paid("2026-09")]), false)
 );
 
 console.log(failures === 0 ? "\nALL TESTS PASSED" : `\n${failures} TEST(S) FAILED`);

@@ -64,3 +64,85 @@ export const memberFee = (member) =>
 /** Payments recorded FOR a given month (YYYY-MM), by the payment's month field. */
 export const paymentsForMonth = (payments, month) =>
   (payments || []).filter((p) => p.month === month);
+
+// ---------------------------------------------------------------------------
+// Which month a payment counts as REVENUE in.
+//
+// Two different months hang off one payment record and they are not the same
+// thing:
+//
+//   payment.month        the month the payment is FOR — the membership cycle
+//                        it settles. This decides whether a member is "paid"
+//                        for March, and nothing else.
+//   payment.collectedOn  the day the money actually changed hands.
+//
+// A member who walks in during March and settles February AND March hands
+// over both amounts in March, so BOTH belong in March's revenue — the gym
+// counted that cash in March. Totalling by `month` instead scattered the
+// takings backwards into months whose books were already closed, which is
+// what made a month's collected figure disagree with the cash on hand.
+//
+// So: membership status is answered by `month`, money is answered by
+// `collectedOn`. Older records have no collectedOn, so fall back through the
+// server-set paidAt, then createdAt, and only as a last resort to the cycle
+// month — which is what those legacy records always meant anyway.
+
+const monthOf = (value) => {
+  if (!value) return "";
+  if (typeof value === "string") {
+    // "YYYY-MM-DD" or "YYYY-MM"
+    return /^\d{4}-\d{2}/.test(value) ? value.slice(0, 7) : "";
+  }
+  let date = null;
+  if (value instanceof Date) date = value;
+  else if (typeof value.toDate === "function") {
+    try {
+      date = value.toDate();
+    } catch {
+      date = null;
+    }
+  } else if (typeof value.seconds === "number") date = new Date(value.seconds * 1000);
+  if (!date || isNaN(date.getTime())) return "";
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+};
+
+/** The YYYY-MM the money was actually collected in. */
+export const paymentCollectedMonth = (payment) =>
+  monthOf(payment?.collectedOn) ||
+  monthOf(payment?.paidAt) ||
+  monthOf(payment?.createdAt) ||
+  payment?.month ||
+  "";
+
+/** The YYYY-MM-DD the money was collected on, for display. */
+export const paymentCollectedDate = (payment) => {
+  if (typeof payment?.collectedOn === "string" && payment.collectedOn) {
+    return payment.collectedOn;
+  }
+  const raw = payment?.paidAt || payment?.createdAt;
+  if (!raw) return "";
+  let date = null;
+  if (raw instanceof Date) date = raw;
+  else if (typeof raw.toDate === "function") {
+    try {
+      date = raw.toDate();
+    } catch {
+      date = null;
+    }
+  } else if (typeof raw.seconds === "number") date = new Date(raw.seconds * 1000);
+  else date = new Date(raw);
+  if (!date || isNaN(date.getTime())) return "";
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+};
+
+/** Payments whose money was COLLECTED during a given month (YYYY-MM). */
+export const paymentsCollectedInMonth = (payments, month) =>
+  (payments || []).filter((p) => paymentCollectedMonth(p) === month);
+
+/**
+ * A payment collected in one month for a different month — the case that made
+ * the totals confusing in the first place. Screens use it to label the record
+ * ("for February, collected in March") instead of hiding the difference.
+ */
+export const isAdvanceOrArrearsPayment = (payment) =>
+  !!payment?.month && paymentCollectedMonth(payment) !== payment.month;

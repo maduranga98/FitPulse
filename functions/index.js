@@ -14,6 +14,8 @@ import {
   isPaymentOverdue,
   skipReason,
   coverageThroughMonth,
+  settlingMemberIds,
+  isCoveredByPartner,
   DEFAULT_DUE_DAY,
 } from "./services/paymentBlocking.js";
 import {
@@ -2212,6 +2214,10 @@ export const sendPaymentReminders = functions.pubsub
         const member = memberDoc.data();
         if (member.role && member.role !== "member") continue;
         if (member.isVip) continue; // VIP / fee-exempt members don't pay
+        // The covered half of a couple package is never reminded: their
+        // partner is the one who pays, and chasing both reads as a double
+        // charge to the couple.
+        if (isCoveredByPartner(member, memberDoc.id)) continue;
         // Skip special-case members with no fee to collect (fee 0 or unset)
         if (!(Number(member.membershipFee) > 0)) continue;
 
@@ -2432,6 +2438,21 @@ async function memberPayments(db, memberId) {
 }
 
 /**
+ * Every payment that settles this member's dues.
+ *
+ * For the covered half of a couple package that includes their partner's
+ * payments — the couple pays once, from one of the two. Reading only the
+ * member's own records is what used to block the non-paying partner for a
+ * fee the gym had already collected.
+ */
+async function settlingPayments(db, member, memberId) {
+  const ids = settlingMemberIds(member, memberId);
+  if (ids.length === 1) return memberPayments(db, ids[0]);
+  const lists = await Promise.all(ids.map((id) => memberPayments(db, id)));
+  return lists.flat();
+}
+
+/**
  * What the queue currently holds for this member.
  *
  *   active — a command the relay can still reasonably be working on. The
@@ -2563,10 +2584,11 @@ async function sweepGymForUnpaid(db, gymDoc, { today, dryRun = false } = {}) {
 
     if (skipReason(member, thisMonth)) continue;
 
-    // Every payment for the member: which MONTHS they cover is what
-    // decides this, and a single equality filter needs no composite
-    // index. A member has a few dozen payments at most.
-    const payments = await memberPayments(db, memberId);
+    // Every payment that settles this member: which MONTHS they cover is
+    // what decides this, and a single equality filter needs no composite
+    // index. A member has a few dozen payments at most. On a couple package
+    // the partner's payments count too — see settlingPayments().
+    const payments = await settlingPayments(db, member, memberId);
 
     if (!isPaymentOverdue({ member, payments, today, dueDay, graceDays })) {
       continue;
@@ -2771,6 +2793,56 @@ export const runUnpaidAccessBlockNow = functions.https.onCall(
  * Only blocks this system applied (autoBlocked) are lifted. A member blocked
  * by staff for another reason stays blocked until staff unblock them.
  */
+/**
+ * Lift one member's automatic block if this payment leaves them settled.
+ * Returns true when an unblock was queued.
+ */
+async function liftAutoBlockIfSettled(db, memberId) {
+  const memberRef = db.collection("members").doc(memberId);
+  const memberSnap = await memberRef.get();
+  if (!memberSnap.exists) return false;
+
+  const member = memberSnap.data();
+  if (member.autoBlocked !== true) return false; // manual block, or not blocked
+  if (!member.memberCode || !member.gymId) return false;
+
+  const gymSnap = await db.collection("gyms").doc(member.gymId).get();
+  const paymentCfg = gymSnap.data()?.settings?.payment || {};
+  const dueDay = parseInt(paymentCfg.dueDay) || 10;
+  const graceDays = Math.max(0, parseInt(paymentCfg.autoBlockGraceDays) || 0);
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const payments = await settlingPayments(db, member, memberId);
+
+  if (isPaymentOverdue({ member, payments, today, dueDay, graceDays })) {
+    console.log(
+      `🚪 Payment recorded for ${member.name} (${member.memberCode}) but ` +
+        `${monthKey(today)} is still unpaid (covered through ` +
+        `${coverageThroughMonth(payments, member) || "nothing"}) — stays blocked`,
+    );
+    return false;
+  }
+
+  await queueDeviceCommand(db, {
+    gymId: member.gymId,
+    member,
+    memberId,
+    type: "unblock",
+    reason: null,
+  });
+  await memberRef.update({
+    autoBlocked: false,
+    autoBlockedAt: null,
+  });
+
+  console.log(
+    `🚪 Payment recorded for ${member.name} (${member.memberCode})` +
+      `${isCoveredByPartner(member, memberId) ? " (couple partner)" : ""} — auto-unblock queued`,
+  );
+  return true;
+}
+
 export const unblockOnPaymentRecorded = functions.firestore
   .document("payments/{paymentId}")
   .onCreate(async (snap) => {
@@ -2778,46 +2850,30 @@ export const unblockOnPaymentRecorded = functions.firestore
     if (!payment?.memberId) return null;
 
     const db = admin.firestore();
-    const memberRef = db.collection("members").doc(payment.memberId);
-    const memberSnap = await memberRef.get();
-    if (!memberSnap.exists) return null;
 
-    const member = memberSnap.data();
-    if (member.autoBlocked !== true) return null; // manual block, or not blocked
-    if (!member.memberCode || !member.gymId) return null;
-
-    const gymSnap = await db.collection("gyms").doc(member.gymId).get();
-    const paymentCfg = gymSnap.data()?.settings?.payment || {};
-    const dueDay = parseInt(paymentCfg.dueDay) || 10;
-    const graceDays = Math.max(0, parseInt(paymentCfg.autoBlockGraceDays) || 0);
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const payments = await memberPayments(db, payment.memberId);
-
-    if (isPaymentOverdue({ member, payments, today, dueDay, graceDays })) {
-      console.log(
-        `🚪 Payment recorded for ${member.name} (${member.memberCode}) but ` +
-          `${monthKey(today)} is still unpaid (covered through ` +
-          `${coverageThroughMonth(payments, member) || "nothing"}) — stays blocked`,
-      );
-      return null;
+    // A couple payment settles two memberships, so both doors have to open.
+    // `coversMemberIds` is written by the payment screens; the payer's own
+    // partnerId is the fallback for a payment recorded before that field
+    // existed, or by any other path.
+    const covered = new Set([payment.memberId]);
+    for (const id of payment.coversMemberIds || []) {
+      if (id) covered.add(id);
+    }
+    if (!payment.coversMemberIds?.length) {
+      const payerSnap = await db.collection("members").doc(payment.memberId).get();
+      const payer = payerSnap.exists ? payerSnap.data() : null;
+      if (payer?.partnerId && payer?.payerId === payment.memberId) {
+        covered.add(payer.partnerId);
+      }
     }
 
-    await queueDeviceCommand(db, {
-      gymId: member.gymId,
-      member,
-      memberId: payment.memberId,
-      type: "unblock",
-      reason: null,
-    });
-    await memberRef.update({
-      autoBlocked: false,
-      autoBlockedAt: null,
-    });
-
-    console.log(
-      `🚪 Payment recorded for ${member.name} (${member.memberCode}) — auto-unblock queued`,
-    );
+    for (const memberId of covered) {
+      try {
+        await liftAutoBlockIfSettled(db, memberId);
+      } catch (err) {
+        // One member failing must not leave the other blocked.
+        console.error(`Auto-unblock failed for member ${memberId}:`, err);
+      }
+    }
     return null;
   });

@@ -3,10 +3,29 @@ import { useAuth } from "../hooks/useAuth";
 import { useNotification } from "../contexts/NotificationContext";
 import Sidebar from "../components/Sidebar";
 import { isAdmin, validateGymId } from "../utils/authUtils";
-import { sumAmounts, formatAmount } from "../utils/paymentTotals";
+import {
+  sumAmounts,
+  formatAmount,
+  isInactiveMember,
+  isFeeExempt,
+  paymentsCollectedInMonth,
+  paymentCollectedDate,
+} from "../utils/paymentTotals";
+import {
+  getAttendanceSummary,
+  getInactiveReason,
+} from "../utils/memberActivity";
+import {
+  isCoupleMember,
+  isCouplePayer,
+  isCoveredByPartner,
+  hasPaidForMonth,
+} from "../utils/couplePackages";
+import { useGymSettings } from "../contexts/GymSettingsContext";
 
 const Reports = () => {
   const { user } = useAuth();
+  const { settings } = useGymSettings();
   const { showSuccess, showError } = useNotification();
   const currentGymId = user?.gymId;
   const userIsAdmin = isAdmin(user);
@@ -141,6 +160,12 @@ const Reports = () => {
       "Join Date": formatJsDate(member.joinDate),
       Level: member.level || "N/A",
       "Membership Fee": member.membershipFee || 0,
+      // Who a couple-package member is paired with, and which of the two
+      // hands over the fee — the pairing is invisible on a per-member row
+      // otherwise, and the zero fee on the covered half looks like an error.
+      Couple: isCoupleMember(member)
+        ? `${isCouplePayer(member) ? "Pays for" : "Paid by"} ${member.partnerName || "partner"}`
+        : "",
     }));
   };
 
@@ -207,31 +232,31 @@ const Reports = () => {
   };
 
   const generateMonthlyPaymentReport = () => {
-    const [year, month] = selectedMonth.split("-");
-
-    // Match by the payment's "month" field (which month the payment is FOR);
-    // fall back to the paid date for older records without that field.
-    const monthPayments = payments.filter((payment) => {
-      if (payment.month) return payment.month === selectedMonth;
-      const paymentDate = toJsDate(payment.paidAt || payment.createdAt);
-      return (
-        paymentDate &&
-        paymentDate.getFullYear() === parseInt(year) &&
-        paymentDate.getMonth() === parseInt(month) - 1
-      );
-    });
+    // Everything COLLECTED during the selected month, whichever membership
+    // month each payment settles. A member who clears February and March
+    // together in March handed over both amounts in March, so both belong in
+    // March's takings — grouping by the membership month instead pushed that
+    // cash back into a month whose books were already closed.
+    const monthPayments = paymentsCollectedInMonth(payments, selectedMonth);
 
     const memberById = new Map(actualMembers.map((m) => [m.id, m]));
 
     const data = monthPayments.map((payment) => {
       const member = memberById.get(payment.memberId);
+      const forMonth = payment.month || selectedMonth;
       return {
         "Payment ID": payment.id.slice(-6).toUpperCase(),
         "Member Name": payment.memberName || "N/A",
         Amount: payment.amount || 0,
-        "For Month": payment.month || selectedMonth,
+        // Which cycle the money settles — the column that makes an advance or
+        // an arrears payment readable instead of looking like a stray amount.
+        "For Month": forMonth,
+        "Collected In": selectedMonth,
         "Payment Method": payment.paymentMethod || "N/A",
-        "Paid Date": formatJsDate(payment.paidAt || payment.createdAt),
+        "Collected On":
+          paymentCollectedDate(payment) ||
+          formatJsDate(payment.paidAt || payment.createdAt),
+        Covers: (payment.coversMemberNames || []).filter(Boolean).join(" + ") || "",
         "Next Due Date": member?.nextPaymentDate
           ? formatJsDate(member.nextPaymentDate)
           : "N/A",
@@ -241,13 +266,16 @@ const Reports = () => {
 
     // The preview table and CSV take their columns from the first row, so the
     // summary row must use the same columns as the data rows.
+    const otherMonths = data.filter((row) => row["For Month"] !== selectedMonth).length;
     const summaryRow = {
       "Payment ID": "TOTAL",
       "Member Name": `${data.length} payment${data.length === 1 ? "" : "s"}`,
       Amount: sumAmounts(data, (row) => row.Amount),
-      "For Month": selectedMonth,
+      "For Month": otherMonths > 0 ? `${otherMonths} for another month` : selectedMonth,
+      "Collected In": selectedMonth,
       "Payment Method": "",
-      "Paid Date": "",
+      "Collected On": "",
+      Covers: "",
       "Next Due Date": "",
       Notes: "",
     };
@@ -262,16 +290,26 @@ const Reports = () => {
     const endOfMonth = new Date(parseInt(year), parseInt(month), 0);
     endOfMonth.setHours(23, 59, 59, 999);
 
-    // Members who already have a payment recorded for the selected month
-    const paidMemberIds = new Set(
-      payments.filter((p) => p.month === selectedMonth).map((p) => p.memberId)
-    );
-
-    return actualMembers
+    const pending = actualMembers
       .filter((member) => {
+        // Only ACTIVE members owe anything. "Inactive" covers both a member
+        // an admin switched off AND one the attendance job flagged for not
+        // turning up (`activityStatus`) — this report used to test only
+        // `status`, so every attendance-inactive member was listed as owing
+        // money they are not being charged, which made the report useless for
+        // deciding who to chase. Blocked members are excluded for the same
+        // reason: nothing is collected from them while they are blocked.
+        if (isInactiveMember(member)) return false;
+        if (member.status === "blocked") return false;
         if (member.status !== "active") return false;
-        if (member.isVip) return false; // VIP members don't pay
-        if (paidMemberIds.has(member.id)) return false;
+        // VIP members are fee-exempt.
+        if (isFeeExempt(member)) return false;
+        // The covered half of a couple package never owes separately — their
+        // partner's payment settles both, and listing them here is what got
+        // them chased (and eventually blocked) for a fee already collected.
+        if (isCoveredByPartner(member)) return false;
+        // Settled for the month — by their own payment, or by their partner's.
+        if (hasPaidForMonth(member, payments, selectedMonth)) return false;
 
         const dueDate = toJsDate(member.nextPaymentDate) || toJsDate(member.joinDate);
         // No due date on record at all — treat as pending so it's not silently missed
@@ -286,9 +324,82 @@ const Reports = () => {
           "Due Date": dueDate ? dueDate.toLocaleDateString() : "N/A",
           "Package Fee": member.membershipFee || 0,
           "Package Duration": member.packageDuration || 1,
+          // A couple payer is chased once for a fee covering two people —
+          // worth saying so before someone phones the partner as well.
+          Couple: isCouplePayer(member)
+            ? `Pays for ${member.partnerName || "partner"}`
+            : "",
+          "Last Attendance":
+            getAttendanceSummary(member).dateLabel || "Never attended",
           Email: member.email || "N/A",
           Mobile: member.mobile || "N/A",
         };
+      });
+
+    if (pending.length === 0) return [];
+
+    const summaryRow = {
+      "Member Number": "TOTAL",
+      Name: `${pending.length} active member${pending.length === 1 ? "" : "s"} unpaid`,
+      "Due Date": "",
+      "Package Fee": sumAmounts(pending, (row) => row["Package Fee"]),
+      "Package Duration": "",
+      Couple: "",
+      "Last Attendance": "",
+      Email: "",
+      Mobile: "",
+    };
+
+    return [...pending, summaryRow];
+  };
+
+  /**
+   * Attendance Inactive Members — members who have stopped turning up.
+   *
+   * Distinct from the plain Inactive report, which lists members an admin
+   * switched off by hand. This one lists the members the scheduled attendance
+   * job flagged (`activityStatus: "inactive"`), plus anyone whose last
+   * check-in is older than the gym's configured threshold but whose flag has
+   * not been written yet — the list an admin works through to win people back
+   * before they lapse for good. Sorted by longest absence first, because that
+   * is the order the calls get made in.
+   */
+  const generateAttendanceInactiveReport = () => {
+    const thresholdDays =
+      parseInt(settings?.attendance?.inactivityThresholdDays) || 30;
+
+    return actualMembers
+      .filter((member) => {
+        // An admin-disabled member belongs in the Inactive Members report,
+        // not here — this report is about attendance, so a member switched
+        // off by hand is only included if they ALSO stopped attending.
+        if (member.status === "blocked") return false;
+        const summary = getAttendanceSummary(member);
+        if (member.activityStatus === "inactive") return true;
+        return summary.daysSince !== null && summary.daysSince >= thresholdDays;
+      })
+      .map((member) => {
+        const summary = getAttendanceSummary(member);
+        return {
+          "Member Number": member.id.slice(-6).toUpperCase(),
+          Name: member.name,
+          "Last Attendance": summary.dateLabel || "Never attended",
+          "Days Since": summary.daysSince ?? "N/A",
+          Absence: summary.relativeLabel || "N/A",
+          "Join Date": formatJsDate(member.joinDate),
+          "Account Status": member.status || "N/A",
+          Reason:
+            getInactiveReason(member) ||
+            `No check-in for ${thresholdDays}+ days`,
+          "Membership Fee": member.membershipFee || 0,
+          Email: member.email || "N/A",
+          Mobile: member.mobile || "N/A",
+        };
+      })
+      .sort((a, b) => {
+        // Longest absence first; members who never attended sort to the top.
+        const days = (row) => (typeof row["Days Since"] === "number" ? row["Days Since"] : Infinity);
+        return days(b) - days(a);
       });
   };
 
@@ -338,6 +449,10 @@ const Reports = () => {
       "attendance": { title: "Attendance Report", filename: `attendance-report-${selectedMonth}` },
       "monthly-payment": { title: "Monthly Payment Report", filename: `monthly-payments-${selectedMonth}` },
       "pending-payment": { title: "Pending Payment Report", filename: `pending-payments-${selectedMonth}` },
+      "attendance-inactive": {
+        title: "Attendance Inactive Members Report",
+        filename: "attendance-inactive-members",
+      },
       "overall-payment": { title: "Overall Payment Report", filename: "overall-payment-report" },
       "inactive": { title: "Inactive Members Report", filename: "inactive-members-report" },
     };
@@ -363,6 +478,9 @@ const Reports = () => {
         break;
       case "pending-payment":
         data = generatePendingPaymentReport();
+        break;
+      case "attendance-inactive":
+        data = generateAttendanceInactiveReport();
         break;
       case "overall-payment":
         data = generateOverallPaymentReport();
@@ -429,9 +547,20 @@ const Reports = () => {
     { value: "monthly-active", label: "Monthly Active Members", description: "Members active in selected month with attendance count" },
     { value: "attendance", label: "Attendance Report", description: "Attendance records by member and date" },
     { value: "monthly-payment", label: "Monthly Payment Report", description: "Payments received in selected month" },
-    { value: "pending-payment", label: "Pending Payment Report", description: "Members with pending payments" },
+    {
+      value: "pending-payment",
+      label: "Pending Payment Report",
+      description:
+        "Active members who still owe for the selected month. Inactive, blocked and VIP members are excluded, as is the partner on a couple package whose fee their partner pays.",
+    },
+    {
+      value: "attendance-inactive",
+      label: "Attendance Inactive Members Report",
+      description:
+        "Members who have stopped turning up — no check-in within the gym's inactivity threshold — longest absence first.",
+    },
     { value: "overall-payment", label: "Overall Payment Report", description: "All payment transactions" },
-    { value: "inactive", label: "Inactive Members Report", description: "All inactive members" },
+    { value: "inactive", label: "Inactive Members Report", description: "Members an admin has set to inactive" },
   ];
 
   return (

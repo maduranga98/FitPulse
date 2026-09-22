@@ -9,6 +9,7 @@ import { APP_URL } from "../../config/app";
 import { calculateBMI, validateBMIInputs } from "../../utils/validationUtils";
 import { supabase } from "../../services/supabaseClient";
 import MemberAvatar from "../../components/MemberAvatar";
+import { isCouplePackage } from "../../utils/couplePackages";
 import { matchesSearch } from "../../utils/searchUtils";
 
 const InstructorAddMember = () => {
@@ -656,9 +657,23 @@ const InstructorAddMember = () => {
                         {(settings.packages || []).map((pkg) => (
                           <option key={pkg.id} value={pkg.id}>
                             {pkg.name} — Rs. {Number(pkg.price).toLocaleString()} ({pkg.duration} Month{pkg.duration > 1 ? "s" : ""})
+                            {isCouplePackage(pkg) ? " · Couple" : ""}
                           </option>
                         ))}
                       </select>
+                      {/* A couple package covers two members, and the pairing
+                          decides who is billed. Pairing is an admin action, so
+                          say plainly that this registration is not finished
+                          until it is done — otherwise the second member is
+                          chased for a fee their partner pays. */}
+                      {isCouplePackage(
+                        (settings.packages || []).find((p) => p.id === memberForm.packageId),
+                      ) && (
+                        <p className="mt-2 text-xs text-pink-300 bg-pink-500/10 border border-pink-500/30 rounded-lg px-3 py-2">
+                          This is a <span className="font-semibold">couple package</span> — one fee covers two members.
+                          Ask an admin to link the partner from this member's profile so a single payment settles both.
+                        </p>
+                      )}
                     </div>
                   )}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

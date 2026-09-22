@@ -71,6 +71,9 @@ service cloud.firestore {
     //   packageDuration, nextPaymentDate, emergencyContact,
     //   emergencyName, notes, bmi, bmiCategory, role,
     //   hikvisionUserId, enrolledDevices, createdAt …
+    //   Couple packages add: partnerId, partnerName,
+    //   payerId, isCouplePackage — the link that lets one
+    //   payment settle two members.
     // ============================================
     match /members/{memberId} {
       allow read: if true;
@@ -84,8 +87,13 @@ service cloud.firestore {
     // PAYMENTS
     // AdminPayments.jsx writes:
     //   memberId, gymId, memberName, amount, month,
-    //   paymentMethod, notes, paidAt, recordedBy,
-    //   recordedById
+    //   collectedOn, paymentMethod, notes, paidAt,
+    //   recordedBy, recordedById
+    //   `month` is the membership month the payment settles;
+    //   `collectedOn` is the day the money changed hands and
+    //   is what every revenue total is grouped by.
+    //   Couple payments add: coversMemberIds,
+    //   coversMemberNames, isCouplePayment
     // ============================================
     match /payments/{paymentId} {
       allow read: if true;

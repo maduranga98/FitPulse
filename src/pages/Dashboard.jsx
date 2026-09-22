@@ -114,6 +114,17 @@ const Dashboard = () => {
         if (member.role && member.role !== "member") return;
         if (isFeeExempt(member)) return;
         if (paidMemberIds.has(doc.id)) return;
+        // Couple package: the covered partner owes nothing of their own, so a
+        // payment from the member who pays for both settles them too. Without
+        // this they are counted as pending the moment their partner's fee has
+        // been collected.
+        if (
+          member.partnerId &&
+          member.payerId &&
+          member.payerId !== doc.id
+        ) {
+          if (paidMemberIds.has(member.payerId)) return;
+        }
         // Check if nextPaymentDate has passed
         if (member.nextPaymentDate) {
           const nextDate = new Date(member.nextPaymentDate);
