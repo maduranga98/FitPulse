@@ -14,7 +14,7 @@ const os = require("os");
 const admin = require("firebase-admin");
 const log = require("./logger");
 const { blockUser, unblockUser, searchUser } = require("./isapi");
-const { orderCommandChanges } = require("./queueOrder");
+const { orderCommandChanges, historyClearedByUnblock } = require("./queueOrder");
 
 const GYM_ID = process.env.GYM_ID;
 if (!GYM_ID) {
@@ -32,6 +32,10 @@ const RETRY_BASE_MS = Number(process.env.RETRY_BASE_MS || 5000);
 const HEARTBEAT_MS = Number(process.env.HEARTBEAT_MS || 30000);
 // A command left in "processing" by a crash/restart is retried after this.
 const STALE_PROCESSING_MS = Number(process.env.STALE_PROCESSING_MS || 120000);
+// How long a completed unblock stays visible before the member's history is
+// cleared — long enough for the app, which watches the command doc, to see
+// "completed" rather than a deleted document.
+const CLEANUP_DELAY_MS = Number(process.env.CLEANUP_DELAY_MS || 15000);
 
 admin.initializeApp({
   credential: admin.credential.applicationDefault(),
@@ -84,6 +88,74 @@ async function requeueStaleCommands() {
     await d.ref.update({ status: "pending" });
   }
   return orphans.length;
+}
+
+// Once a member is unblocked their block/unblock commands are finished
+// history. Left in place, deviceCommands grows by every member ever blocked
+// and everything reading it has to walk past them one by one — so clear
+// them. Commands issued after the unblock (blocked again) are kept.
+async function clearUnblockedHistory(memberId, unblockCreatedAt) {
+  const snap = await gymRef()
+    .collection("deviceCommands")
+    .where("memberId", "==", memberId)
+    .get();
+
+  const ids = new Set(
+    historyClearedByUnblock(
+      snap.docs.map((d) => ({
+        id: d.id,
+        status: d.data().status,
+        createdAtMs: d.data().createdAt?.toMillis?.() || 0,
+      })),
+      unblockCreatedAt?.toMillis?.() || Date.now()
+    )
+  );
+  if (ids.size === 0) return 0;
+
+  // Batches cap at 500 writes; a member's history is far below that.
+  const batch = db.batch();
+  for (const d of snap.docs) if (ids.has(d.id)) batch.delete(d.ref);
+  await batch.commit();
+  return ids.size;
+}
+
+function scheduleHistoryCleanup(memberId, unblockCreatedAt, label) {
+  setTimeout(() => {
+    clearUnblockedHistory(memberId, unblockCreatedAt)
+      .then((n) => n > 0 && log.info(`${label}: cleared ${n} command(s) from the queue`))
+      .catch((err) => log.warn(`${label}: history cleanup failed — ${err.message}`));
+  }, CLEANUP_DELAY_MS).unref?.();
+}
+
+// Catches unblocks whose delayed cleanup never ran (relay restarted inside
+// the delay, or they completed before this version was deployed).
+async function pruneUnblockedHistory() {
+  const snap = await gymRef()
+    .collection("deviceCommands")
+    .where("status", "==", "completed")
+    .get();
+
+  // Latest completed unblock per member covers everything before it.
+  // Single equality filter, so no composite index has to be deployed.
+  const latest = new Map();
+  for (const d of snap.docs) {
+    const { type, memberId, createdAt } = d.data();
+    if (type !== "unblock" || !memberId) continue;
+    const prev = latest.get(memberId);
+    if (!prev || (createdAt?.toMillis?.() || 0) > (prev?.toMillis?.() || 0)) {
+      latest.set(memberId, createdAt);
+    }
+  }
+
+  let cleared = 0;
+  for (const [memberId, createdAt] of latest) {
+    try {
+      cleared += await clearUnblockedHistory(memberId, createdAt);
+    } catch (err) {
+      log.warn(`History cleanup for member ${memberId} failed — ${err.message}`);
+    }
+  }
+  return cleared;
 }
 
 // Devices are configured in the app (Devices page) under gyms/{gymId}/devices.
@@ -242,6 +314,10 @@ async function processCommand(doc) {
     completedAt: admin.firestore.FieldValue.serverTimestamp(),
   });
   log.info(`${label}: COMPLETED`);
+
+  if (command.type === "unblock" && command.memberId) {
+    scheduleHistoryCleanup(command.memberId, command.createdAt, label);
+  }
 }
 
 // Serialize command processing — commands for the same member must not race.
@@ -282,6 +358,10 @@ async function main() {
 
   const requeued = await requeueStaleCommands();
   if (requeued > 0) log.info(`Requeued ${requeued} stale command(s)`);
+
+  pruneUnblockedHistory()
+    .then((n) => n > 0 && log.info(`Cleared ${n} command(s) left over from unblocked members`))
+    .catch((err) => log.warn(`Startup history cleanup failed — ${err.message}`));
 
   const commandsRef = gymRef()
     .collection("deviceCommands")

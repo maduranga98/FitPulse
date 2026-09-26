@@ -5,7 +5,7 @@
 // but the member was last set to blocked.
 
 const assert = require("assert");
-const { orderCommandChanges } = require("./queueOrder");
+const { orderCommandChanges, historyClearedByUnblock } = require("./queueOrder");
 
 const change = (id, type, createdAtMs) => ({
   type: "added",
@@ -64,6 +64,39 @@ check("a missing createdAt does not throw", () =>
       change("y", "unblock", 5),
     ]).length,
     2
+  )
+);
+
+
+// ── Clearing a member's history once they are unblocked ────────────
+const history = [
+  { id: "b1", status: "completed", createdAtMs: 1000 },
+  { id: "u1", status: "failed", createdAtMs: 1500 },
+  { id: "s1", status: "superseded", createdAtMs: 1800 },
+  { id: "u2", status: "completed", createdAtMs: 2000 }, // the unblock itself
+  { id: "b2", status: "pending", createdAtMs: 3000 }, // blocked again since
+  { id: "b3", status: "completed", createdAtMs: 4000 },
+];
+
+check("settled history up to the unblock is cleared, the unblock included", () =>
+  assert.deepStrictEqual(historyClearedByUnblock(history, 2000), ["b1", "u1", "s1", "u2"])
+);
+
+check("commands issued after the unblock are kept", () => {
+  const cleared = historyClearedByUnblock(history, 2000);
+  assert.ok(!cleared.includes("b2") && !cleared.includes("b3"));
+});
+
+check("a live (pending/processing) command is never cleared", () =>
+  assert.deepStrictEqual(
+    historyClearedByUnblock(
+      [
+        { id: "p", status: "pending", createdAtMs: 1 },
+        { id: "q", status: "processing", createdAtMs: 1 },
+      ],
+      2000
+    ),
+    []
   )
 );
 

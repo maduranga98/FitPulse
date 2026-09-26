@@ -21,3 +21,30 @@ function orderCommandChanges(changes) {
 }
 
 module.exports = { orderCommandChanges };
+
+// Statuses the relay is finished with. A pending/processing command is
+// still someone's live intent and must never be cleared.
+const SETTLED_STATUSES = new Set(["completed", "failed", "superseded"]);
+
+/**
+ * The command ids an unblock makes obsolete for one member.
+ *
+ * Once a member's door is open again their block/unblock history is noise:
+ * left in place the queue grows with every member ever blocked, and the
+ * relay, doctor and nightly sweep all wade through it. Everything the relay
+ * has settled up to and including the unblock goes; anything issued after
+ * it (staff blocked them again) is kept.
+ *
+ * commands: [{ id, status, createdAtMs }]
+ */
+function historyClearedByUnblock(commands, unblockCreatedAtMs) {
+  return commands
+    .filter(
+      (c) =>
+        SETTLED_STATUSES.has(c.status) &&
+        (c.createdAtMs || 0) <= (unblockCreatedAtMs || Infinity)
+    )
+    .map((c) => c.id);
+}
+
+module.exports.historyClearedByUnblock = historyClearedByUnblock;
